@@ -1,6 +1,6 @@
 class_name TrikeInput
 extends RefCounted
-## Per-physics-tick control state for one trike.
+## Per-physics-tick control state for one player (riding or on foot).
 ##
 ## Kept as plain data so it can come from the local keyboard, an AI, the test
 ## suite or (later) the network, without the trike knowing the difference.
@@ -15,6 +15,8 @@ var steer := 0.0
 var drift := false
 ## One-shot reset request; the trike clears it after handling.
 var reset_pressed := false
+## One-shot interact request (E). Used on foot to get back on the trike.
+var interact_pressed := false
 
 
 func clear() -> void:
@@ -23,3 +25,4 @@ func clear() -> void:
 	steer = 0.0
 	drift = false
 	reset_pressed = false
+	interact_pressed = false

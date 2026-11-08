@@ -99,6 +99,13 @@ extends Resource
 ## Yaw rate the player can add while airborne (rad/s).
 @export var air_turn_rate := 1.2
 
+@export_group("Riderless")
+## Deceleration while nobody is aboard (feet off, nobody pedaling), so an
+## abandoned trike rolls to a stop instead of coasting down the mountain.
+@export var riderless_brake_deceleration := 5.0
+## Velocity changes below this are not reported as impacts (m/s per tick).
+@export var impact_report_threshold := 1.0
+
 @export_group("Recovery")
 ## Body up·world up below this counts as overturned.
 @export var flipped_up_threshold := 0.3

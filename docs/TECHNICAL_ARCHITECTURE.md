@@ -17,6 +17,11 @@ Main (RaceSession, main.gd)          race rules: spawn, respawn, timer, finish
 │  ├─ ChassisShape, RiderShape
 │  ├─ PlayerInputSource              keyboard/gamepad → TrikeInput
 │  └─ Visuals (TrikeVisuals)         frame, wheels, fork, handlebar, flag, Rider (IK), particles
+├─ RiderCharacter (RiderController)  rider state machine (ejection → recovery)
+│  ├─ PlayerInputSource              on-foot input (WASD, E, R)
+│  ├─ Ragdoll (RiderRagdoll)         tumbling body while thrown (disabled otherwise)
+│  ├─ OnFoot (RiderOnFoot)           CharacterBody3D while on foot (disabled otherwise)
+│  └─ DizzyStars
 ├─ FollowCamera (Camera3D)
 ├─ HUD (CanvasLayer)
 └─ PauseMenu (CanvasLayer, process_mode Always)
@@ -58,6 +63,55 @@ steering, runs the drift state machine (start → charge → release boost) and
 the recovery timers.
 
 All numbers live in `TrikeConfig` (`resources/vehicles/default_trike_config.tres`).
+
+## Rider ejection and recovery (milestone 3)
+
+**State machine** (`RiderController`, one per player). All transitions go
+through `_change_state()`, which emits `state_changed(old, new)`:
+
+| State | Rider model | Physics body | Input goes to | Camera follows | Exit |
+|---|---|---|---|---|---|
+| RIDING | seated (child of trike, IK to grips) | trike | trike (`Trike.input_source`) | trike | impact ≥ `eject_impact_strength`, or tilted past `eject_tilt_up` for `eject_tilt_time` (not during `eject_grace_time`) |
+| EJECTED | top_level, flail pose | `RiderRagdoll` launched with ¾ of the pre-impact velocity + up + forward somersault | nobody (R = emergency) | ragdoll | first ground contact |
+| RAGDOLL | flail pose | ragdoll, ground damping | — | ragdoll | settled after `min_fall_time`, or `max_fall_time`, or lost |
+| GETTING_UP | blends from fallen pose to standing; push-up, head shake, scratch | `RiderOnFoot` placed on the ground (back on the road if thrown off it) | — | on-foot body | `get_up_duration` |
+| ON_FOOT | stand/run pose | `RiderOnFoot`, camera-relative WASD | RiderController | on-foot body | E within `mount_distance` of a slow trike |
+| MOUNTING | hop arc to the seat, IK reaching for the grips | none | — | trike | `mount_duration` → RIDING |
+
+**Separation of rider and vehicle:** the trike knows only `has_rider`. When
+it's false (`set_rider_aboard(false)`) the trike ignores input, applies
+`riderless_brake_deceleration`, skips air control and self-righting, and
+disables its rider collision capsule. Flip auto-recovery is off whenever a
+rider system is attached (`auto_recover_when_flipped`). Stuck auto-recovery
+only runs with a rider aboard. Mounting an overturned trike calls
+`Trike.set_upright()` in place (no respawn signal).
+
+**Impact detection** (`Trike._measure_impact`): each tick, the actual velocity
+is compared with the expected one (velocity we left the body with, plus our
+suspension forces, plus gravity). The difference comes from contacts. It's
+reported as `impact(strength, velocity_before)` above
+`impact_report_threshold`. Calibration (flat arena): head-on wall
+hits ≈ 1.1 × hit speed; glancing scrapes ≈ 1.3; crate at speed ≈ 1.8;
+3 m drop ≈ 0; full track autopilot run peaks at 1.75. Missing a corner into
+the barrier reads 1.6–5.2 at 8 of the 9 corners and 12.3 at the
+sharpest-angled one.
+
+**The thrown rider** is one rounded RigidBody (layer 4 "riders", mask world +
+vehicles + props) with procedural limb flailing. It ignores its own trike until
+1.6 m clear, then bounces off it. The spin wobble uses a seeded RNG
+(`fling_seed`), so replays and netcode can reproduce a tumble.
+
+**Race wiring** (`RaceSession`): `focus_changed` → `FollowCamera.set_target`
+(blended over 0.9 s, positions continuous); `mount_prompt_changed` → HUD
+prompt; `ejected` → "WIPEOUT!"-style message;
+`emergency_recovery_requested` (R while off) → trike to the last safe road
+point and `force_mount()`. The race clock keeps running. Finishing requires
+being on the trike.
+
+**Multiplayer readiness:** rider input is the same `TrikeInput` data
+(+`interact_pressed`). `get_sync_state()` returns state, state time, ragdoll
+transform/velocity and on-foot position/facing. Visuals are derived from that
+state only.
 
 ## Input abstraction (multiplayer-ready)
 
@@ -172,12 +226,15 @@ below the out-of-bounds depth, so a falling trike respawns before reaching it.
 
 | Path | Purpose |
 |---|---|
-| `scripts/vehicles/trike_controller.gd` | `Trike`: physics and gameplay state |
+| `scripts/vehicles/trike_controller.gd` | `Trike`: physics, gameplay state, impact reporting, riderless mode |
 | `scripts/vehicles/trike_config.gd` | `TrikeConfig`: tuning resource |
 | `scripts/vehicles/trike_input.gd` | `TrikeInput`: control data |
 | `scripts/vehicles/player_input_source.gd` | Local input → `TrikeInput` |
 | `scripts/vehicles/trike_visuals.gd` | Cosmetic wheel/fork/rider/effects |
-| `scripts/characters/rider.gd` | Rider pose: lean, chest twist, two-bone IK limbs |
+| `scripts/characters/rider.gd` | Rider pose: ride (lean, chest twist, IK to bars) and off-trike modes (flail, get-up, stand/run) |
+| `scripts/rider/rider_controller.gd` | `RiderController`: ejection/recovery state machine |
+| `scripts/rider/rider_config.gd` | `RiderConfig`: all ejection/fall/on-foot/mount values |
+| `scripts/rider/rider_ragdoll.gd`, `rider_on_foot.gd` | Falling body and walking body |
 | `scripts/camera/follow_camera.gd` | Chase camera |
 | `scripts/track/*.gd` | Track path, mesh builder, track node, gate, props, decor |
 | `scripts/race/vehicle_progress.gd` | Per-racer progress and respawn point |

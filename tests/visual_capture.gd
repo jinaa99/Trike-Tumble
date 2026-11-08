@@ -3,12 +3,12 @@ extends Node
 ## Needs a visible window (not --headless). Usage:
 ##   Godot --path . --fixed-fps 60 --always-on-top --resolution 1280x720 \
 ##     --scene res://tests/visual_capture.tscn -- <output_dir> [modes...]
-## Modes (default: all): closeup overview drive pause perf
+## Modes (default: all): closeup overview drive pause eject perf
 ## "perf" must run WITHOUT --fixed-fps to measure real frame rate.
 
 const MAIN_SCENE := preload("res://scenes/main/main.tscn")
 const DRIVE_SHOTS: Array[float] = [0.5, 4.0, 9.0, 12.6, 14.4, 20.0, 27.0, 34.0]
-const ALL_MODES: Array[String] = ["closeup", "overview", "drive", "pause"]
+const ALL_MODES: Array[String] = ["closeup", "overview", "drive", "pause", "eject"]
 
 var _out_dir := "user://captures"
 
@@ -37,6 +37,8 @@ func _run(modes: Array[String]) -> void:
 				await _capture_drive()
 			"pause":
 				await _capture_pause()
+			"eject":
+				await _capture_eject()
 			"perf":
 				await _measure_performance()
 	get_tree().quit()
@@ -197,6 +199,115 @@ func _capture_pause() -> void:
 	await _save("pause_menu")
 	main.pause_menu.set_paused(false)
 	await _unload(main)
+
+
+## Wipeout sequence: thrown off at speed, tumble, get up, run back, get on.
+## Ejection is triggered via RiderController.eject() so the shots are
+## repeatable; real crash ejection is covered by the automated tests.
+func _capture_eject() -> void:
+	var main := _load_main()
+	var trike := main.trike
+	var rider := main.rider
+	rider.input_source = null
+	var pilot := TrackAutopilot.new(main.track, trike)
+	for i in 60 * 5:
+		pilot.drive()
+		await get_tree().physics_frame
+	trike.input.clear()
+	rider.eject(14.0)
+	var shots := {0.12: "eject_00_thrown", 0.45: "eject_01_flying", 0.9: "eject_02_tumble"}
+	var t := 0.0
+	while rider.state != RiderController.State.GETTING_UP and t < 3.0:
+		await get_tree().physics_frame
+		t += 1.0 / 60.0
+		for at: float in shots.keys():
+			if absf(t - at) < 0.5 / 60.0:
+				await _save(shots[at])
+	var getup_shots := {0.15: "eject_03_push_up", 0.55: "eject_04_head_shake", 0.85: "eject_05_confused"}
+	while rider.state == RiderController.State.GETTING_UP:
+		await get_tree().physics_frame
+		for at: float in getup_shots.keys():
+			if absf(rider.state_time - at) < 0.5 / 60.0:
+				await _save(getup_shots[at])
+	# Close-up of the dizzy rider (free camera), then back to the follow camera.
+	await _wait_physics(5)
+	# Run back toward the trike with camera-relative input.
+	var camera := main.follow_camera
+	for i in 60 * 6:
+		var to_trike := trike.global_position - rider.on_foot.global_position
+		to_trike.y = 0.0
+		if to_trike.length() < 1.8:
+			break
+		var fwd := -camera.global_basis.z
+		fwd.y = 0.0
+		var right := camera.global_basis.x
+		right.y = 0.0
+		var d := to_trike.normalized()
+		rider.input.throttle = maxf(d.dot(fwd.normalized()), 0.0)
+		rider.input.brake = maxf(-d.dot(fwd.normalized()), 0.0)
+		rider.input.steer = d.dot(right.normalized())
+		await get_tree().physics_frame
+		if i == 25:
+			await _save("eject_06_running")
+	rider.input.clear()
+	await _wait_physics(20)
+	await _save("eject_07_prompt")
+	rider.input.interact_pressed = true
+	await _wait_physics(22)
+	await _save("eject_08_mounting")
+	while not rider.is_riding():
+		await get_tree().physics_frame
+	await _wait_physics(50)
+	await _save("eject_09_riding_again")
+	# Dizzy close-up from a fresh wipeout.
+	trike.input.throttle = 1.0
+	await _wait_physics(90)
+	trike.input.clear()
+	rider.eject(14.0)
+	while rider.state != RiderController.State.GETTING_UP:
+		await get_tree().physics_frame
+	while rider.state_time < 0.6:
+		await get_tree().physics_frame
+	camera.target = null
+	var head := rider.on_foot.global_position + Vector3.UP * 1.6
+	var facing := rider.on_foot.facing
+	camera.global_position = head + facing * Vector3(0.6, 0.2, -3.0)
+	camera.look_at(head + Vector3.UP * 0.1, Vector3.UP)
+	camera.fov = 45.0
+	await _frames(2)
+	await _save("eject_10_dizzy_closeup")
+	await _unload(main)
+	await _capture_real_crash()
+
+
+## A real crash on the track: miss the corner at sample 128 and hit the
+## outside barrier nearly head-on at full speed (measured impact ~12).
+func _capture_real_crash() -> void:
+	var main := _load_main()
+	var trike := main.trike
+	var rider := main.rider
+	rider.input_source = null
+	var start := 128 - 22
+	trike.teleport(main.track.path.get_frame(start).translated_local(Vector3(0, 0.8, 0)))
+	main.get_progress().reset(start)
+	await _wait_physics(10)
+	var t := 0
+	while rider.is_riding() and t < 60 * 5:
+		trike.input.throttle = 1.0
+		await get_tree().physics_frame
+		t += 1
+	trike.input.clear()
+	print("  real crash: state %s after %.1f s, ejections %d" % [rider.get_state_name(), t / 60.0, rider.eject_count])
+	await _wait_physics(10)
+	await _save("eject_11_real_crash")
+	await _wait_physics(30)
+	await _save("eject_12_real_crash_tumble")
+	await _unload(main)
+
+
+func _wait_physics(count: int) -> void:
+	for i in count:
+		await get_tree().physics_frame
 
 
 ## Real-time frame rate while the autopilot drives (run without --fixed-fps).

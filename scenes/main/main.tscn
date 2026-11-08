@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="5_hud"]
 
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="6_pause"]
+[ext_resource type="PackedScene" path="res://scenes/characters/rider_character.tscn" id="7_rider"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_material"]
 sky_top_color = Color(0.26, 0.53, 0.95, 1)
@@ -72,6 +73,9 @@ sky_mode = 1
 [node name="TestTrack" parent="." instance=ExtResource("2_track")]
 
 [node name="Trike" parent="." instance=ExtResource("3_trike")]
+
+[node name="RiderCharacter" parent="." node_paths=PackedStringArray("trike") instance=ExtResource("7_rider")]
+trike = NodePath("../Trike")
 
 [node name="FollowCamera" parent="." node_paths=PackedStringArray("target") instance=ExtResource("4_cam")]
 target = NodePath("../Trike")

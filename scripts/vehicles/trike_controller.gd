@@ -11,11 +11,19 @@ extends RigidBody3D
 ##
 ## Per-tick flow: _physics_process reads input and updates drift/recovery
 ## state, then the physics step calls _integrate_forces to apply forces.
+##
+## The trike knows nothing about the rider. A rider system calls
+## set_rider_aboard() and listens to `impact`, which reports the sudden
+## velocity change from collisions (anything the trike's own forces,
+## suspension and gravity don't explain).
 
 signal respawn_requested(trike: Trike)
 signal respawned
 signal drift_started(direction: int)
 signal drift_ended(boost_tier: int)
+## strength: unexplained velocity change in m/s this tick.
+## velocity_before: the velocity the trike would have had without the hit.
+signal impact(strength: float, velocity_before: Vector3)
 
 enum Wheel { FRONT, REAR_LEFT, REAR_RIGHT }
 const WHEEL_COUNT := 3
@@ -25,6 +33,9 @@ const WHEEL_COUNT := 3
 ## (tests, AI, network).
 @export var input_source: PlayerInputSource
 @export_flags_3d_physics var wheel_collision_mask := 0b101
+## Respawn automatically after lying overturned. A rider system turns this
+## off because it handles flips itself (the rider is thrown off instead).
+@export var auto_recover_when_flipped := true
 
 var input := TrikeInput.new()
 
@@ -39,6 +50,10 @@ var boost_time := 0.0
 var grounded_wheel_count := 0
 var wheel_contact: Array[bool] = [false, false, false]
 var wheel_suspension_length := PackedFloat32Array([0.0, 0.0, 0.0])
+## False while the rider is off the trike: input is ignored and it brakes gently.
+var has_rider := true
+## Strength of the latest impact (m/s), for debugging and tests.
+var last_impact_strength := 0.0
 
 var _wheel_mounts := PackedVector3Array()
 var _wheel_radii := PackedFloat32Array()
@@ -48,6 +63,12 @@ var _upside_down_time := 0.0
 var _stuck_time := 0.0
 var _pending_teleport := false
 var _teleport_transform := Transform3D.IDENTITY
+# Impact measurement: the velocity we left the body with last tick, plus the
+# velocity change our suspension forces will add during integration.
+var _baseline_valid := false
+var _velocity_after_forces := Vector3.ZERO
+var _force_dv := Vector3.ZERO
+var _suspension_force_sum := Vector3.ZERO
 
 
 # Wheel setup happens on enter_tree (parent before children) so child
@@ -76,7 +97,9 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if input_source:
+	if not has_rider:
+		input.clear()
+	elif input_source:
 		input_source.poll(input)
 	if input.reset_pressed:
 		input.reset_pressed = false
@@ -95,12 +118,14 @@ func _physics_process(delta: float) -> void:
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if _pending_teleport:
 		_pending_teleport = false
+		_baseline_valid = false
 		state.transform = _teleport_transform
 		state.linear_velocity = Vector3.ZERO
 		state.angular_velocity = Vector3.ZERO
 		return
 
 	var dt := state.step
+	_measure_impact(state, dt)
 	var xf := state.transform
 	var body_basis := xf.basis.orthonormalized()
 	var up := body_basis.y
@@ -109,9 +134,13 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var traction := grounded_wheel_count / float(WHEEL_COUNT)
 
 	if grounded_wheel_count == 0:
-		_apply_air_control(state, up, dt)
+		# Air control and self-righting need someone aboard; an empty
+		# overturned trike stays put until its rider gets back on.
+		if has_rider:
+			_apply_air_control(state, up, dt)
 		forward_speed = state.linear_velocity.dot(-body_basis.z)
 		_apply_drag(state, dt)
+		_store_impact_baseline(state)
 		return
 
 	# Heading and side directions projected onto the ground plane.
@@ -130,6 +159,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 
 	_apply_yaw(state, up, traction, dt)
 	_apply_upright(state, up, ground_normal, config.upright_strength, config.upright_damping, dt)
+	_store_impact_baseline(state)
 
 
 # --- Public API -------------------------------------------------------------
@@ -145,8 +175,33 @@ func request_respawn() -> void:
 		respawn_requested.emit(self)
 
 
+## Rider system hook. Without a rider the trike ignores input, drops any
+## drift/boost and brakes gently until it stops (it never moves on its own).
+func set_rider_aboard(aboard: bool) -> void:
+	has_rider = aboard
+	# The rider's collision capsule leaves with the rider.
+	var rider_shape := get_node_or_null(^"RiderShape") as CollisionShape3D
+	if rider_shape:
+		rider_shape.set_deferred(&"disabled", not aboard)
+	input.clear()
+	steer_amount = 0.0
+	if is_drifting:
+		_end_drift(false)
+	boost_time = 0.0
+	_upside_down_time = 0.0
+	_stuck_time = 0.0
+
+
+## Puts an overturned trike back on its wheels where it is (same spot,
+## same heading, lifted slightly). Not a respawn: emits no `respawned`.
+func set_upright() -> void:
+	teleport(_upright_transform_here(0.4), false)
+
+
 ## Instantly moves the trike, clearing velocities and drift/boost state.
-func teleport(target: Transform3D) -> void:
+## `notify` emits `respawned` (race logic and camera react to it).
+func teleport(target: Transform3D, notify := true) -> void:
+	_baseline_valid = false
 	_teleport_transform = target
 	_pending_teleport = true
 	global_transform = target
@@ -162,7 +217,8 @@ func teleport(target: Transform3D) -> void:
 	_upside_down_time = 0.0
 	_stuck_time = 0.0
 	reset_physics_interpolation()
-	respawned.emit()
+	if notify:
+		respawned.emit()
 
 
 ## For future items/collisions between racers.
@@ -199,12 +255,33 @@ func is_grounded() -> bool:
 
 # --- Physics helpers --------------------------------------------------------
 
+## Compares the velocity at the start of this tick with what our own forces,
+## the suspension and gravity should have produced. The difference came from
+## contacts: crashes, bumps, landings on the chassis.
+func _measure_impact(state: PhysicsDirectBodyState3D, dt: float) -> void:
+	if not _baseline_valid:
+		last_impact_strength = 0.0
+		return
+	var expected := _velocity_after_forces + _force_dv + state.total_gravity * dt
+	var strength := (state.linear_velocity - expected).length()
+	last_impact_strength = strength
+	if strength >= config.impact_report_threshold:
+		impact.emit(strength, expected)
+
+
+func _store_impact_baseline(state: PhysicsDirectBodyState3D) -> void:
+	_velocity_after_forces = state.linear_velocity
+	_force_dv = _suspension_force_sum * (state.step * state.inverse_mass)
+	_baseline_valid = true
+
+
 ## Raycast suspension. Returns the averaged ground normal (world up if airborne).
 func _apply_suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, up: Vector3) -> Vector3:
 	var space := state.get_space_state()
 	var normal_sum := Vector3.ZERO
 	var rest := config.suspension_rest_length
 	grounded_wheel_count = 0
+	_suspension_force_sum = Vector3.ZERO
 
 	for i in WHEEL_COUNT:
 		var radius := _wheel_radii[i]
@@ -226,6 +303,7 @@ func _apply_suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, up: Vec
 		var force := config.spring_strength * compression + config.spring_damping * compression_speed
 		force = clampf(force, 0.0, config.max_suspension_force)
 		state.apply_force(up * force, offset)
+		_suspension_force_sum += up * force
 
 		wheel_contact[i] = true
 		wheel_suspension_length[i] = length
@@ -265,6 +343,8 @@ func _apply_drive(velocity: Vector3, flat_forward: Vector3, dt: float) -> Vector
 		resist += config.rolling_resistance
 	if handbrake:
 		resist += config.handbrake_deceleration
+	if not has_rider:
+		resist += config.riderless_brake_deceleration
 	var resist_dv := minf(resist * dt, absf(forward_speed)) * signf(forward_speed)
 
 	velocity += flat_forward * (drive * dt - resist_dv)
@@ -374,13 +454,13 @@ func _end_drift(award_boost: bool) -> void:
 
 func _update_recovery(delta: float) -> void:
 	var overturned := global_basis.y.dot(Vector3.UP) < config.flipped_up_threshold
-	if overturned and grounded_wheel_count < 2:
+	if overturned and grounded_wheel_count < 2 and auto_recover_when_flipped:
 		_upside_down_time += delta
 	else:
 		_upside_down_time = 0.0
 
 	var trying := input.throttle > 0.1 or input.brake > 0.1
-	if trying and grounded_wheel_count < 2 and linear_velocity.length() < config.stuck_speed:
+	if trying and has_rider and grounded_wheel_count < 2 and linear_velocity.length() < config.stuck_speed:
 		_stuck_time += delta
 	else:
 		_stuck_time = 0.0
@@ -389,10 +469,10 @@ func _update_recovery(delta: float) -> void:
 		request_respawn()
 
 
-func _upright_transform_here() -> Transform3D:
+func _upright_transform_here(lift := 1.5) -> Transform3D:
 	var forward := -global_basis.z
 	forward.y = 0.0
 	if forward.length_squared() < 0.01:
 		forward = global_basis.y if absf(global_basis.y.y) < 0.9 else Vector3.FORWARD
 		forward.y = 0.0
-	return Transform3D(Basis.looking_at(forward.normalized(), Vector3.UP), global_position + Vector3.UP * 1.5)
+	return Transform3D(Basis.looking_at(forward.normalized(), Vector3.UP), global_position + Vector3.UP * lift)

@@ -63,6 +63,32 @@ expand_margin_bottom = -3.0
 offsets = PackedFloat32Array(0, 0.55, 1)
 colors = PackedColorArray(0.2, 0.86, 0.8, 1, 1, 0.84, 0.22, 1, 1, 0.48, 0.18, 1)
 
+[sub_resource type="StyleBoxFlat" id="prompt_panel"]
+content_margin_left = 14.0
+content_margin_top = 8.0
+content_margin_right = 22.0
+content_margin_bottom = 8.0
+bg_color = Color(0.14, 0.11, 0.3, 0.88)
+border_width_bottom = 4
+border_color = Color(1, 0.8, 0.2, 1)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[sub_resource type="StyleBoxFlat" id="prompt_key"]
+content_margin_left = 14.0
+content_margin_top = 2.0
+content_margin_right = 14.0
+content_margin_bottom = 5.0
+bg_color = Color(0.99, 0.97, 0.93, 1)
+border_width_bottom = 4
+border_color = Color(0.72, 0.68, 0.84, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1_hud")
 
@@ -282,3 +308,41 @@ text = "W / ↑   Accelerate      S / ↓   Brake
 A D / ← →   Steer
 SPACE + steer   Drift, release to BOOST
 R   Reset        ESC   Pause"
+
+[node name="PromptPanel" type="PanelContainer" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -130.0
+offset_top = -250.0
+offset_right = 130.0
+offset_bottom = -192.0
+grow_horizontal = 2
+grow_vertical = 0
+pivot_offset = Vector2(130, 29)
+mouse_filter = 2
+theme_override_styles/panel = SubResource("prompt_panel")
+
+[node name="HBox" type="HBoxContainer" parent="Root/PromptPanel"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 14
+
+[node name="Key" type="Label" parent="Root/PromptPanel/HBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.17, 0.14, 0.32, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 26
+theme_override_styles/normal = SubResource("prompt_key")
+text = "E"
+
+[node name="Action" type="Label" parent="Root/PromptPanel/HBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 28
+text = "GET ON"

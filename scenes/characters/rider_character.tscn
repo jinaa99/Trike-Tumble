@@ -1,0 +1,96 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/rider/rider_controller.gd" id="1_ctrl"]
+[ext_resource type="Resource" path="res://resources/rider/default_rider_config.tres" id="2_cfg"]
+[ext_resource type="Script" path="res://scripts/vehicles/player_input_source.gd" id="3_input"]
+[ext_resource type="Script" path="res://scripts/rider/rider_ragdoll.gd" id="4_ragdoll"]
+[ext_resource type="Script" path="res://scripts/rider/rider_on_foot.gd" id="5_onfoot"]
+
+[sub_resource type="PhysicsMaterial" id="phys_rider"]
+friction = 0.8
+bounce = 0.35
+
+[sub_resource type="CapsuleShape3D" id="shape_fall"]
+radius = 0.32
+height = 1.25
+
+[sub_resource type="CapsuleShape3D" id="shape_walk"]
+radius = 0.28
+height = 1.5
+
+[sub_resource type="SphereMesh" id="mesh_star"]
+radius = 0.11
+height = 0.09
+radial_segments = 5
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="mat_star"]
+shading_mode = 0
+albedo_color = Color(1, 0.9, 0.3, 1)
+emission_enabled = true
+emission = Color(1, 0.8, 0.2, 1)
+emission_energy_multiplier = 1.5
+
+[node name="RiderCharacter" type="Node3D" node_paths=PackedStringArray("input_source")]
+script = ExtResource("1_ctrl")
+config = ExtResource("2_cfg")
+input_source = NodePath("PlayerInputSource")
+
+[node name="PlayerInputSource" type="Node" parent="."]
+script = ExtResource("3_input")
+
+[node name="Ragdoll" type="RigidBody3D" parent="."]
+collision_layer = 8
+collision_mask = 7
+mass = 45.0
+physics_material_override = SubResource("phys_rider")
+gravity_scale = 1.4
+continuous_cd = true
+script = ExtResource("4_ragdoll")
+
+[node name="Shape" type="CollisionShape3D" parent="Ragdoll"]
+shape = SubResource("shape_fall")
+
+[node name="OnFoot" type="CharacterBody3D" parent="."]
+collision_layer = 8
+collision_mask = 7
+floor_snap_length = 0.3
+script = ExtResource("5_onfoot")
+
+[node name="Shape" type="CollisionShape3D" parent="OnFoot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.78, 0)
+shape = SubResource("shape_walk")
+
+[node name="DizzyStars" type="Node3D" parent="."]
+top_level = true
+
+[node name="Star1" type="MeshInstance3D" parent="DizzyStars"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.300, 0.000, 0.000)
+mesh = SubResource("mesh_star")
+material_override = SubResource("mat_star")
+cast_shadow = 0
+
+[node name="Star2" type="MeshInstance3D" parent="DizzyStars"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.093, -0.029, 0.285)
+mesh = SubResource("mesh_star")
+material_override = SubResource("mat_star")
+cast_shadow = 0
+
+[node name="Star3" type="MeshInstance3D" parent="DizzyStars"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.243, 0.048, 0.176)
+mesh = SubResource("mesh_star")
+material_override = SubResource("mat_star")
+cast_shadow = 0
+
+[node name="Star4" type="MeshInstance3D" parent="DizzyStars"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.243, -0.048, -0.176)
+mesh = SubResource("mesh_star")
+material_override = SubResource("mat_star")
+cast_shadow = 0
+
+[node name="Star5" type="MeshInstance3D" parent="DizzyStars"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.093, 0.029, -0.285)
+mesh = SubResource("mesh_star")
+material_override = SubResource("mat_star")
+cast_shadow = 0
+

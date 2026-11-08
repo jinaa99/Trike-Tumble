@@ -44,8 +44,9 @@ Details, the visual capture tool and the manual checklist: `docs/TESTING.md`.
 
 ```
 scenes/   main/ vehicles/ characters/ camera/ ui/ tracks/ props/
-scripts/  main/ vehicles/ characters/ camera/ ui/ track/ race/ props/ visuals/
+scripts/  main/ vehicles/ characters/ camera/ ui/ track/ race/ props/ visuals/ rider/
 resources/vehicles/default_trike_config.tres   # all handling values
+resources/rider/default_rider_config.tres      # ejection / fall / on-foot / mount values
 resources/ui/trike_theme.tres                  # shared UI theme (fonts, buttons, panels)
 tests/    test_runner (automated), visual_capture (screenshots/perf), track_autopilot
 docs/     design, roadmap, architecture, testing, screenshots/
@@ -87,7 +88,25 @@ docs/     design, roadmap, architecture, testing, screenshots/
 - `SceneTree.physics_frame` fires *before* `_physics_process`, and
   `process_frame` before `_process`. Tests that read state right after
   awaiting need an extra tick, or must call the update themselves.
+- `docs/.gdignore` keeps Godot from importing screenshots as game assets.
 - The macOS capture window must stay visible (`--always-on-top`), or frames
   may be stale.
+- **Rider vs. trike state are separate.** `RiderController` (scenes/characters/
+  rider_character.tscn) owns the rider states (RIDING, EJECTED, RAGDOLL,
+  GETTING_UP, ON_FOOT, MOUNTING). The trike only knows `has_rider`
+  (`set_rider_aboard`). Change states only through `_change_state()`.
+- Riderless trike: ignores input, brakes gently, no air control or
+  self-righting, rider collision capsule disabled. It never moves toward the
+  rider. Mounting rights an overturned trike in place (`set_upright`, not a respawn).
+- `Trike.impact(strength, velocity_before)`: unexplained velocity change per
+  tick (collisions). Measured head-on wall hits read ~1.1x hit speed; scrapes,
+  crates and ramp landings stay under ~2.5. Eject threshold is in RiderConfig.
+- The rider model (`Visuals/Rider`) leaves the trike by switching to
+  `top_level` while off, and RiderController drives its transform and pose.
+  TrikeVisuals only poses it while it is seated.
+- `Trike.teleport(xf, notify)`: `notify=false` doesn't emit `respawned` (use
+  it for setup/uprighting so it doesn't count as a respawn).
+- Teleporting the trike far in the race scene: also `RaceSession.get_progress().reset(index)`,
+  or the out-of-bounds check sends it back.
 - If the Godot editor is open while files change on disk, let it reload. Saving
   stale editor state can overwrite `project.godot` (input map, renderer).

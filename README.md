@@ -7,9 +7,11 @@ Godot 4.7.2 · GDScript · Mobile renderer.
 `<godot-binary> --path .`
 
 **Controls:** W/↑ accelerate · S/↓ brake/reverse · A/D/←/→ steer ·
-SPACE + steer drift (release for boost) · R reset · ESC pause
+SPACE + steer drift (release for boost) · R reset · ESC pause ·
+after a wipeout: WASD/arrows run, E get back on the trike
 
-Screenshots: [docs/screenshots/milestone_02](docs/screenshots/milestone_02)
+Screenshots: [milestone 02](docs/screenshots/milestone_02) ·
+[milestone 03 (wipeouts)](docs/screenshots/milestone_03)
 
 Docs: [CLAUDE.md](CLAUDE.md) · [Game design](docs/GAME_DESIGN.md) ·
 [Roadmap](docs/ROADMAP.md) · [Architecture](docs/TECHNICAL_ARCHITECTURE.md) ·

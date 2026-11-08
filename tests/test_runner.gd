@@ -7,6 +7,8 @@ extends Node
 const MAIN_SCENE := preload("res://scenes/main/main.tscn")
 const TRIKE_SCENE := preload("res://scenes/vehicles/trike.tscn")
 const CRATE_SCENE := preload("res://scenes/props/crate.tscn")
+const RIDER_SCENE := preload("res://scenes/characters/rider_character.tscn")
+const CAMERA_SCENE := preload("res://scenes/camera/follow_camera.tscn")
 const REQUIRED_ACTIONS: Array[StringName] = [
 	&"accelerate", &"brake", &"steer_left", &"steer_right", &"drift", &"reset", &"pause",
 ]
@@ -39,6 +41,13 @@ func _run_all() -> void:
 	await _test_out_of_bounds_respawn()
 	await _test_pause()
 	await _test_visuals_follow_physics()
+	await _test_rider_riding_normally()
+	await _test_rider_weak_impacts()
+	await _test_rider_full_recovery_loop()
+	await _test_rider_overturn_and_flipped_mount()
+	await _test_rider_no_auto_respawn()
+	await _test_rider_in_race_scene()
+	await _test_rider_real_track_crash()
 	await _test_scenery_clear_of_road()
 	await _test_full_track_run()
 	print("\n=== RESULT: %d passed, %d failed ===" % [_passed, _failed])
@@ -459,6 +468,11 @@ func _test_visuals_follow_physics() -> void:
 	print("\n[Visuals follow physics]")
 	var main := _load_main()
 	var trike: Trike = main.get_node("Trike")
+	# This test is about the riding pose; keep the rider aboard even if the
+	# forced full-lock drift hits a barrier (own copy of the config).
+	main.rider.config = main.rider.config.duplicate()
+	main.rider.config.eject_impact_strength = INF
+	main.rider.config.eject_tilt_up = -2.0
 	var visuals: TrikeVisuals = trike.get_node("Visuals")
 	var rider: Rider = trike.get_node("Visuals/Rider")
 	var wheels: Array[Node3D] = [trike.get_node("Visuals/FrontPivot/FrontWheel"),
@@ -512,6 +526,330 @@ func _test_scenery_clear_of_road() -> void:
 	await get_tree().process_frame
 
 
+# --- Rider ejection & recovery ------------------------------------------------
+
+## Trike + rider + follow camera in the flat arena, wired like the race scene.
+func _rider_rig(position := Vector3(0.0, 0.9, 0.0)) -> Dictionary:
+	var trike := _spawn_trike(position)
+	var rider: RiderController = RIDER_SCENE.instantiate()
+	_arena.add_child(rider)
+	rider.input_source = null
+	rider.attach_to(trike)
+	var camera: FollowCamera = CAMERA_SCENE.instantiate()
+	_arena.add_child(camera)
+	camera.current = true
+	camera.target = trike
+	camera.snap_to_target()
+	rider.focus_changed.connect(camera.set_target)
+	var states: Array[String] = []
+	rider.state_changed.connect(func(_old: int, new_state: int) -> void:
+		states.append(RiderController.STATE_NAMES[new_state]))
+	var respawns := [0]
+	trike.respawned.connect(func() -> void: respawns[0] += 1)
+	return {"trike": trike, "rider": rider, "camera": camera, "states": states, "respawns": respawns}
+
+
+## Drives straight at `target_speed` (m/s) for up to `seconds`, stopping early
+## when the rider leaves the trike.
+func _drive_until(rig: Dictionary, target_speed: float, seconds: float) -> void:
+	var trike: Trike = rig["trike"]
+	var rider: RiderController = rig["rider"]
+	for i in _ticks(seconds):
+		trike.input.throttle = 1.0 if trike.forward_speed < target_speed else 0.0
+		await get_tree().physics_frame
+		if not rider.is_riding():
+			break
+	trike.input.clear()
+
+
+func _wait_for_state(rider: RiderController, wanted: RiderController.State, seconds: float) -> float:
+	var t := 0.0
+	while rider.state != wanted and t < seconds:
+		await get_tree().physics_frame
+		t += 1.0 / Engine.physics_ticks_per_second
+	return t
+
+
+func _test_rider_riding_normally() -> void:
+	print("\n[Rider: normal riding]")
+	await _new_arena()
+	var rig := _rider_rig()
+	var trike: Trike = rig["trike"]
+	var rider: RiderController = rig["rider"]
+	await _wait(0.5)
+	await _hold(trike, 2.0, 1.0)
+	await _hold(trike, 1.5, 1.0, 0.0, 1.0, true)
+	await _hold(trike, 1.0, 0.0, 1.0)
+	_check(rider.is_riding() and rider.eject_count == 0, "accelerating, drifting and braking never eject",
+			"(state %s)" % rider.get_state_name())
+	_check(trike.has_rider and (rig["camera"] as FollowCamera).target == trike, "trike has its rider and the camera")
+
+
+func _test_rider_weak_impacts() -> void:
+	print("\n[Rider: weak impacts]")
+	await _new_arena()
+	_add_static_box(Vector3(12.0, 3.0, 1.0), Vector3(0.0, 1.5, -30.0))
+	var rig := _rider_rig()
+	var rider: RiderController = rig["rider"]
+	var trike: Trike = rig["trike"]
+	await _wait(0.3)
+	var peak := 0.0
+	for i in _ticks(8.0):
+		trike.input.throttle = 1.0 if trike.forward_speed < 5.0 else 0.0
+		await get_tree().physics_frame
+		peak = maxf(peak, trike.last_impact_strength)
+	trike.input.clear()
+	_check(peak > 3.0, "slow head-on wall hit registers an impact (setup)", "(peak %.1f)" % peak)
+	_check(rider.is_riding(), "an 18 km/h wall bump does not eject", "(threshold %.1f)" % rider.config.eject_impact_strength)
+	# Crate at full speed.
+	var crate: RigidBody3D = CRATE_SCENE.instantiate()
+	_arena.add_child(crate)
+	crate.global_position = trike.global_position + Vector3(-6.0, 0.6, 26.0)
+	trike.teleport(Transform3D(Basis(Vector3.UP, PI), trike.global_position + Vector3(-6.0, 0.4, 0.0)))
+	await _hold(trike, 3.5, 1.0)
+	_check(rider.is_riding() and rider.eject_count == 0, "smashing a crate at speed does not eject",
+			"(crate moved %.1f m)" % crate.global_position.distance_to(trike.global_position))
+
+
+## Crash -> fly -> tumble -> get up -> walk -> mount, checking timing,
+## camera, trike behaviour and controls along the way.
+func _test_rider_full_recovery_loop() -> void:
+	print("\n[Rider: crash and full recovery loop]")
+	await _new_arena()
+	_add_static_box(Vector3(14.0, 3.0, 1.0), Vector3(0.0, 1.5, -60.0))
+	var rig := _rider_rig()
+	var trike: Trike = rig["trike"]
+	var rider: RiderController = rig["rider"]
+	var camera: FollowCamera = rig["camera"]
+	var states: Array[String] = rig["states"]
+	await _wait(0.3)
+	await _drive_until(rig, 18.0, 8.0)
+	_check(rider.state == RiderController.State.EJECTED and rider.eject_count == 1,
+			"head-on wall hit at ~65 km/h ejects the rider", "(impact peak %.1f)" % trike.last_impact_strength)
+	_check(not trike.has_rider, "trike controls are cut while the rider is off")
+
+	var model: Rider = trike.get_node("Visuals/Rider")
+	var trike_start := trike.global_position
+	var max_trike_step := 0.0
+	var max_cam_step := 0.0
+	var last_trike := trike.global_position
+	var last_cam := camera.global_position
+	var max_separation := 0.0
+	var camera_targets := {}
+	var fall_time := 0.0
+	var get_up_time := 0.0
+	# Fall and get up with no input at all.
+	for i in _ticks(6.0):
+		await get_tree().physics_frame
+		max_trike_step = maxf(max_trike_step, trike.global_position.distance_to(last_trike))
+		max_cam_step = maxf(max_cam_step, camera.global_position.distance_to(last_cam))
+		last_trike = trike.global_position
+		last_cam = camera.global_position
+		max_separation = maxf(max_separation, model.global_position.distance_to(trike.global_position))
+		camera_targets[rider.get_state_name()] = camera.target
+		if rider.state == RiderController.State.EJECTED or rider.state == RiderController.State.RAGDOLL:
+			fall_time += 1.0 / Engine.physics_ticks_per_second
+		elif rider.state == RiderController.State.GETTING_UP:
+			get_up_time += 1.0 / Engine.physics_ticks_per_second
+		# Extra impacts on the riderless trike must not re-trigger anything.
+		if i == 30:
+			trike.apply_central_impulse(trike.linear_velocity.normalized() * 600.0 if trike.linear_velocity.length() > 0.1 else Vector3(0, 0, 600))
+		if rider.state == RiderController.State.ON_FOOT and rider.state_time > 0.5:
+			break
+	_check(states.slice(0, 4) == ["EJECTED", "RAGDOLL", "GETTING_UP", "ON_FOOT"],
+			"states go EJECTED -> RAGDOLL -> GETTING_UP -> ON_FOOT", "(%s)" % ", ".join(states))
+	_check(rider.eject_count == 1, "no repeated ejection while already off the trike")
+	_check(max_separation > 2.0, "rider visibly flies away from the trike", "(max %.1f m apart)" % max_separation)
+	_check(fall_time >= 0.9 and fall_time <= 2.2, "fall lasts about 1-2 s", "(%.2f s)" % fall_time)
+	_check(get_up_time >= 0.8 and get_up_time <= 1.25, "get-up animation lasts about 1 s", "(%.2f s)" % get_up_time)
+	_check(rider.on_foot.is_on_floor(), "rider ends up standing on the ground")
+	_check(camera_targets.get("RAGDOLL") == rider.ragdoll and camera_targets.get("ON_FOOT") == rider.on_foot,
+			"camera follows the falling rider, then the rider on foot")
+	_check(max_trike_step < 0.6 and (rig["respawns"] as Array)[0] == 0, "trike never teleports while riderless",
+			"(max step %.2f m/tick, %d respawns)" % [max_trike_step, (rig["respawns"] as Array)[0]])
+	_check(trike.linear_velocity.length() < 0.5, "abandoned trike comes to rest", "(%.2f m/s, %.1f m from crash)" % [
+			trike.linear_velocity.length(), trike.global_position.distance_to(trike_start)])
+
+	# On-foot movement is camera relative and doesn't drive the trike.
+	# Start in open ground beside the trike (the rider may have landed by the wall).
+	var open_spot := trike.global_position + Vector3(8.0, 0.0, 12.0)
+	rider.on_foot.activate(Vector3(open_spot.x, 0.0, open_spot.z), Vector3.FORWARD)
+	for i in _ticks(1.5):
+		await get_tree().physics_frame
+		last_cam = camera.global_position
+	var cam_forward := -camera.global_basis.z
+	cam_forward.y = 0.0
+	cam_forward = cam_forward.normalized()
+	var cam_right := camera.global_basis.x
+	cam_right.y = 0.0
+	cam_right = cam_right.normalized()
+	var trike_before := trike.global_position
+	var start := rider.on_foot.global_position
+	for i in _ticks(1.0):
+		rider.input.throttle = 1.0
+		await get_tree().physics_frame
+		max_cam_step = maxf(max_cam_step, camera.global_position.distance_to(last_cam))
+		last_cam = camera.global_position
+	rider.input.clear()
+	var moved := rider.on_foot.global_position - start
+	_check(moved.dot(cam_forward) > 3.5, "W walks away from the camera (camera-relative forward)", "(%.1f m)" % moved.dot(cam_forward))
+	start = rider.on_foot.global_position
+	var right_now := camera.global_basis.x
+	right_now.y = 0.0
+	for i in _ticks(0.8):
+		rider.input.steer = 1.0
+		await get_tree().physics_frame
+	rider.input.clear()
+	moved = rider.on_foot.global_position - start
+	_check(moved.dot(right_now.normalized()) > 2.0, "D strafes to the camera's right", "(%.1f m)" % moved.dot(right_now.normalized()))
+	_check(trike.global_position.distance_to(trike_before) < 0.2, "walking input does not drive the trike")
+
+	# Too far: no prompt, E does nothing.
+	var far_spot := trike.global_position + trike.global_basis.x * 6.0
+	rider.on_foot.activate(Vector3(far_spot.x, 0.0, far_spot.z), -trike.global_basis.x)
+	await _wait(0.2)
+	rider.input.interact_pressed = true
+	await _wait(0.3)
+	_check(not rider.can_mount and rider.state == RiderController.State.ON_FOOT,
+			"E does nothing 6 m from the trike", "(mount distance %.1f m)" % rider.config.mount_distance)
+	# Close enough: prompt appears, E mounts.
+	var near_spot := trike.global_position + trike.global_basis.x * 1.4
+	rider.on_foot.activate(Vector3(near_spot.x, 0.0, near_spot.z), -trike.global_basis.x)
+	await _wait(0.2)
+	_check(rider.can_mount, "[E] GET ON is offered within reach",
+			"(%.1f m)" % rider.on_foot.global_position.distance_to(trike.global_position))
+	# Measure the camera through the mount transition (test teleports above excluded).
+	await get_tree().process_frame
+	last_cam = camera.global_position
+	rider.input.interact_pressed = true
+	var mount_time := 0.0
+	while not rider.is_riding() and mount_time < 2.0:
+		await get_tree().process_frame
+		mount_time += 1.0 / Engine.physics_ticks_per_second
+		max_cam_step = maxf(max_cam_step, camera.global_position.distance_to(last_cam))
+		last_cam = camera.global_position
+	_check(rider.is_riding() and states.has("MOUNTING"), "E plays the mount and returns to RIDING", "(%.2f s)" % mount_time)
+	await _wait(0.1)
+	_check(not model.top_level and model.get_parent().name == "Visuals", "rider model is back on the seat")
+	_check(model.get_max_ik_error() < 0.02, "hands are back on the handlebar", "(IK error %.3f m)" % model.get_max_ik_error())
+	var cam_settle := 0.0
+	for i in _ticks(1.0):
+		await get_tree().process_frame
+		max_cam_step = maxf(max_cam_step, camera.global_position.distance_to(last_cam))
+		last_cam = camera.global_position
+		cam_settle += 1.0
+	_check(camera.target == trike, "camera is back on the trike after mounting")
+	_check(max_cam_step < 1.0, "camera never cuts during the whole loop", "(max %.2f m per frame)" % max_cam_step)
+	# The trike may face the crash wall, so test with reverse.
+	await _hold(trike, 1.5, 0.0, 1.0)
+	_check(trike.forward_speed < -3.0, "vehicle controls work again after mounting", "(reversing at %.1f m/s)" % trike.forward_speed)
+
+
+func _test_rider_overturn_and_flipped_mount() -> void:
+	print("\n[Rider: overturn]")
+	await _new_arena()
+	var rig := _rider_rig()
+	var trike: Trike = rig["trike"]
+	var rider: RiderController = rig["rider"]
+	await _wait(0.5)
+	trike.teleport(Transform3D(Basis(Vector3.FORWARD, PI * 0.9), Vector3(0.0, 1.6, 0.0)), false)
+	var t := await _wait_for_state(rider, RiderController.State.EJECTED, 1.0)
+	_check(rider.state == RiderController.State.EJECTED, "overturning throws the rider off", "(after %.2f s)" % t)
+	await _wait_for_state(rider, RiderController.State.ON_FOOT, 4.0)
+	await _wait(2.0)
+	_check(trike.global_basis.y.y < 0.0 and (rig["respawns"] as Array)[0] == 0,
+			"overturned riderless trike is not auto-recovered", "(up.y %.2f)" % trike.global_basis.y.y)
+	var spot := trike.global_position + Vector3(1.5, 0.0, 0.0)
+	rider.on_foot.activate(Vector3(spot.x, 0.0, spot.z), Vector3.LEFT)
+	await _wait(0.2)
+	rider.input.interact_pressed = true
+	await _wait_for_state(rider, RiderController.State.RIDING, 2.0)
+	await _wait(0.8)
+	_check(rider.is_riding() and trike.global_basis.y.y > 0.95 and trike.grounded_wheel_count == 3,
+			"getting on puts an overturned trike back on its wheels", "(up.y %.2f)" % trike.global_basis.y.y)
+	_check((rig["respawns"] as Array)[0] == 0, "...without a respawn/teleport to the rider")
+
+
+func _test_rider_no_auto_respawn() -> void:
+	print("\n[Rider: no automatic respawn]")
+	await _new_arena()
+	var rig := _rider_rig()
+	var trike: Trike = rig["trike"]
+	var rider: RiderController = rig["rider"]
+	await _wait(0.3)
+	await _hold(trike, 1.5, 1.0)
+	var trike_spot := trike.global_position
+	rider.eject()
+	await _wait(10.0)
+	_check(rider.state == RiderController.State.ON_FOOT, "rider waits on foot (never auto-mounted)", "(state %s)" % rider.get_state_name())
+	_check((rig["respawns"] as Array)[0] == 0 and not trike.has_rider, "no automatic respawn in 10 s")
+	_check(trike.global_position.distance_to(trike_spot) < 25.0, "trike stays near where it was abandoned",
+			"(%.1f m)" % trike.global_position.distance_to(trike_spot))
+
+
+## Race-scene wiring: HUD prompt, emergency R, race continues.
+func _test_rider_in_race_scene() -> void:
+	print("\n[Rider: race scene wiring]")
+	var main := _load_main()
+	var trike := main.trike
+	var rider := main.rider
+	rider.input_source = null
+	await _wait(1.0)
+	await _hold(trike, 2.0, 1.0)
+	var time_before := main.get_race_time()
+	rider.eject()
+	await _wait_for_state(rider, RiderController.State.ON_FOOT, 4.0)
+	_check(main.follow_camera.target == rider.on_foot, "race camera follows the rider on foot")
+	_check(main.get_race_time() > time_before + 1.0, "race timer keeps running during recovery")
+	var spot := trike.global_position + trike.global_basis.x * 1.2
+	rider.on_foot.activate(spot, -trike.global_basis.x)
+	await _wait(0.3)
+	await get_tree().process_frame
+	_check(main.hud.is_mount_prompt_visible(), "HUD shows the [E] GET ON prompt near the trike")
+	# Walk away and use the emergency reset instead.
+	rider.on_foot.activate(spot + trike.global_basis.x * 6.0, trike.global_basis.x)
+	await _wait(0.3)
+	_check(not main.hud.is_mount_prompt_visible(), "prompt hides when out of reach")
+	rider.input.reset_pressed = true
+	await _wait(0.5)
+	var index := main.track.path.find_nearest(trike.global_position)
+	_check(rider.is_riding() and main.track.is_on_road(trike.global_position, index),
+			"R on foot = emergency recovery: back on the trike, on the road")
+	_check(main.follow_camera.target == trike, "camera returns to the trike after emergency recovery")
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## Real crash on the real track: miss a corner, hit the barrier, get thrown
+## over it, and get up back on the road (not stranded outside the barrier).
+func _test_rider_real_track_crash() -> void:
+	print("\n[Rider: real crash on the track]")
+	var main := _load_main()
+	var trike := main.trike
+	var rider := main.rider
+	rider.input_source = null
+	var start := 128 - 22
+	trike.teleport(main.track.path.get_frame(start).translated_local(Vector3(0, 0.8, 0)))
+	main.get_progress().reset(start)
+	await _wait(0.2)
+	var t := 0.0
+	while rider.is_riding() and t < 5.0:
+		trike.input.throttle = 1.0
+		await get_tree().physics_frame
+		t += 1.0 / Engine.physics_ticks_per_second
+	trike.input.clear()
+	_check(rider.eject_count == 1, "missing a corner into the barrier at full speed ejects the rider", "(after %.1f s)" % t)
+	await _wait_for_state(rider, RiderController.State.ON_FOOT, 4.0)
+	var spot := rider.on_foot.global_position
+	var index := main.track.path.find_nearest(spot)
+	_check(rider.state == RiderController.State.ON_FOOT and main.track.is_on_road(spot, index),
+			"rider gets up on the road, even if thrown over the barrier")
+	_check(spot.distance_to(trike.global_position) < 15.0, "and close to the trike",
+			"(%.1f m)" % spot.distance_to(trike.global_position))
+	main.queue_free()
+	await get_tree().process_frame
+
+
 func _test_full_track_run() -> void:
 	print("\n[Full downhill run with autopilot]")
 	var main := _load_main()
@@ -536,6 +874,8 @@ func _test_full_track_run() -> void:
 	_check(main.is_race_finished(), "autopilot reaches the finish line",
 			"(%.1f s race time, %.0f m)" % [main.get_race_time(), progress.get_distance()])
 	_check(respawns[0] <= 3, "run needs few respawns", "(%d respawns)" % respawns[0])
+	_check(main.rider.eject_count == 0, "a clean race run (ramps, crates, cones, corners) never ejects the rider",
+			"(%d ejections)" % main.rider.eject_count)
 	print("        info: top speed %.0f km/h, airtime %.1f s" % [max_speed * 3.6, airtime])
 	main.queue_free()
 	await get_tree().process_frame

@@ -8,6 +8,13 @@ extends Camera3D
 ## drops a little, looks further down the road and widens its FOV, which
 ## sells downhill speed without shaking. A sphere cast keeps it out of walls
 ## and terrain.
+##
+## Two modes, picked from the target type:
+## - Vehicle (target is a Trike): the chase framing above.
+## - Character (rider falling or on foot): a "dragged" follow camera that
+##   keeps its distance and never auto-turns, so camera-relative walking
+##   stays stable.
+## set_target() blends between targets without cuts.
 
 @export var target: Node3D
 
@@ -42,6 +49,15 @@ extends Camera3D
 ## Extra FOV while boosting.
 @export var boost_fov_kick := 6.0
 
+@export_group("Character mode")
+@export var character_distance := 4.6
+@export var character_height := 2.3
+@export var character_look_height := 0.9
+## How long a target change blends (seconds).
+@export var transition_time := 0.9
+## Follow stiffness at the start of a transition (1/s).
+@export var transition_smoothing := 3.0
+
 @export_group("Collision")
 @export_flags_3d_physics var collision_mask := 1
 @export var collision_radius := 0.3
@@ -53,6 +69,7 @@ var _focus := Vector3.ZERO
 var _speed_ratio := 0.0
 var _travel_dir := Vector3.FORWARD
 var _probe := SphereShape3D.new()
+var _transition_left := 0.0
 
 
 func _ready() -> void:
@@ -65,30 +82,64 @@ func _process(delta: float) -> void:
 	if target == null:
 		return
 	var xf := target.get_global_transform_interpolated()
-	_yaw = lerp_angle(_yaw, _target_yaw(xf), 1.0 - exp(-yaw_smoothing * delta))
-	_speed_ratio = lerpf(_speed_ratio, _target_speed_ratio(), 1.0 - exp(-framing_smoothing * delta))
-	_travel_dir = _travel_dir.slerp(_target_travel_dir(xf), 1.0 - exp(-framing_smoothing * delta)).normalized()
+	# During a transition everything follows more softly, then tightens up.
+	var blend := 1.0
+	if _transition_left > 0.0:
+		_transition_left = maxf(_transition_left - delta, 0.0)
+		blend = 1.0 - _transition_left / transition_time
+	var follow := lerpf(transition_smoothing, follow_smoothing, blend)
+	var vertical := lerpf(transition_smoothing, vertical_smoothing, blend)
 
+	_speed_ratio = lerpf(_speed_ratio, _target_speed_ratio(), 1.0 - exp(-framing_smoothing * delta))
 	var horizontal := Vector3(xf.origin.x, _focus.y, xf.origin.z)
-	_focus = _focus.lerp(horizontal, 1.0 - exp(-follow_smoothing * delta))
-	_focus.y = lerpf(_focus.y, xf.origin.y, 1.0 - exp(-vertical_smoothing * delta))
-	_place()
+	_focus = _focus.lerp(horizontal, 1.0 - exp(-follow * delta))
+	_focus.y = lerpf(_focus.y, xf.origin.y, 1.0 - exp(-vertical * delta))
+
+	var previous := global_position
+	if is_character_mode():
+		_place_character()
+	else:
+		_yaw = lerp_angle(_yaw, _target_yaw(xf), 1.0 - exp(-yaw_smoothing * delta))
+		_travel_dir = _travel_dir.slerp(_target_travel_dir(xf), 1.0 - exp(-framing_smoothing * delta)).normalized()
+		_place()
+	if _transition_left > 0.0:
+		global_position = previous.lerp(global_position, 1.0 - exp(-lerpf(4.0, 30.0, blend) * delta))
 	_update_fov(delta)
+
+
+## Switches what the camera follows, blending over transition_time.
+func set_target(node: Node3D, blend := true) -> void:
+	target = node
+	_transition_left = transition_time if blend else 0.0
+	if not blend:
+		snap_to_target()
+
+
+func is_character_mode() -> bool:
+	return target != null and not (target is Trike)
+
+
+func is_transitioning() -> bool:
+	return _transition_left > 0.0
 
 
 func snap_to_target() -> void:
 	if target == null:
 		return
 	var xf := target.global_transform
-	_yaw = _target_yaw(xf)
 	_focus = xf.origin
 	_speed_ratio = _target_speed_ratio()
+	_transition_left = 0.0
+	if is_character_mode():
+		_place_character()
+		return
+	_yaw = _target_yaw(xf)
 	_travel_dir = _target_travel_dir(xf)
 	_place()
 
 
 func _target_speed_ratio() -> float:
-	var body := target as RigidBody3D
+	var body := target as Trike
 	if body == null:
 		return 0.0
 	return clampf(body.linear_velocity.length() / full_speed, 0.0, 1.0)
@@ -133,6 +184,21 @@ func _place() -> void:
 	var slope := clampf(_travel_dir.y, -0.5, 0.3)
 	var flat := sqrt(maxf(1.0 - slope * slope, 0.01))
 	look_at(pivot - back * ahead + Vector3.UP * (slope / flat) * ahead, Vector3.UP)
+
+
+## Character mode: stay where we are relative to the target, at a fixed
+## distance (dragged along), and look at the character.
+func _place_character() -> void:
+	var away := global_position - _focus
+	away.y = 0.0
+	if away.length_squared() < 0.01:
+		away = Vector3(sin(_yaw), 0.0, cos(_yaw))
+	away = away.normalized()
+	_yaw = atan2(away.x, away.z)  # keeps vehicle mode continuous after the switch
+	var pivot := _focus + Vector3.UP * character_look_height
+	var desired := _focus + away * character_distance + Vector3.UP * character_height
+	global_position = _resolve_collision(pivot + Vector3.UP * 0.4, desired)
+	look_at(pivot, Vector3.UP)
 
 
 func _update_fov(delta: float) -> void:

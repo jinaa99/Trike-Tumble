@@ -21,7 +21,7 @@ printf '[debug]\n\ngdscript/warnings/treat_warnings_as_errors=true\n' > override
 $GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn; rm override.cfg
 ```
 
-### What the suite covers (68 checks)
+### What the suite covers (112 checks)
 
 | Area | Checks |
 |---|---|
@@ -40,11 +40,18 @@ $GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn; 
 | Pause | ESC action pauses and resumes |
 | Visuals ↔ physics | visual wheels sit exactly on the physics wheels; gloves/boots stay on IK targets while steering and drifting |
 | Scenery collision | scenery has colliders, none of them inside the road corridor |
-| Full run | autopilot finishes the whole track with ≤ 3 respawns |
+| Rider: normal riding | accelerating, drifting, braking never eject |
+| Rider: weak impacts | 18 km/h wall bump and smashing a crate don't eject |
+| Rider: full loop | 65 km/h wall crash ejects; states EJECTED→RAGDOLL→GETTING_UP→ON_FOOT; no repeat ejection; rider flies clear; fall 1–2 s; get-up ~1 s; camera follows ragdoll then rider; trike never teleports and comes to rest; WASD camera-relative; walking doesn't drive the trike; E ignored at 6 m, prompt at 1.4 m; E mounts; hands back on bars; camera back on trike; no camera cuts; controls work again |
+| Rider: overturn | flipping ejects; empty overturned trike isn't auto-recovered; mounting rights it without a respawn |
+| Rider: no auto respawn | 10 s idle on foot: no respawn, no auto-mount, trike stays put |
+| Rider: race scene | camera follows rider; race clock runs; HUD prompt shows/hides; R on foot = emergency recovery |
+| Rider: real track crash | missing a corner into the barrier ejects; rider gets up on the road near the trike |
+| Full run | autopilot finishes the whole track with ≤ 3 respawns and **0 ejections** |
 
-Last result (milestone 2): **68 passed, 0 failed**, zero GDScript warnings
-in strict mode. Driving numbers are identical to milestone 1 (autopilot run
-49.2 s, 0 respawns, top 88 km/h, 3.8 s airtime): visual work did not change physics.
+Last result (milestone 3): **112 passed, 0 failed**, zero GDScript warnings
+in strict mode. Driving numbers are still identical to milestone 1 (autopilot
+run 49.2 s, 0 respawns, top 88 km/h, 3.8 s airtime).
 
 ## 2. Visual capture (renders the real game)
 
@@ -55,7 +62,7 @@ $GODOT --path . --fixed-fps 60 --always-on-top --resolution 1280x720 \
   --scene res://tests/visual_capture.tscn -- /some/output/dir [modes...]
 ```
 
-Modes (default: all four):
+Modes (default: all five):
 
 | Mode | Output |
 |---|---|
@@ -63,13 +70,15 @@ Modes (default: all four):
 | `overview` | aerial of the whole track (fog thinned for this shot only), start area, mid section |
 | `drive` | 8 shots of an autopilot run with HUD, including a forced drift and boost |
 | `pause` | pause menu |
+| `eject` | wipeout sequence (thrown, flying, tumble, push-up, head shake, confused, running, prompt, mounting, riding again, dizzy close-up) plus a real corner crash on the track |
 | `perf` | real-time frame rate, draw calls, primitives (run **without** `--fixed-fps`) |
 
 Keep the window visible. On macOS a covered window may stop drawing, which
 delays shots or returns stale frames (`--always-on-top` prevents this).
 
-Reference screenshots: `docs/screenshots/milestone_02/` (1280×720) and
-`docs/screenshots/milestone_02/1080p/` (UI scaling check).
+Reference screenshots: `docs/screenshots/milestone_02/` (1280×720),
+`docs/screenshots/milestone_02/1080p/` (UI scaling check) and
+`docs/screenshots/milestone_03/` (wipeout sequence).
 
 Performance (milestone 2, MacBook Air M4 16 GB, Mobile renderer, 18 s of
 driving): locked at the display's 120 fps at both 1280×720 and 1920×1080, worst
@@ -95,6 +104,15 @@ Run `$GODOT --path .` (or press Play in the editor) and check:
 - [ ] Gloves stay on the handlebar and boots on the footrests at full lock
 - [ ] Chevron signs warn of sharp corners
 - [ ] Speed HUD, timer and FINISH message look right
+- [ ] **Wipeouts:** crash head-on into a rock/barrier at speed → thrown off with a WIPEOUT!-style message
+- [ ] Scraping barriers, hitting crates/cones and landing ramps do NOT throw you off
+- [ ] Fall feels funny and short (about 1–2 s); get-up shows the head shake and dizzy stars
+- [ ] On foot: W runs away from the camera, A/D strafe, S toward the camera; camera stays calm
+- [ ] The trike rolls to a stop nearby; it never jumps to you
+- [ ] [E] GET ON appears near the trike (not from far away); E hops you on, hands on the bars
+- [ ] Flip the trike: rider falls off; getting back on rights the trike
+- [ ] R while on foot puts you back on the road on your trike
+- [ ] Whole wipeout costs only a few seconds; it never feels stuck
 - [ ] Gamepad (if available): RT/LT throttle/brake, left stick steer, RB/B drift, Y reset, Start pause
 
 Record tuning feedback in terms of `TrikeConfig` values where possible.

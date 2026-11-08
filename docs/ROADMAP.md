@@ -39,13 +39,25 @@
 - [x] Screenshots in `docs/screenshots/milestone_02/`.
 - [ ] Owner review of the look and a hands-on playtest.
 
-## Milestone 3: make the trike feel great (next)
+## Milestone 3: rider ejection and recovery ✅ (implemented; 112/112 automated checks pass)
+
+- [x] Rider state machine: RIDING → EJECTED → RAGDOLL → GETTING_UP → ON_FOOT → MOUNTING → RIDING
+- [x] Ejection on big impacts (configurable threshold) and on overturning;
+      grace period after mounting; small bumps, scrapes, crates and ramps don't eject
+- [x] Cartoon "ragdoll": one tumbling rigid body + procedural limb flailing
+- [x] Get-up animation (push up, head shake, dizzy stars, confused head scratch)
+- [x] Camera-relative running on foot (WASD), run cycle
+- [x] [E] GET ON prompt within 2.6 m; mount hop with hands reaching for the bars
+- [x] Riderless trike brakes to a stop, never teleports; R = emergency recovery
+- [x] Camera blends trike → falling rider → rider on foot → trike, without cuts
+- [x] Thrown over a barrier → rider climbs back onto the road near the trike
+- [ ] Owner playtest: tune eject threshold, fling and recovery timings
+
+## Milestone 4: make the trike feel great (next)
 
 - Owner playtest. Tune `default_trike_config.tres` from feedback.
 - Hard-impact detection (`hard_impact` signal): camera shake, squash/stretch,
   rider flinch.
-- **Fall-off state:** rider gets thrown on big impacts, tumbles, then a quick
-  recovery puts them back on the trike.
 - Sound: engine/pedal loop, skid, impacts, boost (original or CC0 only,
   after approval).
 - Camera polish: tighter at low speed, drift framing, airborne framing.
@@ -53,26 +65,26 @@
 - Performance for 5 racers: merge each trike's static visual parts into a few
   meshes (each trike + rider is ~130 mesh nodes today).
 
-## Milestone 4: race structure
+## Milestone 5: race structure
 
 - Countdown, checkpoints, laps or long single runs, positions, results screen.
 - AI opponents (reuse `TrikeInput`, as `TrackAutopilot` already does) for
   solo play and testing.
 - Racer-vs-racer bumping and knockback (`Trike.apply_knockback`).
 
-## Milestone 5: items
+## Milestone 6: items
 
 - Item boxes, random item roll, held-item HUD.
-- Throwables with knockback and fall-off.
+- Throwables with knockback; big hits call `RiderController.eject()`.
 
-## Milestone 6: multiplayer (up to 5)
+## Milestone 7: multiplayer (up to 5)
 
 - Choose transport (ENet LAN/direct IP first; no Steam).
 - Server-authoritative simulation, clients send `TrikeInput`; state sync and
-  interpolation for remote trikes.
+  interpolation for remote trikes; rider state via `RiderController.get_sync_state()`.
 - Lobby, player colors, ready-up.
 
-## Milestone 7: content and polish
+## Milestone 8: content and polish
 
 - 3 final maps (5–10 minute races), original character models, menus,
   settings, export presets for macOS and Windows.

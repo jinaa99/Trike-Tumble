@@ -65,7 +65,9 @@ func _process(delta: float) -> void:
 	var lean := _trike.steer_amount
 	if _trike.is_drifting:
 		lean = float(_trike.drift_direction) * 1.2
-	_rider.update_pose(lean, speed_ratio, delta)
+	# Off the trike the rider is posed by RiderController instead.
+	if _trike.has_rider and not _rider.top_level:
+		_rider.update_pose(lean, speed_ratio, delta)
 
 	var tier := _trike.get_drift_tier()
 	for i in _drift_particles.size():

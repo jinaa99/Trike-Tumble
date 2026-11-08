@@ -35,6 +35,25 @@ recover → finish.
 - **Recovery:** R resets onto the road. Automatic recovery after 1.5 s upside
   down, 3 s stuck, or falling off the course.
 
+## Wipeouts (milestone 3) — the signature mechanic
+
+Hit something hard enough (roughly a head-on crash at 37+ km/h) or flip the
+trike, and the rider is **thrown off**: they somersault through the air,
+bounce, roll and flop to a stop (about 1–2 s). Then a quick, silly **get-up**
+(about 1 s): push up, head shake with dizzy stars, a confused head scratch.
+
+Now **on foot**, the player runs back (WASD, relative to the camera) to their
+trike, which has rolled to a stop wherever it ended up. Within reach an
+**[E] GET ON** prompt appears. E plays a hop onto the seat, hands grab the bars,
+and the race continues. A typical wipeout costs about 4–7 seconds. The race
+clock keeps running.
+
+- Scrapes, glancing barrier hits, crates, cones and ramp landings never eject.
+- No ejection for 1.5 s after getting back on (no chain wipeouts).
+- Thrown over a barrier? The rider climbs back onto the road within 8 m of the trike.
+- The trike never comes to you, and you're never put back on automatically.
+  **R** is the emergency button (trike and rider back on the road).
+
 ## Visual identity (milestone 2)
 
 - **Palette:** saturated but soft. Coral-orange trike body, sunny yellow

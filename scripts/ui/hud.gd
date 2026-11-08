@@ -29,12 +29,14 @@ var _hint_tween: Tween
 @onready var boost_label: Label = %BoostLabel
 @onready var message_label: Label = %MessageLabel
 @onready var hint_panel: Control = %HintPanel
+@onready var prompt_panel: Control = %PromptPanel
 
 
 func _ready() -> void:
 	drift_meter.modulate.a = 0.0
 	boost_label.visible = false
 	message_label.visible = false
+	prompt_panel.visible = false
 	set_race_time(0.0)
 	_hint_tween = create_tween()
 	_hint_tween.tween_interval(hint_visible_seconds)
@@ -61,6 +63,21 @@ func show_message(text: String, duration := 1.5) -> void:
 	var tween := create_tween()
 	tween.tween_property(message_label, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_message_time = duration
+
+
+## Interaction prompt ("[E] GET ON"). Pops in with a small bounce.
+func set_mount_prompt(visible_now: bool) -> void:
+	if prompt_panel.visible == visible_now:
+		return
+	prompt_panel.visible = visible_now
+	if visible_now:
+		prompt_panel.scale = Vector2.ONE * 0.6
+		create_tween().tween_property(prompt_panel, "scale", Vector2.ONE, 0.2) \
+				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func is_mount_prompt_visible() -> bool:
+	return prompt_panel.visible
 
 
 func get_displayed_speed() -> int:
