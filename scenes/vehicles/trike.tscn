@@ -1,0 +1,982 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/vehicles/trike_controller.gd" id="1_ctrl"]
+
+[ext_resource type="Resource" path="res://resources/vehicles/default_trike_config.tres" id="2_cfg"]
+
+[ext_resource type="Script" path="res://scripts/vehicles/player_input_source.gd" id="3_input"]
+
+[ext_resource type="Script" path="res://scripts/vehicles/trike_visuals.gd" id="4_vis"]
+
+[ext_resource type="PackedScene" path="res://scenes/characters/rider.tscn" id="5_rider"]
+
+[ext_resource type="Script" path="res://scripts/visuals/rounded_box_mesh.gd" id="rb_script"]
+
+[ext_resource type="Script" path="res://scripts/visuals/arc_mesh.gd" id="arc_script"]
+
+[sub_resource type="PhysicsMaterial" id="phys_trike"]
+friction = 0.35
+bounce = 0.15
+
+[sub_resource type="BoxShape3D" id="shape_chassis"]
+size = Vector3(0.9, 0.3, 1.9)
+
+[sub_resource type="CapsuleShape3D" id="shape_rider"]
+radius = 0.28
+height = 1.1
+
+[sub_resource type="StandardMaterial3D" id="mat_body"]
+albedo_color = Color(1, 0.4, 0.2, 1)
+roughness = 0.28
+diffuse_mode = 2
+metallic_specular = 0.7
+rim_enabled = true
+rim = 0.2
+rim_tint = 0.5
+
+[sub_resource type="StandardMaterial3D" id="mat_accent"]
+albedo_color = Color(1, 0.8, 0.16, 1)
+roughness = 0.35
+diffuse_mode = 2
+metallic_specular = 0.5
+rim_enabled = true
+rim = 0.25
+rim_tint = 0.5
+
+[sub_resource type="StandardMaterial3D" id="mat_frame"]
+albedo_color = Color(0.16, 0.21, 0.42, 1)
+roughness = 0.3
+diffuse_mode = 2
+metallic_specular = 0.7
+rim_enabled = true
+rim = 0.25
+rim_tint = 0.5
+
+[sub_resource type="StandardMaterial3D" id="mat_chrome"]
+albedo_color = Color(0.78, 0.8, 0.85, 1)
+roughness = 0.18
+diffuse_mode = 2
+metallic_specular = 1
+rim_enabled = true
+rim = 0.3
+rim_tint = 0.5
+metallic = 0.75
+
+[sub_resource type="StandardMaterial3D" id="mat_tire"]
+albedo_color = Color(0.13, 0.13, 0.16, 1)
+roughness = 0.85
+diffuse_mode = 2
+metallic_specular = 0.5
+rim_enabled = true
+rim = 0.1
+rim_tint = 0.5
+
+[sub_resource type="StandardMaterial3D" id="mat_sleeve"]
+albedo_color = Color(0.97, 0.95, 0.88, 1)
+roughness = 0.3
+diffuse_mode = 2
+metallic_specular = 0.6
+rim_enabled = true
+rim = 0.25
+rim_tint = 0.5
+
+[sub_resource type="StandardMaterial3D" id="mat_seat"]
+albedo_color = Color(0.2, 0.16, 0.28, 1)
+roughness = 0.55
+diffuse_mode = 2
+metallic_specular = 0.5
+rim_enabled = true
+rim = 0.15
+rim_tint = 0.5
+
+[sub_resource type="StandardMaterial3D" id="mat_rubber"]
+albedo_color = Color(0.1, 0.1, 0.12, 1)
+roughness = 0.8
+diffuse_mode = 2
+metallic_specular = 0.5
+
+[sub_resource type="StandardMaterial3D" id="mat_white"]
+albedo_color = Color(0.98, 0.97, 0.94, 1)
+roughness = 0.4
+diffuse_mode = 2
+metallic_specular = 0.5
+rim_enabled = true
+rim = 0.25
+rim_tint = 0.5
+
+[sub_resource type="StandardMaterial3D" id="mat_lamp"]
+albedo_color = Color(1, 0.96, 0.7, 1)
+emission_enabled = true
+emission = Color(1, 0.9, 0.5, 1)
+emission_energy_multiplier = 2.5
+
+[sub_resource type="StandardMaterial3D" id="mat_tail"]
+albedo_color = Color(1, 0.2, 0.25, 1)
+emission_enabled = true
+emission = Color(1, 0.1, 0.15, 1)
+emission_energy_multiplier = 1.5
+
+[sub_resource type="StandardMaterial3D" id="mat_flame_outer2"]
+shading_mode = 0
+transparency = 1
+albedo_color = Color(1, 0.5, 0.1, 0.85)
+
+[sub_resource type="StandardMaterial3D" id="mat_flame_inner"]
+shading_mode = 0
+albedo_color = Color(1, 0.95, 0.6, 1)
+
+[sub_resource type="StandardMaterial3D" id="mat_dust"]
+transparency = 1
+vertex_color_use_as_albedo = true
+vertex_color_is_srgb = true
+diffuse_mode = 2
+roughness = 1.0
+
+[sub_resource type="StandardMaterial3D" id="mat_spark"]
+shading_mode = 0
+vertex_color_use_as_albedo = true
+vertex_color_is_srgb = true
+
+[sub_resource type="BoxMesh" id="mesh_spark"]
+material = SubResource("mat_spark")
+size = Vector3(0.035, 0.035, 0.16)
+
+[sub_resource type="Gradient" id="gradient_fade"]
+offsets = PackedFloat32Array(0, 0.25, 1)
+colors = PackedColorArray(1, 1, 1, 0.55, 1, 1, 1, 0.75, 1, 1, 1, 0)
+
+[sub_resource type="SystemFont" id="font_number"]
+font_names = PackedStringArray("Arial Rounded MT Bold", "Arial Black", "Segoe UI Black", "Arial")
+font_weight = 800
+
+[sub_resource type="SphereMesh" id="mesh_puff"]
+material = SubResource("mat_dust")
+radius = 0.2
+height = 0.4
+radial_segments = 8
+rings = 5
+
+[sub_resource type="Curve" id="curve_shrink"]
+_data = [Vector2(0, 0.6), 0.0, 0.0, 0, 0, Vector2(0.3, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="PrismMesh" id="mesh_flag"]
+left_to_right = 0.0
+size = Vector3(0.5, 0.3, 0.015)
+
+[sub_resource type="CapsuleMesh" id="capsulemesh_0"]
+radius = 0.045
+height = 0.962067
+radial_segments = 12
+rings = 4
+
+[sub_resource type="CapsuleMesh" id="capsulemesh_1"]
+radius = 0.045
+height = 1.03021
+radial_segments = 12
+rings = 4
+
+[sub_resource type="CapsuleMesh" id="capsulemesh_2"]
+radius = 0.04
+height = 1.12
+radial_segments = 12
+rings = 4
+
+[sub_resource type="CapsuleMesh" id="capsulemesh_3"]
+radius = 0.032
+height = 0.559177
+radial_segments = 12
+rings = 4
+
+[sub_resource type="CylinderMesh" id="cylindermesh_4"]
+top_radius = 0.055
+bottom_radius = 0.055
+height = 0.22
+radial_segments = 16
+rings = 1
+
+[sub_resource type="SphereMesh" id="spheremesh_5"]
+radius = 0.5
+height = 1
+radial_segments = 24
+rings = 12
+
+[sub_resource type="CylinderMesh" id="cylindermesh_6"]
+top_radius = 0.075
+bottom_radius = 0.075
+height = 0.012
+radial_segments = 20
+rings = 1
+
+[sub_resource type="CylinderMesh" id="cylindermesh_7"]
+top_radius = 0.025
+bottom_radius = 0.025
+height = 0.42
+radial_segments = 10
+rings = 1
+
+[sub_resource type="CapsuleMesh" id="capsulemesh_8"]
+radius = 0.032
+height = 0.16
+radial_segments = 10
+rings = 2
+
+[sub_resource type="CylinderMesh" id="cylindermesh_9"]
+top_radius = 0.05
+bottom_radius = 0.05
+height = 0.22
+radial_segments = 12
+rings = 1
+
+[sub_resource type="PrimitiveMesh" id="rbox_1"]
+script = ExtResource("rb_script")
+size = Vector3(0.44, 0.1, 0.44)
+radius = 0.045
+round_segments = 3
+
+[sub_resource type="PrimitiveMesh" id="rbox_2"]
+script = ExtResource("rb_script")
+size = Vector3(0.42, 0.38, 0.08)
+radius = 0.035
+round_segments = 3
+
+[sub_resource type="PrimitiveMesh" id="rbox_3"]
+script = ExtResource("rb_script")
+size = Vector3(0.46, 0.42, 0.06)
+radius = 0.03
+round_segments = 3
+
+[sub_resource type="PrimitiveMesh" id="rbox_4"]
+script = ExtResource("rb_script")
+size = Vector3(0.88, 0.17, 0.46)
+radius = 0.075
+round_segments = 3
+
+[sub_resource type="PrimitiveMesh" id="rbox_5"]
+script = ExtResource("rb_script")
+size = Vector3(0.12, 0.18, 0.47)
+radius = 0.04
+round_segments = 3
+
+[sub_resource type="CylinderMesh" id="cylindermesh_10"]
+top_radius = 0.04
+bottom_radius = 0.04
+height = 1.3
+radial_segments = 12
+rings = 1
+
+[sub_resource type="PrimitiveMesh" id="arc_6"]
+script = ExtResource("arc_script")
+inner_radius = 0.35
+thickness = 0.028
+width = 0.27
+start_angle_deg = -100
+end_angle_deg = 20
+segments = 16
+
+[sub_resource type="PrimitiveMesh" id="arc_7"]
+script = ExtResource("arc_script")
+inner_radius = 0.352
+thickness = 0.03
+width = 0.07
+start_angle_deg = -100
+end_angle_deg = 20
+segments = 16
+
+[sub_resource type="PrimitiveMesh" id="rbox_8"]
+script = ExtResource("rb_script")
+size = Vector3(0.12, 0.06, 0.03)
+radius = 0.02
+round_segments = 3
+
+[sub_resource type="PrimitiveMesh" id="arc_9"]
+script = ExtResource("arc_script")
+inner_radius = 0.35
+thickness = 0.028
+width = 0.27
+start_angle_deg = -100
+end_angle_deg = 20
+segments = 16
+
+[sub_resource type="PrimitiveMesh" id="arc_10"]
+script = ExtResource("arc_script")
+inner_radius = 0.352
+thickness = 0.03
+width = 0.07
+start_angle_deg = -100
+end_angle_deg = 20
+segments = 16
+
+[sub_resource type="PrimitiveMesh" id="rbox_11"]
+script = ExtResource("rb_script")
+size = Vector3(0.12, 0.06, 0.03)
+radius = 0.02
+round_segments = 3
+
+[sub_resource type="CylinderMesh" id="cylindermesh_11"]
+top_radius = 0.012
+bottom_radius = 0.012
+height = 1.4
+radial_segments = 6
+rings = 1
+
+[sub_resource type="CylinderMesh" id="cylindermesh_12"]
+top_radius = 0.03
+bottom_radius = 0.03
+height = 0.06
+radial_segments = 10
+rings = 1
+
+[sub_resource type="SphereMesh" id="spheremesh_13"]
+radius = 0.03
+height = 0.06
+radial_segments = 10
+rings = 6
+
+[sub_resource type="PrimitiveMesh" id="rbox_12"]
+script = ExtResource("rb_script")
+size = Vector3(0.32, 0.06, 0.1)
+radius = 0.025
+round_segments = 3
+
+[sub_resource type="CapsuleMesh" id="capsulemesh_14"]
+radius = 0.028
+height = 0.526
+radial_segments = 12
+rings = 4
+
+[sub_resource type="PrimitiveMesh" id="rbox_13"]
+script = ExtResource("rb_script")
+size = Vector3(0.3, 0.24, 0.04)
+radius = 0.035
+round_segments = 3
+
+[sub_resource type="SphereMesh" id="spheremesh_15"]
+radius = 0.07
+height = 0.14
+radial_segments = 16
+rings = 8
+
+[sub_resource type="CapsuleMesh" id="capsulemesh_16"]
+radius = 0.036
+height = 0.372
+radial_segments = 12
+rings = 4
+
+[sub_resource type="PrimitiveMesh" id="arc_14"]
+script = ExtResource("arc_script")
+inner_radius = 0.44
+thickness = 0.025
+width = 0.14
+start_angle_deg = -55
+end_angle_deg = 65
+segments = 16
+
+[sub_resource type="TorusMesh" id="torusmesh_17"]
+inner_radius = 0.275
+outer_radius = 0.38
+rings = 32
+ring_segments = 12
+
+[sub_resource type="TorusMesh" id="torusmesh_18"]
+inner_radius = 0.24
+outer_radius = 0.285
+rings = 32
+ring_segments = 6
+
+[sub_resource type="BoxMesh" id="boxmesh_19"]
+size = Vector3(0.02, 0.5, 0.025)
+
+[sub_resource type="CylinderMesh" id="cylindermesh_20"]
+top_radius = 0.065
+bottom_radius = 0.065
+height = 0.17
+radial_segments = 16
+rings = 1
+
+[sub_resource type="CylinderMesh" id="cylindermesh_21"]
+top_radius = 0.3
+bottom_radius = 0.3
+height = 0.2
+radial_segments = 28
+rings = 1
+
+[sub_resource type="TorusMesh" id="torusmesh_22"]
+inner_radius = 0.255
+outer_radius = 0.3
+rings = 28
+ring_segments = 8
+
+[sub_resource type="CylinderMesh" id="cylindermesh_23"]
+top_radius = 0.2
+bottom_radius = 0.2
+height = 0.24
+radial_segments = 24
+rings = 1
+
+[sub_resource type="BoxMesh" id="boxmesh_24"]
+size = Vector3(0.245, 0.34, 0.05)
+
+[sub_resource type="SphereMesh" id="spheremesh_25"]
+radius = 0.07
+height = 0.14
+radial_segments = 14
+rings = 8
+
+[sub_resource type="CapsuleMesh" id="capsulemesh_26"]
+radius = 0.035
+height = 0.414819
+radial_segments = 12
+rings = 4
+
+[sub_resource type="CylinderMesh" id="cylindermesh_27"]
+top_radius = 0.022
+bottom_radius = 0.022
+height = 0.72
+radial_segments = 10
+rings = 1
+
+[sub_resource type="CapsuleMesh" id="capsulemesh_28"]
+radius = 0.035
+height = 0.16
+radial_segments = 10
+rings = 2
+
+[sub_resource type="CylinderMesh" id="cylindermesh_29"]
+top_radius = 0
+bottom_radius = 0.11
+height = 0.6
+radial_segments = 10
+rings = 1
+
+[sub_resource type="CylinderMesh" id="cylindermesh_30"]
+top_radius = 0
+bottom_radius = 0.06
+height = 0.4
+radial_segments = 10
+rings = 1
+
+[node name="Trike" type="RigidBody3D" node_paths=PackedStringArray("input_source")]
+collision_layer = 2
+collision_mask = 7
+mass = 150.0
+physics_material_override = SubResource("phys_trike")
+gravity_scale = 1.5
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, -0.3, 0.05)
+continuous_cd = true
+script = ExtResource("1_ctrl")
+config = ExtResource("2_cfg")
+input_source = NodePath("PlayerInputSource")
+
+[node name="ChassisShape" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.1)
+shape = SubResource("shape_chassis")
+
+[node name="RiderShape" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0.15)
+shape = SubResource("shape_rider")
+
+[node name="PlayerInputSource" type="Node" parent="."]
+script = ExtResource("3_input")
+
+[node name="Visuals" type="Node3D" parent="."]
+script = ExtResource("4_vis")
+
+[node name="DownTube" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, -0.756823, -0.65362, 0, 0.65362, -0.756823, 0, 0.29, -0.645)
+mesh = SubResource("capsulemesh_0")
+material_override = SubResource("mat_frame")
+
+[node name="BottomBeam" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, -0.0212718, -0.999774, 0, 0.999774, -0.0212718, 0, -0.05, 0.11)
+mesh = SubResource("capsulemesh_1")
+material_override = SubResource("mat_frame")
+
+[node name="TopTube" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, -0.384615, -0.923077, 0, 0.923077, -0.384615, 0, 0.4, -0.42)
+mesh = SubResource("capsulemesh_2")
+material_override = SubResource("mat_frame")
+
+[node name="SeatStayL" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(0.986394, -0.0403896, 0.15936, 0, -0.969351, -0.24568, 0.164399, 0.242338, -0.956162, -0.11, 0.06, 0.56)
+mesh = SubResource("capsulemesh_3")
+material_override = SubResource("mat_frame")
+
+[node name="SeatStayR" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(0.986394, 0.0403896, -0.15936, 0, -0.969351, -0.24568, -0.164399, 0.242338, -0.956162, 0.11, 0.06, 0.56)
+mesh = SubResource("capsulemesh_3")
+material_override = SubResource("mat_frame")
+
+[node name="HeadTube" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.62, -0.95)
+mesh = SubResource("cylindermesh_4")
+material_override = SubResource("mat_frame")
+
+[node name="Tank" type="MeshInstance3D" parent="Visuals" groups=["body_paint"]]
+transform = Transform3D(0.3, 0, 0, 0, 0.216658, 0.111135, 0, -0.0382026, 0.630277, 0, 0.25, -0.44)
+mesh = SubResource("spheremesh_5")
+material_override = SubResource("mat_body")
+
+[node name="TankStripe" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(0.09, 0, 0, 0, 0.228475, 0.112524, 0, -0.0402864, 0.638155, 0, 0.255, -0.44)
+mesh = SubResource("spheremesh_5")
+material_override = SubResource("mat_accent")
+
+[node name="NumberDiscL" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, -0.148, 0.25, -0.44)
+mesh = SubResource("cylindermesh_6")
+material_override = SubResource("mat_white")
+
+[node name="NumberSideL" type="Label3D" parent="Visuals"]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -0.156, 0.25, -0.44)
+text = "7"
+font = SubResource("font_number")
+font_size = 64
+pixel_size = 0.0018
+modulate = Color(0.12, 0.12, 0.2, 1)
+outline_size = 0
+double_sided = false
+
+[node name="NumberDiscR" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0.148, 0.25, -0.44)
+mesh = SubResource("cylindermesh_6")
+material_override = SubResource("mat_white")
+
+[node name="NumberSideR" type="Label3D" parent="Visuals"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0.156, 0.25, -0.44)
+text = "7"
+font = SubResource("font_number")
+font_size = 64
+pixel_size = 0.0018
+modulate = Color(0.12, 0.12, 0.2, 1)
+outline_size = 0
+double_sided = false
+
+[node name="FootBar" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, -0.45)
+mesh = SubResource("cylindermesh_7")
+material_override = SubResource("mat_chrome")
+
+[node name="FootPegL" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, -0.24, 0.02, -0.45)
+mesh = SubResource("capsulemesh_8")
+material_override = SubResource("mat_rubber")
+
+[node name="FootTargetL" type="Marker3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.24, 0.15, -0.43)
+
+[node name="FootPegR" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0.24, 0.02, -0.45)
+mesh = SubResource("capsulemesh_8")
+material_override = SubResource("mat_rubber")
+
+[node name="FootTargetR" type="Marker3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.24, 0.15, -0.43)
+
+[node name="SeatPost" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06, 0.32)
+mesh = SubResource("cylindermesh_9")
+material_override = SubResource("mat_chrome")
+
+[node name="Seat" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.21, 0.32)
+mesh = SubResource("rbox_1")
+material_override = SubResource("mat_seat")
+
+[node name="SeatBack" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 0.970296, -0.241922, 0, 0.241922, 0.970296, 0, 0.43, 0.55)
+mesh = SubResource("rbox_2")
+material_override = SubResource("mat_seat")
+
+[node name="SeatBackTrim" type="MeshInstance3D" parent="Visuals" groups=["body_paint"]]
+transform = Transform3D(1, 0, 0, 0, 0.970296, -0.241922, 0, 0.241922, 0.970296, 0, 0.43, 0.565)
+mesh = SubResource("rbox_3")
+material_override = SubResource("mat_body")
+
+[node name="RearDeck" type="MeshInstance3D" parent="Visuals" groups=["body_paint"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, 0.66)
+mesh = SubResource("rbox_4")
+material_override = SubResource("mat_body")
+
+[node name="RearDeckStripe" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.025, 0.66)
+mesh = SubResource("rbox_5")
+material_override = SubResource("mat_accent")
+
+[node name="Axle" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, -0.2, 0.6)
+mesh = SubResource("cylindermesh_10")
+material_override = SubResource("mat_chrome")
+
+[node name="RearFenderL" type="MeshInstance3D" parent="Visuals" groups=["body_paint"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.62, -0.2, 0.6)
+mesh = SubResource("arc_6")
+material_override = SubResource("mat_body")
+
+[node name="RearFenderStripeL" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.62, -0.2, 0.6)
+mesh = SubResource("arc_7")
+material_override = SubResource("mat_accent")
+
+[node name="TailLightL" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.27, 0.03, 0.9)
+mesh = SubResource("rbox_8")
+material_override = SubResource("mat_tail")
+
+[node name="RearFenderR" type="MeshInstance3D" parent="Visuals" groups=["body_paint"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, -0.2, 0.6)
+mesh = SubResource("arc_9")
+material_override = SubResource("mat_body")
+
+[node name="RearFenderStripeR" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, -0.2, 0.6)
+mesh = SubResource("arc_10")
+material_override = SubResource("mat_accent")
+
+[node name="TailLightR" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.27, 0.03, 0.9)
+mesh = SubResource("rbox_11")
+material_override = SubResource("mat_tail")
+
+[node name="FlagPole" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.34, 0.8, 0.84)
+mesh = SubResource("cylindermesh_11")
+material_override = SubResource("mat_white")
+
+[node name="FlagMount" type="MeshInstance3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.34, 0.1, 0.84)
+mesh = SubResource("cylindermesh_12")
+material_override = SubResource("mat_chrome")
+
+[node name="FlagPivot" type="Node3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.34, 1.5, 0.84)
+
+[node name="Flag" type="MeshInstance3D" parent="Visuals/FlagPivot"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, -0.15, 0.25)
+mesh = SubResource("mesh_flag")
+material_override = SubResource("mat_accent")
+
+[node name="FlagTip" type="MeshInstance3D" parent="Visuals/FlagPivot" groups=["body_paint"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0)
+mesh = SubResource("spheremesh_13")
+material_override = SubResource("mat_body")
+
+[node name="FrontPivot" type="Node3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.08, -0.95)
+
+[node name="ForkCrown" type="MeshInstance3D" parent="Visuals/FrontPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, 0)
+mesh = SubResource("rbox_12")
+material_override = SubResource("mat_chrome")
+
+[node name="ForkUpperL" type="MeshInstance3D" parent="Visuals/FrontPivot"]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.13, 0.215, 0)
+mesh = SubResource("capsulemesh_14")
+material_override = SubResource("mat_chrome")
+
+[node name="ForkUpperR" type="MeshInstance3D" parent="Visuals/FrontPivot"]
+transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0.13, 0.215, 0)
+mesh = SubResource("capsulemesh_14")
+material_override = SubResource("mat_chrome")
+
+[node name="NumberPlate" type="MeshInstance3D" parent="Visuals/FrontPivot"]
+transform = Transform3D(1, 0, 0, 0, 0.978148, 0.207912, 0, -0.207912, 0.978148, 0, 0.6, -0.07)
+mesh = SubResource("rbox_13")
+material_override = SubResource("mat_accent")
+
+[node name="PlateNumber" type="Label3D" parent="Visuals/FrontPivot"]
+transform = Transform3D(-1, 0, 0, 0, 0.978148, -0.207912, 0, -0.207912, -0.978148, 0, 0.6, -0.095)
+text = "7"
+font = SubResource("font_number")
+font_size = 120
+pixel_size = 0.0016
+modulate = Color(0.12, 0.12, 0.2, 1)
+outline_size = 0
+double_sided = false
+
+[node name="Headlight" type="MeshInstance3D" parent="Visuals/FrontPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.7, 0, 0.42, -0.09)
+mesh = SubResource("spheremesh_15")
+material_override = SubResource("mat_lamp")
+
+[node name="FrontWheel" type="Node3D" parent="Visuals/FrontPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.23, 0)
+
+[node name="ForkLowerL" type="MeshInstance3D" parent="Visuals/FrontPivot/FrontWheel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.13, 0.15, 0)
+mesh = SubResource("capsulemesh_16")
+material_override = SubResource("mat_frame")
+
+[node name="ForkLowerR" type="MeshInstance3D" parent="Visuals/FrontPivot/FrontWheel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.13, 0.15, 0)
+mesh = SubResource("capsulemesh_16")
+material_override = SubResource("mat_frame")
+
+[node name="Fender" type="MeshInstance3D" parent="Visuals/FrontPivot/FrontWheel" groups=["body_paint"]]
+mesh = SubResource("arc_14")
+material_override = SubResource("mat_body")
+
+[node name="Spin" type="Node3D" parent="Visuals/FrontPivot/FrontWheel"]
+
+[node name="Tire" type="MeshInstance3D" parent="Visuals/FrontPivot/FrontWheel/Spin"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("torusmesh_17")
+material_override = SubResource("mat_tire")
+
+[node name="Rim" type="MeshInstance3D" parent="Visuals/FrontPivot/FrontWheel/Spin"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("torusmesh_18")
+material_override = SubResource("mat_accent")
+
+[node name="Spoke0" type="MeshInstance3D" parent="Visuals/FrontPivot/FrontWheel/Spin"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("boxmesh_19")
+material_override = SubResource("mat_chrome")
+
+[node name="Spoke1" type="MeshInstance3D" parent="Visuals/FrontPivot/FrontWheel/Spin"]
+transform = Transform3D(1, 0, 0, 0, 0.707107, -0.707107, 0, 0.707107, 0.707107, 0, 0, 0)
+mesh = SubResource("boxmesh_19")
+material_override = SubResource("mat_chrome")
+
+[node name="Spoke2" type="MeshInstance3D" parent="Visuals/FrontPivot/FrontWheel/Spin"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("boxmesh_19")
+material_override = SubResource("mat_chrome")
+
+[node name="Spoke3" type="MeshInstance3D" parent="Visuals/FrontPivot/FrontWheel/Spin"]
+transform = Transform3D(1, 0, 0, 0, -0.707107, -0.707107, 0, 0.707107, -0.707107, 0, 0, 0)
+mesh = SubResource("boxmesh_19")
+material_override = SubResource("mat_chrome")
+
+[node name="Hub" type="MeshInstance3D" parent="Visuals/FrontPivot/FrontWheel/Spin" groups=["body_paint"]]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("cylindermesh_20")
+material_override = SubResource("mat_body")
+
+[node name="RearWheelLeft" type="Node3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.62, -0.23, 0.6)
+
+[node name="Spin" type="Node3D" parent="Visuals/RearWheelLeft"]
+
+[node name="Sleeve" type="MeshInstance3D" parent="Visuals/RearWheelLeft/Spin"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("cylindermesh_21")
+material_override = SubResource("mat_sleeve")
+
+[node name="EdgeIn" type="MeshInstance3D" parent="Visuals/RearWheelLeft/Spin"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, -0.1, 0, 0)
+mesh = SubResource("torusmesh_22")
+material_override = SubResource("mat_sleeve")
+
+[node name="EdgeOut" type="MeshInstance3D" parent="Visuals/RearWheelLeft/Spin"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0.1, 0, 0)
+mesh = SubResource("torusmesh_22")
+material_override = SubResource("mat_sleeve")
+
+[node name="Rim" type="MeshInstance3D" parent="Visuals/RearWheelLeft/Spin"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("cylindermesh_23")
+material_override = SubResource("mat_frame")
+
+[node name="RimSpoke0" type="MeshInstance3D" parent="Visuals/RearWheelLeft/Spin"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("boxmesh_24")
+material_override = SubResource("mat_accent")
+
+[node name="RimSpoke1" type="MeshInstance3D" parent="Visuals/RearWheelLeft/Spin"]
+transform = Transform3D(1, 0, 0, 0, 0.5, -0.866025, 0, 0.866025, 0.5, 0, 0, 0)
+mesh = SubResource("boxmesh_24")
+material_override = SubResource("mat_accent")
+
+[node name="RimSpoke2" type="MeshInstance3D" parent="Visuals/RearWheelLeft/Spin"]
+transform = Transform3D(1, 0, 0, 0, -0.5, -0.866025, 0, 0.866025, -0.5, 0, 0, 0)
+mesh = SubResource("boxmesh_24")
+material_override = SubResource("mat_accent")
+
+[node name="HubCap" type="MeshInstance3D" parent="Visuals/RearWheelLeft/Spin"]
+transform = Transform3D(0.5, 0, 0, 0, 1, 0, 0, 0, 1, -0.12, 0, 0)
+mesh = SubResource("spheremesh_25")
+material_override = SubResource("mat_chrome")
+
+[node name="RearWheelRight" type="Node3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, -0.23, 0.6)
+
+[node name="Spin" type="Node3D" parent="Visuals/RearWheelRight"]
+
+[node name="Sleeve" type="MeshInstance3D" parent="Visuals/RearWheelRight/Spin"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("cylindermesh_21")
+material_override = SubResource("mat_sleeve")
+
+[node name="EdgeIn" type="MeshInstance3D" parent="Visuals/RearWheelRight/Spin"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, -0.1, 0, 0)
+mesh = SubResource("torusmesh_22")
+material_override = SubResource("mat_sleeve")
+
+[node name="EdgeOut" type="MeshInstance3D" parent="Visuals/RearWheelRight/Spin"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0.1, 0, 0)
+mesh = SubResource("torusmesh_22")
+material_override = SubResource("mat_sleeve")
+
+[node name="Rim" type="MeshInstance3D" parent="Visuals/RearWheelRight/Spin"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("cylindermesh_23")
+material_override = SubResource("mat_frame")
+
+[node name="RimSpoke0" type="MeshInstance3D" parent="Visuals/RearWheelRight/Spin"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("boxmesh_24")
+material_override = SubResource("mat_accent")
+
+[node name="RimSpoke1" type="MeshInstance3D" parent="Visuals/RearWheelRight/Spin"]
+transform = Transform3D(1, 0, 0, 0, 0.5, -0.866025, 0, 0.866025, 0.5, 0, 0, 0)
+mesh = SubResource("boxmesh_24")
+material_override = SubResource("mat_accent")
+
+[node name="RimSpoke2" type="MeshInstance3D" parent="Visuals/RearWheelRight/Spin"]
+transform = Transform3D(1, 0, 0, 0, -0.5, -0.866025, 0, 0.866025, -0.5, 0, 0, 0)
+mesh = SubResource("boxmesh_24")
+material_override = SubResource("mat_accent")
+
+[node name="HubCap" type="MeshInstance3D" parent="Visuals/RearWheelRight/Spin"]
+transform = Transform3D(0.5, 0, 0, 0, 1, 0, 0, 0, 1, 0.12, 0, 0)
+mesh = SubResource("spheremesh_25")
+material_override = SubResource("mat_chrome")
+
+[node name="Handlebar" type="Node3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.72, -0.95)
+
+[node name="Stem" type="MeshInstance3D" parent="Visuals/Handlebar"]
+transform = Transform3D(1, 0, 0, 0, 0.290007, -0.957024, 0, 0.957024, 0.290007, 0, 0.03, 0.165)
+mesh = SubResource("capsulemesh_26")
+material_override = SubResource("mat_chrome")
+
+[node name="Bar" type="MeshInstance3D" parent="Visuals/Handlebar"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0.08, 0.33)
+mesh = SubResource("cylindermesh_27")
+material_override = SubResource("mat_chrome")
+
+[node name="GripL" type="MeshInstance3D" parent="Visuals/Handlebar"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, -0.3, 0.08, 0.33)
+mesh = SubResource("capsulemesh_28")
+material_override = SubResource("mat_rubber")
+
+[node name="GripTargetL" type="Marker3D" parent="Visuals/Handlebar"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, 0.08, 0.33)
+
+[node name="GripR" type="MeshInstance3D" parent="Visuals/Handlebar"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0.3, 0.08, 0.33)
+mesh = SubResource("capsulemesh_28")
+material_override = SubResource("mat_rubber")
+
+[node name="GripTargetR" type="Marker3D" parent="Visuals/Handlebar"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, 0.08, 0.33)
+
+[node name="Rider" parent="Visuals" node_paths=PackedStringArray("left_hand_target", "right_hand_target", "left_foot_target", "right_foot_target") instance=ExtResource("5_rider")]
+left_hand_target = NodePath("../Handlebar/GripTargetL")
+right_hand_target = NodePath("../Handlebar/GripTargetR")
+left_foot_target = NodePath("../FootTargetL")
+right_foot_target = NodePath("../FootTargetR")
+
+[node name="DriftDustLeft" type="CPUParticles3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.62, -0.5, 0.75)
+emitting = false
+amount = 36
+lifetime = 0.8
+mesh = SubResource("mesh_puff")
+cast_shadow = 0
+direction = Vector3(0, 1, 0.8)
+spread = 40.0
+gravity = Vector3(0, 0.8, 0)
+initial_velocity_min = 1.0
+initial_velocity_max = 2.6
+damping_min = 1.5
+damping_max = 2.5
+scale_amount_min = 0.5
+scale_amount_max = 1.4
+scale_amount_curve = SubResource("curve_shrink")
+color = Color(0.85, 0.78, 0.65, 1)
+color_ramp = SubResource("gradient_fade")
+
+[node name="DriftDustRight" type="CPUParticles3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, -0.5, 0.75)
+emitting = false
+amount = 36
+lifetime = 0.8
+mesh = SubResource("mesh_puff")
+cast_shadow = 0
+direction = Vector3(0, 1, 0.8)
+spread = 40.0
+gravity = Vector3(0, 0.8, 0)
+initial_velocity_min = 1.0
+initial_velocity_max = 2.6
+damping_min = 1.5
+damping_max = 2.5
+scale_amount_min = 0.5
+scale_amount_max = 1.4
+scale_amount_curve = SubResource("curve_shrink")
+color = Color(0.85, 0.78, 0.65, 1)
+color_ramp = SubResource("gradient_fade")
+
+[node name="DriftSparksLeft" type="CPUParticles3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.62, -0.5, 0.72)
+emitting = false
+amount = 24
+lifetime = 0.35
+mesh = SubResource("mesh_spark")
+cast_shadow = 0
+particle_flag_align_y = true
+direction = Vector3(-0.6, 0.8, 1)
+spread = 30.0
+gravity = Vector3(0, -9, 0)
+initial_velocity_min = 3.0
+initial_velocity_max = 6.0
+scale_amount_min = 0.7
+scale_amount_max = 1.3
+color = Color(0.35, 0.78, 1, 1)
+
+[node name="DriftSparksRight" type="CPUParticles3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, -0.5, 0.72)
+emitting = false
+amount = 24
+lifetime = 0.35
+mesh = SubResource("mesh_spark")
+cast_shadow = 0
+particle_flag_align_y = true
+direction = Vector3(0.6, 0.8, 1)
+spread = 30.0
+gravity = Vector3(0, -9, 0)
+initial_velocity_min = 3.0
+initial_velocity_max = 6.0
+scale_amount_min = 0.7
+scale_amount_max = 1.3
+color = Color(0.35, 0.78, 1, 1)
+
+[node name="BoostFlame" type="Node3D" parent="Visuals"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.02, 0.92)
+visible = false
+
+[node name="OuterL" type="MeshInstance3D" parent="Visuals/BoostFlame"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.16, 0, 0.3)
+mesh = SubResource("cylindermesh_29")
+material_override = SubResource("mat_flame_outer2")
+cast_shadow = 0
+
+[node name="InnerL" type="MeshInstance3D" parent="Visuals/BoostFlame"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.16, 0, 0.22)
+mesh = SubResource("cylindermesh_30")
+material_override = SubResource("mat_flame_inner")
+cast_shadow = 0
+
+[node name="OuterR" type="MeshInstance3D" parent="Visuals/BoostFlame"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.16, 0, 0.3)
+mesh = SubResource("cylindermesh_29")
+material_override = SubResource("mat_flame_outer2")
+cast_shadow = 0
+
+[node name="InnerR" type="MeshInstance3D" parent="Visuals/BoostFlame"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.16, 0, 0.22)
+mesh = SubResource("cylindermesh_30")
+material_override = SubResource("mat_flame_inner")
+cast_shadow = 0

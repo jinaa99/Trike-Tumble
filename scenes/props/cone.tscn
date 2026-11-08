@@ -1,0 +1,59 @@
+[gd_scene format=3]
+
+[sub_resource type="PhysicsMaterial" id="phys_cone"]
+friction = 0.7
+bounce = 0.3
+
+[sub_resource type="CylinderShape3D" id="shape_cone"]
+height = 0.8
+radius = 0.25
+
+[sub_resource type="CylinderMesh" id="mesh_cone"]
+top_radius = 0.04
+bottom_radius = 0.3
+height = 0.8
+radial_segments = 10
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="mat_cone"]
+albedo_color = Color(1, 0.45, 0.1, 1)
+roughness = 0.6
+diffuse_mode = 3
+
+[sub_resource type="CylinderMesh" id="mesh_stripe"]
+top_radius = 0.17
+bottom_radius = 0.2
+height = 0.14
+radial_segments = 10
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="mat_stripe"]
+albedo_color = Color(1, 1, 1, 1)
+roughness = 0.6
+diffuse_mode = 3
+
+[sub_resource type="BoxMesh" id="mesh_base"]
+size = Vector3(0.6, 0.06, 0.6)
+
+[node name="Cone" type="RigidBody3D"]
+collision_layer = 4
+collision_mask = 7
+mass = 2.0
+physics_material_override = SubResource("phys_cone")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+shape = SubResource("shape_cone")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("mesh_cone")
+material_override = SubResource("mat_cone")
+
+[node name="Stripe" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.08, 0)
+mesh = SubResource("mesh_stripe")
+material_override = SubResource("mat_stripe")
+
+[node name="Base" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.37, 0)
+mesh = SubResource("mesh_base")
+material_override = SubResource("mat_cone")

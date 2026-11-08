@@ -1,0 +1,284 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/hud.gd" id="1_hud"]
+[ext_resource type="Theme" path="res://resources/ui/trike_theme.tres" id="2_theme"]
+[ext_resource type="Script" path="res://scripts/ui/speed_gauge.gd" id="3_gauge"]
+
+[sub_resource type="SystemFont" id="font_display_base"]
+font_names = PackedStringArray("Arial Rounded MT Bold", "Segoe UI Black", "Arial Black", "Arial")
+font_weight = 900
+
+[sub_resource type="FontVariation" id="font_display"]
+base_font = SubResource("font_display_base")
+variation_transform = Transform2D(1, 0, 0.22, 1, 0, 0)
+
+[sub_resource type="StyleBoxFlat" id="timer_panel"]
+content_margin_left = 26.0
+content_margin_top = 6.0
+content_margin_right = 30.0
+content_margin_bottom = 8.0
+bg_color = Color(0.14, 0.11, 0.3, 0.82)
+skew = Vector2(0.22, 0)
+border_width_bottom = 4
+border_color = Color(1, 0.8, 0.2, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="hint_panel"]
+content_margin_left = 16.0
+content_margin_top = 10.0
+content_margin_right = 16.0
+content_margin_bottom = 10.0
+bg_color = Color(0.14, 0.11, 0.3, 0.6)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="drift_bg"]
+bg_color = Color(0.14, 0.11, 0.3, 0.7)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(1, 1, 1, 0.85)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="drift_fill"]
+bg_color = Color(1, 1, 1, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+expand_margin_left = -3.0
+expand_margin_top = -3.0
+expand_margin_bottom = -3.0
+
+[sub_resource type="Gradient" id="gauge_gradient"]
+offsets = PackedFloat32Array(0, 0.55, 1)
+colors = PackedColorArray(0.2, 0.86, 0.8, 1, 1, 0.84, 0.22, 1, 1, 0.48, 0.18, 1)
+
+[node name="HUD" type="CanvasLayer"]
+script = ExtResource("1_hud")
+
+[node name="Root" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme = ExtResource("2_theme")
+
+[node name="TimerPanel" type="PanelContainer" parent="Root"]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 22.0
+offset_right = 270.0
+offset_bottom = 104.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("timer_panel")
+
+[node name="VBox" type="VBoxContainer" parent="Root/TimerPanel"]
+layout_mode = 2
+theme_override_constants/separation = -8
+
+[node name="TimeTitle" type="Label" parent="Root/TimerPanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.82, 0.22, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 16
+text = "TIME"
+
+[node name="TimerLabel" type="Label" parent="Root/TimerPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_fonts/font = SubResource("font_display")
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 42
+text = "00:00.00"
+
+[node name="SpeedGauge" type="Control" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -290.0
+offset_top = -232.0
+offset_right = -22.0
+offset_bottom = -12.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("3_gauge")
+fill_gradient = SubResource("gauge_gradient")
+
+[node name="SpeedLabel" type="Label" parent="Root/SpeedGauge"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -8.0
+offset_bottom = -26.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_constants/outline_size = 16
+theme_override_fonts/font = SubResource("font_display")
+theme_override_font_sizes/font_size = 78
+text = "0"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="UnitLabel" type="Label" parent="Root/SpeedGauge"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -60.0
+offset_top = -78.0
+offset_right = 60.0
+offset_bottom = -50.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(1, 0.84, 0.25, 1)
+theme_override_font_sizes/font_size = 18
+text = "KM/H"
+horizontal_alignment = 1
+
+[node name="DriftMeter" type="Control" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -190.0
+offset_top = -96.0
+offset_right = 190.0
+offset_bottom = -34.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="DriftTitle" type="Label" parent="Root/DriftMeter"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 4.0
+offset_right = 200.0
+offset_bottom = 24.0
+theme_override_font_sizes/font_size = 18
+text = "DRIFT"
+
+[node name="DriftBar" type="ProgressBar" parent="Root/DriftMeter"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -30.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+theme_override_styles/background = SubResource("drift_bg")
+theme_override_styles/fill = SubResource("drift_fill")
+max_value = 1.0
+step = 0.001
+show_percentage = false
+
+[node name="TierMark1" type="ColorRect" parent="Root/DriftMeter/DriftBar"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 9
+anchor_left = 0.45
+anchor_right = 0.45
+anchor_bottom = 1.0
+offset_left = -2.0
+offset_top = -4.0
+offset_right = 2.0
+offset_bottom = 4.0
+mouse_filter = 2
+color = Color(0.35, 0.78, 1, 1)
+
+[node name="BoostLabel" type="Label" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -220.0
+offset_top = -176.0
+offset_right = 220.0
+offset_bottom = -104.0
+grow_horizontal = 2
+grow_vertical = 0
+pivot_offset = Vector2(220, 36)
+theme_override_colors/font_color = Color(1, 0.62, 0.18, 1)
+theme_override_colors/font_outline_color = Color(0.42, 0.06, 0.12, 1)
+theme_override_constants/outline_size = 18
+theme_override_fonts/font = SubResource("font_display")
+theme_override_font_sizes/font_size = 60
+text = "BOOST!"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="MessageLabel" type="Label" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -560.0
+offset_top = -190.0
+offset_right = 560.0
+offset_bottom = -90.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(560, 50)
+theme_override_constants/outline_size = 20
+theme_override_fonts/font = SubResource("font_display")
+theme_override_font_sizes/font_size = 64
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HintPanel" type="PanelContainer" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -330.0
+offset_top = 22.0
+offset_right = -24.0
+offset_bottom = 122.0
+grow_horizontal = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("hint_panel")
+
+[node name="HintLabel" type="Label" parent="Root/HintPanel"]
+layout_mode = 2
+theme_override_constants/outline_size = 0
+theme_override_constants/line_spacing = 2
+theme_override_font_sizes/font_size = 14
+text = "W / ↑   Accelerate      S / ↓   Brake
+A D / ← →   Steer
+SPACE + steer   Drift, release to BOOST
+R   Reset        ESC   Pause"

@@ -1,0 +1,213 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/pause_menu.gd" id="1_pause"]
+[ext_resource type="Theme" path="res://resources/ui/trike_theme.tres" id="2_theme"]
+
+[sub_resource type="SystemFont" id="font_display_base"]
+font_names = PackedStringArray("Arial Rounded MT Bold", "Segoe UI Black", "Arial Black", "Arial")
+font_weight = 900
+
+[sub_resource type="FontVariation" id="font_display"]
+base_font = SubResource("font_display_base")
+variation_transform = Transform2D(1, 0, 0.22, 1, 0, 0)
+
+[sub_resource type="StyleBoxFlat" id="keycap"]
+content_margin_left = 10.0
+content_margin_top = 3.0
+content_margin_right = 10.0
+content_margin_bottom = 5.0
+bg_color = Color(0.98, 0.96, 0.92, 1)
+border_width_bottom = 3
+border_color = Color(0.7, 0.66, 0.82, 1)
+corner_radius_top_left = 7
+corner_radius_top_right = 7
+corner_radius_bottom_right = 7
+corner_radius_bottom_left = 7
+
+[node name="PauseMenu" type="CanvasLayer"]
+process_mode = 3
+layer = 10
+script = ExtResource("1_pause")
+
+[node name="Root" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+
+[node name="Dim" type="ColorRect" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.06, 0.04, 0.16, 0.6)
+
+[node name="Center" type="CenterContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Root/Center"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="Root/Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Logo" type="Label" parent="Root/Center/Panel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.82, 0.22, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 18
+text = "TRIKE TUMBLE"
+horizontal_alignment = 1
+
+[node name="Title" type="Label" parent="Root/Center/Panel/VBox"]
+layout_mode = 2
+theme_override_fonts/font = SubResource("font_display")
+theme_override_font_sizes/font_size = 64
+theme_override_constants/outline_size = 0
+text = "PAUSED"
+horizontal_alignment = 1
+
+[node name="ResumeButton" type="Button" parent="Root/Center/Panel/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 56)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Resume"
+
+[node name="RestartButton" type="Button" parent="Root/Center/Panel/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 56)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Restart"
+
+[node name="QuitButton" type="Button" parent="Root/Center/Panel/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 56)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Quit"
+
+[node name="Spacer" type="Control" parent="Root/Center/Panel/VBox"]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+
+[node name="Controls" type="GridContainer" parent="Root/Center/Panel/VBox"]
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_constants/h_separation = 14
+theme_override_constants/v_separation = 8
+columns = 2
+
+[node name="Key0" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_colors/font_color = Color(0.17, 0.14, 0.32, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("keycap")
+text = "W / ↑"
+horizontal_alignment = 1
+
+[node name="Action0" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.85, 0.95, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+text = "Accelerate"
+
+[node name="Key1" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_colors/font_color = Color(0.17, 0.14, 0.32, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("keycap")
+text = "S / ↓"
+horizontal_alignment = 1
+
+[node name="Action1" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.85, 0.95, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+text = "Brake / reverse"
+
+[node name="Key2" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_colors/font_color = Color(0.17, 0.14, 0.32, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("keycap")
+text = "A D / ← →"
+horizontal_alignment = 1
+
+[node name="Action2" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.85, 0.95, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+text = "Steer"
+
+[node name="Key3" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_colors/font_color = Color(0.17, 0.14, 0.32, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("keycap")
+text = "SPACE"
+horizontal_alignment = 1
+
+[node name="Action3" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.85, 0.95, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+text = "Drift (hold + steer)"
+
+[node name="Key4" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_colors/font_color = Color(0.17, 0.14, 0.32, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("keycap")
+text = "R"
+horizontal_alignment = 1
+
+[node name="Action4" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.85, 0.95, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+text = "Reset trike"
+
+[node name="Key5" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_colors/font_color = Color(0.17, 0.14, 0.32, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("keycap")
+text = "ESC"
+horizontal_alignment = 1
+
+[node name="Action5" type="Label" parent="Root/Center/Panel/VBox/Controls"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.85, 0.95, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 15
+text = "Pause"

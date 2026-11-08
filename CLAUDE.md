@@ -1,0 +1,93 @@
+# TRIKE TUMBLE — Claude Code project guide
+
+Colorful 3D cartoon downhill party racer: up to 5 players on three-wheeled
+drift trikes. Funny physics, collisions, falling off, items. See
+`docs/GAME_DESIGN.md` for the vision.
+
+## Locked requirements (do not change without the owner's approval)
+
+- Engine **Godot 4.7.2 stable**, **GDScript** only, **Mobile** renderer, **Jolt** physics.
+- Targets: macOS + Windows desktop. Shared directly with friends; **no Steam**.
+- Up to 5 players, 3 maps, 5–10 minute races, low-poly cartoon style.
+
+## Permanent rules
+
+1. Inspect the existing project before coding. Keep the architecture modular:
+   separate scenes/scripts per system, no monolithic scripts.
+2. Typed GDScript where practical. Gameplay values must be configurable
+   (`TrikeConfig` resource, `@export` vars), never magic numbers in logic.
+3. No paid assets/plugins/services. No downloaded assets without approval.
+   No unnecessary dependencies. Never copy copyrighted characters or assets.
+4. Don't implement unrelated features or skip ahead on the roadmap
+   (multiplayer and map production come later, see `docs/ROADMAP.md`).
+5. **Never run `git commit`, `git push`, `git reset` or `git clean`.** The owner handles git.
+6. Never delete existing work without explaining why.
+7. Never claim something works without testing it. Run the test suite
+   (below) after every gameplay change and add tests for new systems.
+8. Keep these docs current: `CLAUDE.md`, `docs/GAME_DESIGN.md`,
+   `docs/ROADMAP.md`, `docs/TECHNICAL_ARCHITECTURE.md`, `docs/TESTING.md`.
+
+## Running and testing
+
+Godot is not on PATH on the owner's Mac. Binary:
+`~/Downloads/Godot.app/Contents/MacOS/Godot` (referred to as `$GODOT`).
+
+```sh
+$GODOT --headless --path . --import                       # refresh class cache after adding class_name scripts
+$GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn   # full suite, exit 0 = pass
+$GODOT --path .                                            # play the game
+```
+
+Details, the visual capture tool and the manual checklist: `docs/TESTING.md`.
+
+## Project layout
+
+```
+scenes/   main/ vehicles/ characters/ camera/ ui/ tracks/ props/
+scripts/  main/ vehicles/ characters/ camera/ ui/ track/ race/ props/ visuals/
+resources/vehicles/default_trike_config.tres   # all handling values
+resources/ui/trike_theme.tres                  # shared UI theme (fonts, buttons, panels)
+tests/    test_runner (automated), visual_capture (screenshots/perf), track_autopilot
+docs/     design, roadmap, architecture, testing, screenshots/
+```
+
+## Things that bite
+
+- **Vehicle movement is custom** (raycast suspension + arcade forces in
+  `Trike._integrate_forces`). Do not swap in `VehicleBody3D`. Tune feel in
+  `default_trike_config.tres`, not in code.
+- Drive the trike only through `Trike.input` (`TrikeInput`). Keyboard, tests,
+  AI and future networking all use this path.
+- Teleport a trike only with `Trike.teleport()`. It resets velocity, drift state
+  and physics interpolation.
+- Physics interpolation is on. Code that moves things in `_process` should read
+  `get_global_transform_interpolated()`, as `FollowCamera` does.
+- In hand-edited `.tscn` files: `Transform3D(...)` lists basis **rows**. A
+  node-typed `@export` needs `node_paths=PackedStringArray("prop")` in the node
+  header, or it silently stays null.
+- Child `_ready` runs before parent `_ready`. `Trike` sets up its wheels in
+  `_enter_tree` so `TrikeVisuals` can query them.
+- Vertex-colored materials need `vertex_color_is_srgb = true`, or colors wash out.
+- Physics layers: 1 world, 2 vehicles, 3 props (bit value 4).
+- **Visuals never drive physics.** The trike's `Visuals` subtree is cosmetic:
+  wheel nodes are placed from `Trike.wheel_suspension_length`, the rider is
+  posed by IK. Never add collision shapes or change the `Trike` body/shapes when
+  restyling. Tests check that visual wheels match the physics wheels and that
+  gloves and boots stay on their IK targets.
+- Track collision and track rendering are separate passes in
+  `TrackMeshBuilder`. Restyle the render pass freely. Changing
+  `_build_collision` changes how the track drives.
+- Scenery that looks solid (trunks, boulders, signs, bales, cabin) must get a
+  matching collider. A test asserts no scenery collider enters the road corridor.
+- Body-colored trike parts are in the `body_paint` group
+  (`TrikeVisuals.body_color` recolors them, ready for per-player colors).
+- `RoundedBoxMesh` / `ArcMesh` (scripts/visuals) are `@tool` PrimitiveMesh
+  scripts. `MeshKit.combine` merges primitives into one flat-shaded,
+  vertex-colored mesh for cheap batching.
+- `SceneTree.physics_frame` fires *before* `_physics_process`, and
+  `process_frame` before `_process`. Tests that read state right after
+  awaiting need an extra tick, or must call the update themselves.
+- The macOS capture window must stay visible (`--always-on-top`), or frames
+  may be stale.
+- If the Godot editor is open while files change on disk, let it reload. Saving
+  stale editor state can overwrite `project.godot` (input map, renderer).

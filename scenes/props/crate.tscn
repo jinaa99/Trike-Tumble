@@ -1,0 +1,47 @@
+[gd_scene format=3]
+
+[sub_resource type="PhysicsMaterial" id="phys_crate"]
+friction = 0.6
+bounce = 0.1
+
+[sub_resource type="BoxShape3D" id="shape_crate"]
+size = Vector3(1, 1, 1)
+
+[sub_resource type="BoxMesh" id="mesh_crate"]
+size = Vector3(1, 1, 1)
+
+[sub_resource type="StandardMaterial3D" id="mat_crate"]
+albedo_color = Color(0.82, 0.58, 0.32, 1)
+roughness = 0.9
+diffuse_mode = 3
+
+[sub_resource type="BoxMesh" id="mesh_band"]
+size = Vector3(1.04, 0.16, 1.04)
+
+[sub_resource type="StandardMaterial3D" id="mat_band"]
+albedo_color = Color(0.55, 0.35, 0.18, 1)
+roughness = 0.9
+diffuse_mode = 3
+
+[node name="Crate" type="RigidBody3D"]
+collision_layer = 4
+collision_mask = 7
+mass = 12.0
+physics_material_override = SubResource("phys_crate")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+shape = SubResource("shape_crate")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("mesh_crate")
+material_override = SubResource("mat_crate")
+
+[node name="BandTop" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
+mesh = SubResource("mesh_band")
+material_override = SubResource("mat_band")
+
+[node name="BandBottom" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.3, 0)
+mesh = SubResource("mesh_band")
+material_override = SubResource("mat_band")
