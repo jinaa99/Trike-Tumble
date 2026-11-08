@@ -1,0 +1,39 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/menu/main_menu.gd" id="1_menu"]
+[ext_resource type="PackedScene" path="res://scenes/menu/menu_background.tscn" id="2_bg"]
+
+[sub_resource type="Gradient" id="shade_gradient"]
+offsets = PackedFloat32Array(0, 0.55, 1)
+colors = PackedColorArray(0.08, 0.06, 0.2, 0.78, 0.08, 0.06, 0.2, 0.35, 0.08, 0.06, 0.2, 0.0)
+
+[sub_resource type="GradientTexture2D" id="shade"]
+gradient = SubResource("shade_gradient")
+width = 256
+height = 4
+
+[node name="MainMenu" type="Node"]
+script = ExtResource("1_menu")
+
+[node name="Background" parent="." instance=ExtResource("2_bg")]
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Shade" type="TextureRect" parent="UI"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = SubResource("shade")
+expand_mode = 1
+
+[node name="Root" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2

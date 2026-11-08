@@ -1,5 +1,5 @@
 class_name PlayerInputSource
-extends Node
+extends TrikeInputSource
 ## Reads the local keyboard/gamepad (see Project Settings > Input Map) into a TrikeInput.
 
 

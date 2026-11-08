@@ -31,7 +31,7 @@ const WHEEL_COUNT := 3
 @export var config: TrikeConfig
 ## Optional. When null, the trike is driven by writing to `input` directly
 ## (tests, AI, network).
-@export var input_source: PlayerInputSource
+@export var input_source: TrikeInputSource
 @export_flags_3d_physics var wheel_collision_mask := 0b101
 ## Respawn automatically after lying overturned. A rider system turns this
 ## off because it handles flips itself (the rider is thrown off instead).
@@ -50,12 +50,31 @@ var boost_time := 0.0
 var grounded_wheel_count := 0
 var wheel_contact: Array[bool] = [false, false, false]
 var wheel_suspension_length := PackedFloat32Array([0.0, 0.0, 0.0])
+## Ground under each wheel (TrackSurface.Kind) and the main one under the trike.
+var wheel_surface: Array[TrackSurface.Kind] = [TrackSurface.Kind.ROAD, TrackSurface.Kind.ROAD, TrackSurface.Kind.ROAD]
+var surface := TrackSurface.Kind.ROAD
 ## False while the rider is off the trike: input is ignored and it brakes gently.
 var has_rider := true
+## Race control (lobby, countdown, race over): input is ignored and the trike
+## holds still, but physics keep running.
+var input_locked := false
+## Network proxy: another computer simulates this trike. It is a frozen
+## kinematic body moved by NetRacerSync (so local trikes still bump into it);
+## no input, no forces, visual state comes from the owner's snapshots.
+var network_proxy := false
+## Owner-reported velocity of a proxy (frozen bodies report none).
+var network_velocity := Vector3.ZERO
+## Counts teleports (respawns, resets), so network proxies snap instead of
+## sliding across the map between two snapshots.
+var teleport_count := 0
 ## Strength of the latest impact (m/s), for debugging and tests.
 var last_impact_strength := 0.0
 
 var _wheel_mounts := PackedVector3Array()
+# Handling of the ground under the wheels (averaged over grounded wheels).
+var _surface_speed := 1.0
+var _surface_drag := 0.0
+var _surface_grip := 1.0
 var _wheel_radii := PackedFloat32Array()
 var _ray_query := PhysicsRayQueryParameters3D.new()
 var _hop_requested := false
@@ -97,7 +116,9 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if not has_rider:
+	if network_proxy:
+		return
+	if not has_rider or input_locked:
 		input.clear()
 	elif input_source:
 		input_source.poll(input)
@@ -116,6 +137,8 @@ func _physics_process(delta: float) -> void:
 
 
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	if network_proxy:
+		return
 	if _pending_teleport:
 		_pending_teleport = false
 		_baseline_valid = false
@@ -124,6 +147,10 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		state.angular_velocity = Vector3.ZERO
 		return
 
+	# Physics callbacks run before _physics_process each tick, so input written
+	# since the last tick must be dropped here too while locked or riderless.
+	if input_locked or not has_rider:
+		input.clear()
 	var dt := state.step
 	_measure_impact(state, dt)
 	var xf := state.transform
@@ -216,9 +243,59 @@ func teleport(target: Transform3D, notify := true) -> void:
 	_hop_requested = false
 	_upside_down_time = 0.0
 	_stuck_time = 0.0
+	teleport_count += 1
 	reset_physics_interpolation()
 	if notify:
 		respawned.emit()
+
+
+## Turns this trike into a network proxy (see `network_proxy`).
+func set_network_proxy(enabled: bool) -> void:
+	network_proxy = enabled
+	input_source = null
+	input.clear()
+	auto_recover_when_flipped = false
+	freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	freeze = enabled
+
+
+## Velocity for other systems (AI avoidance): real for simulated trikes, the
+## owner's reported one for proxies.
+func get_motion_velocity() -> Vector3:
+	return network_velocity if network_proxy else linear_velocity
+
+
+## Owner side: everything another computer needs to show this trike.
+func get_network_state() -> Dictionary:
+	return {
+		"xf": global_transform, "vel": linear_velocity, "steer_amount": steer_amount,
+		"steer_angle": steer_angle, "forward_speed": forward_speed, "drift_dir": drift_direction if is_drifting else 0,
+		"drift_charge": drift_charge, "boost": boost_time, "susp": wheel_suspension_length,
+		"contact": int(wheel_contact[0]) | (int(wheel_contact[1]) << 1) | (int(wheel_contact[2]) << 2),
+		"has_rider": has_rider, "teleports": teleport_count,
+	}
+
+
+## Proxy side: shows a (interpolated) owner state. Moves the kinematic body.
+func apply_network_state(state: Dictionary) -> void:
+	global_transform = state["xf"]
+	network_velocity = state["vel"]
+	steer_amount = state["steer_amount"]
+	steer_angle = state["steer_angle"]
+	forward_speed = state["forward_speed"]
+	drift_direction = state["drift_dir"]
+	is_drifting = drift_direction != 0
+	drift_charge = state["drift_charge"]
+	boost_time = state["boost"]
+	wheel_suspension_length = state["susp"]
+	var contact: int = state["contact"]
+	for i in WHEEL_COUNT:
+		wheel_contact[i] = contact & (1 << i) != 0
+	grounded_wheel_count = wheel_contact.count(true)
+	var teleports: int = state.get("teleports", teleport_count)
+	if teleports != teleport_count:
+		teleport_count = teleports
+		reset_physics_interpolation()  # no smeared frame across a respawn
 
 
 ## For future items/collisions between racers.
@@ -307,12 +384,52 @@ func _apply_suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, up: Vec
 
 		wheel_contact[i] = true
 		wheel_suspension_length[i] = length
+		wheel_surface[i] = TrackSurface.of(hit.get("collider"))
 		grounded_wheel_count += 1
 		normal_sum += hit_normal
 
+	_update_surface()
 	if grounded_wheel_count == 0:
 		return Vector3.UP
 	return normal_sum.normalized()
+
+
+## Averages the handling of the surfaces under the grounded wheels.
+func _update_surface() -> void:
+	_surface_speed = 1.0
+	_surface_drag = 0.0
+	_surface_grip = 1.0
+	if grounded_wheel_count == 0:
+		return
+	var speed := 0.0
+	var drag := 0.0
+	var grip := 0.0
+	var counts := [0, 0, 0, 0]
+	for i in WHEEL_COUNT:
+		if not wheel_contact[i]:
+			continue
+		var kind := wheel_surface[i]
+		counts[kind] += 1
+		match kind:
+			TrackSurface.Kind.GRASS:
+				speed += config.grass_speed_factor
+				drag += config.grass_drag
+				grip += config.grass_grip_factor
+			TrackSurface.Kind.MUD:
+				speed += config.mud_speed_factor
+				drag += config.mud_drag
+				grip += config.mud_grip_factor
+			_:
+				speed += 1.0
+				grip += 1.0
+	_surface_speed = speed / grounded_wheel_count
+	_surface_drag = drag / grounded_wheel_count
+	_surface_grip = grip / grounded_wheel_count
+	var most := 0
+	for kind in counts.size():
+		if counts[kind] > counts[most]:
+			most = kind
+	surface = most as TrackSurface.Kind
 
 
 func _apply_drive(velocity: Vector3, flat_forward: Vector3, dt: float) -> Vector3:
@@ -327,12 +444,14 @@ func _apply_drive(velocity: Vector3, flat_forward: Vector3, dt: float) -> Vector
 
 	# Propulsion (engine, reverse, boost).
 	var drive := 0.0
-	if throttle > 0.0 and forward_speed < config.max_speed:
-		var ratio := clampf(forward_speed / config.max_speed, 0.0, 1.0)
+	var top_speed := config.max_speed * _surface_speed
+	if throttle > 0.0 and forward_speed < top_speed:
+		var ratio := clampf(forward_speed / top_speed, 0.0, 1.0)
 		drive += config.acceleration * throttle * (1.0 - ratio * ratio)
 	if brake > 0.0 and forward_speed <= 0.5 and forward_speed > -config.max_reverse_speed:
 		drive -= config.reverse_acceleration * brake
-	if boost_time > 0.0 and forward_speed < config.boost_max_speed:
+	var boost_top := config.boost_max_speed * _surface_speed
+	if boost_time > 0.0 and forward_speed < boost_top:
 		drive += config.boost_acceleration
 
 	# Resistance never reverses the direction of travel on its own.
@@ -343,8 +462,11 @@ func _apply_drive(velocity: Vector3, flat_forward: Vector3, dt: float) -> Vector
 		resist += config.rolling_resistance
 	if handbrake:
 		resist += config.handbrake_deceleration
-	if not has_rider:
+	if not has_rider or input_locked:
 		resist += config.riderless_brake_deceleration
+	# Grass and mud: slow down to the surface's top speed.
+	if forward_speed > (boost_top if boost_time > 0.0 else top_speed):
+		resist += _surface_drag
 	var resist_dv := minf(resist * dt, absf(forward_speed)) * signf(forward_speed)
 
 	velocity += flat_forward * (drive * dt - resist_dv)
@@ -354,15 +476,15 @@ func _apply_drive(velocity: Vector3, flat_forward: Vector3, dt: float) -> Vector
 
 
 func _apply_grip(velocity: Vector3, flat_right: Vector3, traction: float, dt: float) -> Vector3:
-	var grip := config.grip
+	var grip := config.grip * _surface_grip
 	var max_accel := config.max_lateral_accel
 	var retention := config.grip_speed_retention
 	if is_drifting:
-		grip = config.drift_grip
+		grip = config.drift_grip * _surface_grip
 		max_accel = config.drift_max_lateral_accel
 		retention = config.drift_speed_retention
 	elif input.drift and absf(forward_speed) > 1.0:
-		grip = config.handbrake_grip
+		grip = config.handbrake_grip * _surface_grip
 		retention = 0.0
 	var lateral := velocity.dot(flat_right)
 	var max_dv := max_accel * dt

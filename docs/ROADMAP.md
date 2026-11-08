@@ -1,5 +1,53 @@
 # TRIKE TUMBLE — Roadmap
 
+## Final demo milestones (plan: `docs/FINAL_DEMO_AUDIT.md`)
+
+- [x] **01 — fixes:** finish while riderless (pending finish), `attach_to()`
+      lifecycle, E-key tests, doc drift. 143/143 checks.
+- [x] **02 — AI racers and five-racer offline race:** `RacerManager` +
+      `Racer` registry (1–5 racers, unique ids, slots, own progress/respawn/
+      finish), `AIDriver` through `TrikeInput` (track following, corner speed
+      planning, obstacle/racer avoidance, ramps, drifting, unsticking, finish
+      pull-over, on-foot recovery and mounting), Easy/Medium/Hard,
+      `race_five.tscn` and `--ai=N --difficulty=…`. 217/217 checks.
+      Owner playtest of AI feel still open.
+- [x] **03 — race management:** `RaceStateMachine` (LOBBY → COUNTDOWN →
+      RACING → FINISHED → RESULTS), `RaceController` (3-2-1-GO with locked
+      controls, finish timeout, DNF, results, Race Again / Return to Lobby
+      without a reload), ordered checkpoints (`CheckpointProgress`, finish
+      gate), live positions (`RacePositions`), HUD position/CP, results and
+      lobby screens. 281/281 checks. Owner playtest still open.
+- [x] **04 — main menu, lobby and UI:** menu scene with 3D background,
+      Play/Host/Join/Settings/Quit, map selection (placeholder previews),
+      lobby (players, ready, host, AI fill, map), saved settings (audio buses,
+      resolution, fullscreen, quality, key rebinding, name), HUD race state +
+      item slot, pause Settings/Return to Lobby, `UiKit` design system,
+      `NetworkTransport` interface with an offline implementation. 366/366 checks.
+- [x] **05 — online multiplayer (ENet):** owner-simulated trikes +
+      host authority, kinematic proxies with jitter-buffer interpolation,
+      host-validated snapshots, host-decided checkpoints/positions/finish,
+      lobby sync, connection handling (timeout, full, version, duplicate,
+      mid-race join, disconnect, host shutdown, rejoin). 395/395 checks +
+      32/32 multi-process network checks (2, 3 and 5 instances on one Mac).
+      **Not yet tested: two real computers on a LAN, Windows, internet.**
+- [x] **06 — Forest Rush complete racing map:** 7.45 km downhill (630 m
+      drop, 30 checkpoints) in 8 sections: mountain start, fast forest
+      descent, hairpins with a rock narrows, two wooden trestle bridges, mud
+      and obstacles (boulders, road pines, falling logs), ravine jump, final
+      descent with overlooks, finish with stands.
+      - Map system: route segments, width profile, zones, chunked meshes and
+        collision, road surfaces (mud/grass/planks), safe recovery points,
+        item box points.
+      - Faster track build (grid lookups, linear terrain sweep, packed mesh
+        arrays): the test track went from 330 to 250 ms, and Forest Rush
+        builds in 1.1–1.4 s.
+      - Tests: 448/448 checks (52 map checks), 14/14 timed map races, 36/36
+        network checks (Forest Rush online included).
+      - Measured times: Hard AI about 5:25, Medium about 5:37, Easy about
+        6:42, a simple player driver 5:23.
+      - **Human playtest of the map and real human times still open.**
+- [ ] Next (only when the owner starts it): see `docs/FINAL_DEMO_AUDIT.md` §9.
+
 ## Milestone 1: single-player trike prototype ✅ (implemented, automated tests pass)
 
 - [x] Main game scene (track, trike, camera, HUD, pause menu)
@@ -67,9 +115,9 @@
 
 ## Milestone 5: race structure
 
-- Countdown, checkpoints, laps or long single runs, positions, results screen.
-- AI opponents (reuse `TrikeInput`, as `TrackAutopilot` already does) for
-  solo play and testing.
+- [x] Countdown, checkpoints, positions, results screen (final demo milestone 03).
+- Laps or long single runs: decided with the map work.
+- [x] AI opponents (done in final demo milestone 02, `AIDriver`).
 - Racer-vs-racer bumping and knockback (`Trike.apply_knockback`).
 
 ## Milestone 6: items

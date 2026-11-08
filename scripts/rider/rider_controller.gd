@@ -33,7 +33,7 @@ const STATE_NAMES: Array[String] = ["RIDING", "EJECTED", "RAGDOLL", "GETTING_UP"
 @export var trike: Trike
 @export var config: RiderConfig
 ## Optional. When null, write to `input` directly (tests, AI, network).
-@export var input_source: PlayerInputSource
+@export var input_source: TrikeInputSource
 ## Optional. When set, getting up off the road puts the rider back on it.
 @export var track: Track
 
@@ -54,6 +54,9 @@ var _get_up_from := Transform3D.IDENTITY
 var _mount_from := Transform3D.IDENTITY
 var _rng := RandomNumberGenerator.new()
 var _ignoring_trike := false
+## Network proxy: the owner simulates this rider; state and body transforms
+## arrive through apply_network_state(). No local input, physics or ejection.
+var network_proxy := false
 
 @onready var ragdoll: RiderRagdoll = $Ragdoll
 @onready var on_foot: RiderOnFoot = $OnFoot
@@ -163,6 +166,81 @@ func get_sync_state() -> Dictionary:
 	}
 
 
+## Turns this rider into a network proxy: no ejection from local impacts,
+## ragdoll frozen (moved by the network), no input.
+func set_network_proxy(enabled: bool) -> void:
+	network_proxy = enabled
+	input_source = null
+	if enabled and is_attached() and trike.impact.is_connected(_on_trike_impact):
+		trike.impact.disconnect(_on_trike_impact)
+	ragdoll.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+
+
+## Owner side: rider state for the network.
+func get_network_state() -> Dictionary:
+	var facing_forward := -on_foot.facing.z
+	return {
+		"state": state, "state_time": state_time,
+		"ragdoll_xf": ragdoll.global_transform,
+		"foot": on_foot.global_position, "facing": atan2(-facing_forward.x, -facing_forward.z),
+	}
+
+
+## Proxy side: follows the owner's rider state, using the same transitions
+## (model on/off the seat, poses) the local state machine uses.
+func apply_network_state(data: Dictionary) -> void:
+	if not is_attached():
+		return
+	var new_state: State = data["state"]
+	if new_state != state:
+		_enter_remote_state(new_state)
+	state_time = data["state_time"]
+	if state == State.EJECTED or state == State.RAGDOLL:
+		ragdoll.global_transform = data["ragdoll_xf"]
+	elif state == State.GETTING_UP or state == State.ON_FOOT:
+		on_foot.global_position = data["foot"]
+		on_foot.facing = Basis(Vector3.UP, data["facing"])
+
+
+func _enter_remote_state(new_state: State) -> void:
+	var was_riding := state == State.RIDING
+	if was_riding:
+		trike.set_rider_aboard(false)
+		_detach_model()
+	match new_state:
+		State.EJECTED, State.RAGDOLL:
+			ragdoll.process_mode = Node.PROCESS_MODE_INHERIT
+			ragdoll.freeze = true
+			on_foot.deactivate()
+			_rider.set_pose_mode(Rider.PoseMode.FLAIL)
+			if was_riding:
+				eject_count += 1
+		State.GETTING_UP:
+			_get_up_from = _rider.global_transform
+			ragdoll.deactivate()
+			on_foot.process_mode = Node.PROCESS_MODE_INHERIT
+			_rider.set_pose_mode(Rider.PoseMode.GET_UP)
+		State.ON_FOOT:
+			ragdoll.deactivate()
+			on_foot.process_mode = Node.PROCESS_MODE_INHERIT
+		State.MOUNTING:
+			_mount_from = _rider.global_transform
+			ragdoll.deactivate()
+			on_foot.deactivate()
+			_rider.set_pose_mode(Rider.PoseMode.RIDE)
+		State.RIDING:
+			ragdoll.deactivate()
+			on_foot.deactivate()
+			_attach_model()
+			trike.set_rider_aboard(true)
+	var entering_ejection := was_riding and new_state != State.RIDING
+	_change_state(new_state)
+	if entering_ejection:
+		ejected.emit(0.0)
+	elif new_state == State.RIDING:
+		mounted.emit()
+
+
 ## Throws the rider off now (also used by tests and future items).
 func eject(impact_strength := 0.0, velocity_before := Vector3.ZERO) -> void:
 	if state != State.RIDING or not is_attached():
@@ -208,6 +286,8 @@ func _physics_process(delta: float) -> void:
 			_release_freed_trike()
 		return
 	state_time += delta
+	if network_proxy:
+		return
 	if state == State.RIDING:
 		_physics_riding(delta)
 		return
@@ -425,8 +505,13 @@ func _standing_transform() -> Transform3D:
 	return feet * Transform3D(Basis.IDENTITY, Rider.STAND_ROOT_OFFSET)
 
 
-## Camera-relative movement from WASD/arrows (forward = away from camera).
+## Camera-relative movement from WASD/arrows (forward = away from camera),
+## or the world-space direction an AI/network source wrote.
 func _move_direction() -> Vector3:
+	if input.move_direction != Vector3.ZERO:
+		var world := input.move_direction
+		world.y = 0.0
+		return world.limit_length(1.0)
 	var forward := Vector3.FORWARD
 	var right := Vector3.RIGHT
 	var camera := get_viewport().get_camera_3d()
@@ -469,5 +554,6 @@ func _nearest_road_spot(from: Vector3) -> Vector3:
 	var path := track.path
 	var index := path.find_nearest(from, path.find_nearest(trike.global_position), 40)
 	var frame := path.get_frame(index)
-	var lateral := clampf((from - frame.origin).dot(frame.basis.x), -track.road_width * 0.5 + 1.5, track.road_width * 0.5 - 1.5)
+	var half := track.half_width_at(index) - 1.5
+	var lateral := clampf((from - frame.origin).dot(frame.basis.x), -half, half)
 	return frame.origin + frame.basis.x * lateral + frame.basis.y * 0.1

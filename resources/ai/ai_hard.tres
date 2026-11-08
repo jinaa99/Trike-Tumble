@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="AIDriverConfig" format=3]
+
+[ext_resource type="Script" path="res://scripts/ai/ai_driver_config.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+difficulty = 2
+display_name = "Hard"
+top_speed_ratio = 1.0
+corner_lateral_accel = 19.0
+planning_deceleration = 18.0
+brake_margin = 2.0
+cruise_throttle = 0.8
+lookahead_min = 6.5
+lookahead_time = 0.5
+steer_gain = 3.0
+steer_rate = 9.0
+steer_noise = 0.02
+steer_noise_frequency = 0.8
+corner_cut = 0.5
+lane_change_speed = 8.0
+drift_chance = 0.75
+drift_min_curvature = 0.008
+drift_min_speed = 13.0
+avoid_distance = 50.0
+avoid_margin = 0.7
+reaction_time = 0.08
+start_delay = 0.05
+mount_delay = 0.05
+stuck_time = 0.9
+reverse_time = 0.9

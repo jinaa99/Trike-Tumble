@@ -29,6 +29,9 @@ var _pending := {}
 ## player_id -> {"position", "time", "crossed_time"}
 var _results := {}
 var _finish_index := 0
+## Optional gate `func(player_id: int) -> bool`: a crossing only counts when it
+## returns true (RacerManager: every checkpoint passed in order). Unset = always.
+var can_finish := Callable()
 
 
 func _init(finish_index: int) -> void:
@@ -57,6 +60,8 @@ func on_body_crossed(body: Node, race_time: float) -> void:
 	var player_id := get_owner_id(body)
 	if player_id < 0 or has_finished(player_id):
 		return
+	if can_finish.is_valid() and not can_finish.call(player_id):
+		return  # skipped a checkpoint: the line doesn't count
 	var rider: RiderController = _racers[player_id]["rider"]
 	if rider == null or rider.is_riding():
 		_confirm(player_id, race_time, race_time)
@@ -79,6 +84,12 @@ func update(race_time: float) -> void:
 		var rider: RiderController = racer["rider"]
 		if rider.is_riding():
 			_confirm(player_id, race_time, _pending[player_id])
+
+
+## Clears results and pending finishes for a new race (racers stay registered).
+func reset() -> void:
+	_pending.clear()
+	_results.clear()
 
 
 func has_finished(player_id: int) -> bool:

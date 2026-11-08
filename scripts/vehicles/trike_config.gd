@@ -106,6 +106,18 @@ extends Resource
 ## Velocity changes below this are not reported as impacts (m/s per tick).
 @export var impact_report_threshold := 1.0
 
+@export_group("Surfaces")
+## Off-road (grass slopes beside the track) and mud. The speed factor scales
+## max_speed and boost_max_speed; above that the surface drag (m/s²) slows
+## the trike; the grip factor scales sideways grip. Road and bridge planks
+## use the plain values.
+@export_range(0.1, 1.0) var grass_speed_factor := 0.65
+@export var grass_drag := 5.0
+@export_range(0.1, 1.0) var grass_grip_factor := 0.8
+@export_range(0.1, 1.0) var mud_speed_factor := 0.5
+@export var mud_drag := 8.0
+@export_range(0.1, 1.0) var mud_grip_factor := 0.55
+
 @export_group("Recovery")
 ## Body up·world up below this counts as overturned.
 @export var flipped_up_threshold := 0.3

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="MapInfo" format=3]
+
+[ext_resource type="Script" path="res://scripts/maps/map_info.gd" id="1_map"]
+
+[resource]
+script = ExtResource("1_map")
+id = "snow_slide"
+display_name = "Snow Slide"
+description = "Snowy mountain pass with icy hairpins."
+characteristic = "Icy patches with low grip"
+status = 0
+race_scene = ""
+theme_colors = Array[Color]([Color(0.78, 0.88, 1.0, 1), Color(0.62, 0.72, 0.9, 1), Color(0.93, 0.96, 1.0, 1), Color(0.45, 0.75, 1.0, 1)])

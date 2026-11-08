@@ -104,18 +104,137 @@ brows, blush, smile, magenta helmet with crest/visor/goggles, jacket with
 zipper and badge, scarf that flutters with speed, gloves, chunky boots. Final
 characters will be original low-poly models. No copyrighted designs.
 
+## Racers and AI opponents (final demo milestone 02)
+
+A race has 1–5 racers. Offline it's you plus up to 4 AI riders (Pip,
+Bramble, Nutmeg, Rusty), each with its own trike color and number. The AI
+play by the player's rules:
+
+- same trike and handling values, driven through the same controls: no
+  speed bonus, no rubber-banding, no teleporting along the track
+- they wait on the grid until GO
+- they follow the road, slow down for sharp corners, dodge rocks, crate
+  stacks and slower racers, line up with ramps and jump them
+- when they wipe out they tumble, get up, run back to their own trike and
+  hop on, exactly like you; the R-style recovery is only a last resort
+- once finished they pull over past the line and stop
+
+Difficulties (`resources/ai/ai_easy|medium|hard.tres`):
+
+- **Easy:** ~74 % of top speed, cautious corners, wobbly steering, late
+  reactions, ignores cones, never drifts. Finishes the test track in ~62 s.
+- **Medium:** ~90 % of top speed, cuts corners a little, drifts sometimes.
+  ~52 s.
+- **Hard:** full speed, quick and accurate steering, cuts corners, early
+  avoidance, drifts often for boosts. ~49–50 s, about as fast as a clean
+  full-throttle run.
+
+`race_five.tscn` uses one hard, two medium and one easy.
+
+## Menus (final demo milestone 04)
+
+- **Title:**
+  - big bouncing TRIKE TUMBLE logo over a live race of four AI riders
+  - PLAY, HOST GAME, JOIN GAME, SETTINGS, QUIT
+- **PLAY:** choose a map → solo lobby (you + 3 AI). Add/remove AI (up to 5
+  racers), click an AI's difficulty to change it, Change Map, Start Race.
+- **HOST GAME:** port (default 7777), player limit 2–5, your LAN address,
+  status → hosted lobby that friends join over the network (AI can fill
+  free seats).
+- **JOIN GAME:** IP + port with validation, Connect, clear errors (timeout,
+  full, race in progress…), then the host's lobby.
+- **Online races:** everyone drives their own trike with no input lag. You
+  see the others' trikes, riders, wipeouts and remounts. Bumping works. The
+  host decides positions and finish order. Details: `docs/NETWORKING.md`.
+- **Lobby:** players with color, name, HOST badge, READY/NOT READY, AI
+  difficulty; "3 / 5 players"; selected map card with preview; Ready; Start
+  Race (enabled when everyone's ready); Leave Lobby.
+- **Maps:** Forest Rush (READY: the full 7.4 km map), Rocky
+  Canyon and Snow Slide (coming soon). Previews are labelled placeholders
+  until the maps exist.
+- **Settings** (saved): master/music/SFX volume, resolution, fullscreen,
+  graphics quality, key rebinding, player name.
+- **In race:**
+  - race-state chip and item slot on the HUD
+  - pause menu: Resume, Restart, Settings, Return to Lobby, Quit Game
+  - results: Race Again, Return to Lobby
+
+## Race structure (final demo milestone 03)
+
+1. **Lobby:** everyone on the starting grid. The first race starts by itself
+   after a second; after "Return to Lobby" a lobby panel lists the racers and
+   waits for **Start Race**.
+2. **Countdown:** big 3 · 2 · 1 · GO!. Nobody can move until GO (throttle
+   does nothing); the clock starts at GO.
+3. **Racing:** 12 ordered checkpoints on the test track (every 100 m) plus
+   the finish line. Skip one and the finish line won't count; reversing
+   never gains ground. The HUD shows your position ("2nd / 5") and
+   checkpoints ("CP 3/12"), ranked by real progress along the track.
+4. **Finishing:** when the first racer finishes, everyone else keeps racing
+   for up to 45 s (shown as "ENDS 12" on the HUD), then the race ends and
+   anyone still out there is DNF. The finish rules are unchanged: you must
+   be riding, and an empty trike over the line finishes when you get back on.
+5. **Results:** places 1st–5th with names and times (or DNF), race duration,
+   **Race Again** (same racers, straight into a new countdown, props reset)
+   and **Return to Lobby**.
+
 ## Tracks (3 planned)
 
-Downhill mountain roads with turns, jumps, obstacles (crates, cones, rocks),
-shortcuts and hazards. One prototype test track exists (~1.2 km, ~114 m drop).
-Final maps will be longer or multi-lap to reach 5–10 minutes.
+Downhill mountain roads with turns, jumps, obstacles and hazards, one long
+run from a mountain start to a finish far below (no laps). Forest Rush is
+finished (final demo milestone 06); Rocky Canyon and Snow Slide are still
+"coming soon". The ~1.2 km test track stays in the project for the fast
+automated tests and the menu background; it is not in the map list.
+
+### Forest Rush (final demo milestone 06)
+
+A colorful cartoon mountain forest. **7,454 m long, 630 m drop, 30
+checkpoints**, about 5½ to 7 minutes per racer (measured, see TESTING.md).
+Built from data in `scenes/tracks/forest_rush.tscn` (route segments, road
+width keys, zones, props).
+
+| # | Section | Where (m) | What happens |
+|---|---|---|---|
+| 1 | Mountain start | 0–360 | 18 m wide start plaza with banners and hay bales, a cabin, a viewing deck (overlook) on the left, gentle bends while the field spreads out |
+| 2 | Fast forest descent | 360–1,510 | 10–12 % grade, long sweeping bends (radius 200–370 m) through dense, tall pines; small jump ramps, crate stacks, rocks |
+| 3 | Tight winding forest turns | 1,510–2,430 | Eight hairpins and S-bends (radius 21–29 m), 13 m road, a narrow 9.5 m passage between rock pillars, a pine growing in the middle of the road |
+| 4 | Wooden bridges | 2,430–3,000 | Two plank bridges (85 m and 60 m, 9.5–10 m wide) on timber trestles over mountain streams, a viewing deck between them |
+| 5 | Mud and obstacles | 3,000–4,240 | Six mud stretches (full width or one side), big boulders on the road (one pair leaves a narrow gap in the middle), two more road pines, two falling-log hazards, crates |
+| 6 | Large jump | 4,240–5,240 | Fast run-up under a "BIG AIR!" arch with warning boards, a full-width kicker and a 12 m ravine gap with a creek below, then a second ramp |
+| 7 | Final fast downhill | 5,240–7,220 | 11–14 % grade, fast bends, small ramps, a third viewing deck over the valley |
+| 8 | Finish area | 7,220–7,454 | Road widens to 18 m, spectator stands on both sides, bunting, checkered finish arch (finish line 30 m before the end) |
+
+**Surfaces.** Road and bridge planks handle normally. **Mud** caps speed at
+half (13 m/s), drags the trike down to it and cuts grip to 55 %. **Grass**
+(the slopes beyond the barriers, only reachable by flying over them) caps
+speed at 65 % with 80 % grip. Values: `TrikeConfig` "Surfaces" group.
+
+**Hazards.**
+- **Falling logs:** a log drops off the bank, rolls across the road (about
+  2 s) and tumbles away down the other side, every 6.5–7 s. A hit shoves you
+  aside and can throw you off. Its timing comes from the race clock, so every
+  player sees the same log at the same moment.
+- **The ravine jump:** at full speed you clear it easily (take-off ~24 m/s,
+  landing hit 2.2 of the 11 that ejects). Roll in too slowly and you drop
+  into the ravine and are put back 45 m before the lip, so you get a proper
+  run-up.
+
+**Fairness.**
+- No shortcuts: parts of the route more than 250 m apart (along the road)
+  are at least 147 m apart on the map, and the checkpoints and
+  out-of-bounds checks make leaving the road useless.
+- Respawns only happen on "safe" road: never in the jump run-up, the gap or
+  its landing, and never within 10 m of a ramp, boulder, road tree or log
+  hazard.
+- Five grid slots on the wide start plaza, and 14 item box rows (3 boxes
+  each) ready for the items milestone.
 
 ## Planned features (not in the first milestone)
 
 - Item boxes and throwable items with knockback.
-- Racer-vs-racer bumping and knockback.
-- Online/LAN multiplayer for up to 5 players.
-- 3 finished maps, character/trike customization, audio, menus.
+- Dedicated racer-vs-racer bump tuning and knockback (racers already collide
+  physically, and hard hits eject through the normal impact rule).
+- Rocky Canyon and Snow Slide, character/trike customization, audio.
 
 ## Current tuning targets (milestone 1)
 

@@ -1,14 +1,24 @@
 class_name TrackMeshBuilder
 extends RefCounted
-## Builds render meshes and collision faces from a TrackPath.
+## Builds render meshes and collision faces from a TrackPath, in chunks.
 ##
 ## Collision and rendering are separate passes. Collision is a simple set of
-## quads: road, wall inner/top/outer faces and slope bands. The render pass
-## lays more detailed geometry over exactly the same surfaces: red/white
-## curbs, a grassy verge, tire ruts, plank barriers with posts and a top rail,
-## and multi-tone grass slopes. Visuals can get richer without changing how
-## anything drives.
+## quads: road (dirt, mud or bridge planks), wall inner/top/outer faces,
+## slope bands and gorge cliff faces. The render pass lays more detailed
+## geometry over exactly the same surfaces: red/white curbs, a grassy verge,
+## tire ruts, mud puddles, bridge planks, plank barriers with posts and a top
+## rail, and multi-tone grass slopes. Visuals can get richer without
+## changing how anything drives.
+##
+## Per sample the road has a width (`TrackPath.widths`) and a kind:
+## NORMAL (road, walls, slopes), BRIDGE (plank deck and parapets, no slopes:
+## open gorge below) or GAP (nothing: a jump gap). Each chunk of
+## `chunk_samples` samples gets its own meshes and collision faces, so the
+## renderer can cull distant parts of a long map.
 
+enum SampleKind { NORMAL, BRIDGE, GAP }
+
+## Default width when the path has no widths (older callers).
 var road_width := 14.0
 ## Collision strips across the road (render detail is independent).
 var road_subdivisions := 4
@@ -16,11 +26,17 @@ var wall_height := 1.1
 var wall_thickness := 0.7
 ## Slope cross-section outward from the wall: (outward distance, drop) pairs.
 var slope_profile := PackedVector2Array([Vector2(0.0, 0.0), Vector2(6.0, 1.8), Vector2(14.0, 7.0), Vector2(24.0, 22.0)])
+## Samples per mesh/collision chunk.
+var chunk_samples := 60
+## How far gorge cliffs reach below the road at bridge and gap ends (m).
+var cliff_depth := 34.0
 
 var dirt_color := Color(0.8, 0.58, 0.38)
 var dirt_dark_color := Color(0.62, 0.42, 0.27)
 var rut_color := Color(0.66, 0.46, 0.3)
 var verge_color := Color(0.58, 0.6, 0.3)
+var mud_color := Color(0.4, 0.27, 0.17)
+var mud_wet_color := Color(0.3, 0.2, 0.14)
 var curb_colors: Array[Color] = [Color(0.93, 0.2, 0.22), Color(0.98, 0.97, 0.93)]
 ## Samples per curb stripe (2 m each).
 var curb_stripe_samples := 2
@@ -28,19 +44,34 @@ var plank_colors: Array[Color] = [Color(0.96, 0.9, 0.78), Color(0.91, 0.84, 0.7)
 var plank_gap_color := Color(0.55, 0.42, 0.3)
 var post_color := Color(0.5, 0.34, 0.22)
 var rail_color := Color(0.9, 0.24, 0.22)
+var deck_colors: Array[Color] = [Color(0.7, 0.5, 0.32), Color(0.62, 0.43, 0.27), Color(0.75, 0.55, 0.36)]
+var deck_kerb_color := Color(0.42, 0.28, 0.18)
+var bridge_wall_colors: Array[Color] = [Color(0.6, 0.41, 0.25), Color(0.53, 0.36, 0.22)]
+var cliff_colors: Array[Color] = [Color(0.56, 0.52, 0.48), Color(0.47, 0.44, 0.42)]
 ## Samples between barrier posts.
 var post_spacing_samples := 5
 var grass_colors: Array[Color] = [Color(0.5, 0.8, 0.33), Color(0.38, 0.7, 0.32), Color(0.29, 0.58, 0.33)]
 var rock_slope_color := Color(0.5, 0.52, 0.5)
 
-var road_mesh: ArrayMesh
-var wall_mesh: ArrayMesh
-var slope_mesh: ArrayMesh
-var road_faces := PackedVector3Array()
-var wall_faces := PackedVector3Array()
-var slope_faces := PackedVector3Array()
+## Per sample: SampleKind, and the mud band across the road (u from, u to;
+## equal = no mud). Set by Track before build(); empty = all NORMAL, no mud.
+var sample_kinds := PackedByteArray()
+var mud_bands := PackedVector2Array()
+
+## One entry per chunk: {"first", "last" (sample indices), "road", "walls",
+## "slopes" (ArrayMesh or null), "faces": {category: PackedVector3Array}}.
+## Face categories: road, mud, wood, wall, slope, cliff.
+var chunks: Array[Dictionary] = []
 
 var _noise := FastNoiseLite.new()
+# Per-sample caches (filled once in build()): slope stations and their grass
+# colors per side, wall rings per side, road band points and colors.
+var _stations := PackedFloat32Array()
+var _slope_points := [PackedVector3Array(), PackedVector3Array()]
+var _slope_colors := [PackedColorArray(), PackedColorArray()]
+var _wall_rings := [PackedVector3Array(), PackedVector3Array()]
+var _band_points := PackedVector3Array()
+var _band_colors := PackedColorArray()
 
 
 func _init() -> void:
@@ -49,16 +80,37 @@ func _init() -> void:
 
 
 func build(path: TrackPath) -> void:
-	_build_collision(path)
-	road_mesh = _build_road(path)
-	wall_mesh = _build_walls(path)
-	slope_mesh = _build_slopes(path)
+	if sample_kinds.size() != path.size():
+		sample_kinds.resize(path.size())
+		sample_kinds.fill(SampleKind.NORMAL)
+	if mud_bands.size() != path.size():
+		mud_bands.resize(path.size())
+		mud_bands.fill(Vector2.ZERO)
+	_fill_caches(path)
+	chunks.clear()
+	var last_quad := path.size() - 2
+	var first := 0
+	while first <= last_quad:
+		var last := mini(first + chunk_samples - 1, last_quad)
+		chunks.append(_build_chunk(path, first, last))
+		first = last + 1
+
+
+## Kind of the quad between sample i and i + 1: a gap wins over a bridge.
+func quad_kind(i: int) -> SampleKind:
+	return maxi(sample_kinds[i], sample_kinds[mini(i + 1, sample_kinds.size() - 1)]) as SampleKind
+
+
+func half_width(path: TrackPath, index: int) -> float:
+	if path.widths.size() == path.size():
+		return path.widths[index] * 0.5
+	return road_width * 0.5
 
 
 ## Outer foot of the wall on one side (side = -1 left, +1 right).
 func wall_foot(path: TrackPath, index: int, side: int) -> Vector3:
 	var outward := path.rights[index] * float(side)
-	return path.points[index] + outward * (road_width * 0.5 + wall_thickness) - Vector3.UP * 0.4
+	return path.points[index] + outward * (half_width(path, index) + wall_thickness) - Vector3.UP * 0.4
 
 
 ## World position of a point on the slope `outward` meters past the wall.
@@ -73,64 +125,174 @@ func slope_point(path: TrackPath, index: int, side: int, outward: float) -> Vect
 	return wall_foot(path, index, side) + path.rights[index] * float(side) * outward - Vector3.UP * drop
 
 
+func _build_chunk(path: TrackPath, first: int, last: int) -> Dictionary:
+	var faces := {"road": PackedVector3Array(), "mud": PackedVector3Array(), "wood": PackedVector3Array(),
+			"wall": PackedVector3Array(), "slope": PackedVector3Array(), "cliff": PackedVector3Array()}
+	_build_collision(path, first, last, faces)
+	var road := MeshBatch.new()
+	var walls := MeshBatch.new()
+	var slopes := MeshBatch.new()
+	_build_road(path, first, last, road)
+	_build_walls(path, first, last, walls)
+	_build_slopes(path, first, last, slopes)
+	_build_cliffs(path, first, last, slopes, faces["cliff"])
+	return {"first": first, "last": last + 1, "road": road.commit(), "walls": walls.commit(),
+			"slopes": slopes.commit(), "faces": faces}
+
+
 # --- Collision (kept simple; defines how the track drives) ------------------
 
-func _build_collision(path: TrackPath) -> void:
-	road_faces.clear()
-	wall_faces.clear()
-	slope_faces.clear()
-	for i in path.size() - 1:
-		for j in road_subdivisions:
-			var u0 := float(j) / road_subdivisions
-			var u1 := float(j + 1) / road_subdivisions
-			_collision_quad(road_faces, _road_point(path, i, u0), _road_point(path, i, u1),
+func _build_collision(path: TrackPath, first: int, last: int, faces: Dictionary) -> void:
+	for i in range(first, last + 1):
+		var kind := quad_kind(i)
+		if kind == SampleKind.GAP:
+			continue
+		var cuts := _road_cuts(i, road_subdivisions)
+		var mud := mud_bands[i]
+		for j in cuts.size() - 1:
+			var u0 := cuts[j]
+			var u1 := cuts[j + 1]
+			var target: PackedVector3Array = faces["road"]
+			if kind == SampleKind.BRIDGE:
+				target = faces["wood"]
+			elif mud.y > mud.x and u0 >= mud.x - 0.001 and u1 <= mud.y + 0.001:
+				target = faces["mud"]
+			_collision_quad(target, _road_point(path, i, u0), _road_point(path, i, u1),
 					_road_point(path, i + 1, u1), _road_point(path, i + 1, u0))
 	for side: int in [-1, 1]:
-		for i in path.size() - 1:
-			var r0 := _wall_ring(path, i, side)
-			var r1 := _wall_ring(path, i + 1, side)
+		for i in range(first, last + 1):
+			var kind := quad_kind(i)
+			if kind == SampleKind.GAP:
+				continue
+			var r0 := _ring(side, i)
+			var r1 := _ring(side, i + 1)
 			for k in 3:
-				_collision_quad(wall_faces, r0[k], r0[k + 1], r1[k + 1], r1[k])
+				_collision_quad(faces["wall"], r0[k], r0[k + 1], r1[k + 1], r1[k])
+			if kind == SampleKind.BRIDGE:
+				continue
+			var slope: PackedVector3Array = _slope_points[_side_slot(side)]
+			var count := _stations.size()
 			for k in slope_profile.size() - 1:
-				var x0 := slope_profile[k].x
-				var x1 := slope_profile[k + 1].x
-				_collision_quad(slope_faces, slope_point(path, i, side, x0), slope_point(path, i, side, x1),
-						slope_point(path, i + 1, side, x1), slope_point(path, i + 1, side, x0))
+				# Profile point k is station 3k (see _fill_caches).
+				var s0 := 3 * k
+				var s1 := 3 * (k + 1)
+				_collision_quad(faces["slope"], slope[i * count + s0], slope[i * count + s1],
+						slope[(i + 1) * count + s1], slope[(i + 1) * count + s0])
+
+
+## Collision strip boundaries across the road at sample i, including the
+## edges of a mud band so mud gets its own faces.
+func _road_cuts(i: int, subdivisions: int) -> PackedFloat32Array:
+	var cuts := PackedFloat32Array()
+	for j in subdivisions + 1:
+		cuts.append(float(j) / subdivisions)
+	var mud := mud_bands[i]
+	if mud.y > mud.x:
+		for u: float in [mud.x, mud.y]:
+			var known := false
+			for c in cuts:
+				known = known or absf(c - u) < 0.001
+			if not known:
+				cuts.append(u)
+		cuts.sort()
+	return cuts
 
 
 func _collision_quad(faces: PackedVector3Array, a: Vector3, b: Vector3, c: Vector3, d: Vector3) -> void:
-	for tri: PackedVector3Array in [PackedVector3Array([a, b, c]), PackedVector3Array([a, c, d])]:
-		if (tri[1] - tri[0]).cross(tri[2] - tri[0]).length_squared() >= 1e-10:
-			faces.append_array(tri)
+	if (b - a).cross(c - a).length_squared() >= 1e-10:
+		faces.append_array(PackedVector3Array([a, b, c]))
+	if (c - a).cross(d - a).length_squared() >= 1e-10:
+		faces.append_array(PackedVector3Array([a, c, d]))
 
 
 # --- Render: road -----------------------------------------------------------
 
 ## Lateral bands across the road (0 = left edge, 1 = right edge).
 const ROAD_BANDS: Array[float] = [0.0, 0.04, 0.09, 0.2, 0.26, 0.31, 0.5, 0.69, 0.74, 0.8, 0.91, 0.96, 1.0]
+## Bridge deck: plank kerbs at the edges.
+const DECK_BANDS: Array[float] = [0.0, 0.05, 0.5, 0.95, 1.0]
+## Lengthwise planks per sample on a bridge deck.
+const DECK_PLANKS := 4
 
 
-func _build_road(path: TrackPath) -> ArrayMesh:
-	var st := _begin()
-	for i in path.size() - 1:
+func _build_road(path: TrackPath, first: int, last: int, out: MeshBatch) -> void:
+	for i in range(first, last + 1):
+		match quad_kind(i):
+			SampleKind.GAP:
+				continue
+			SampleKind.BRIDGE:
+				_build_deck(path, i, out)
+				continue
 		@warning_ignore("integer_division")
 		var curb := curb_colors[(i / curb_stripe_samples) % curb_colors.size()]
-		for j in ROAD_BANDS.size() - 1:
-			var u0 := ROAD_BANDS[j]
-			var u1 := ROAD_BANDS[j + 1]
+		var mud := mud_bands[i]
+		if mud.y <= mud.x:
+			_road_row_cached(path, i, curb, out)
+			continue
+		var bands := ROAD_BANDS.duplicate()
+		bands.append(mud.x)
+		bands.append(mud.y)
+		bands.sort()
+		for j in bands.size() - 1:
+			var u0: float = bands[j]
+			var u1: float = bands[j + 1]
+			if u1 - u0 < 0.001:
+				continue
 			var a := _road_point(path, i, u0)
 			var b := _road_point(path, i, u1)
 			var c := _road_point(path, i + 1, u1)
 			var d := _road_point(path, i + 1, u0)
+			var is_curb := u1 <= ROAD_BANDS[1] + 0.001 or u0 >= ROAD_BANDS[ROAD_BANDS.size() - 2] - 0.001
+			var in_mud := mud.y > mud.x and u0 >= mud.x - 0.001 and u1 <= mud.y + 0.001
 			var colors: Array[Color]
-			if j == 0 or j == ROAD_BANDS.size() - 2:
+			if is_curb and not in_mud:
 				colors = [curb, curb, curb, curb]
+			elif in_mud:
+				colors = [_mud_color(a), _mud_color(b), _mud_color(c), _mud_color(d)]
 			else:
 				colors = [_road_color(a, u0), _road_color(b, u1), _road_color(c, u1), _road_color(d, u0)]
-			# Curbs sit 2 cm proud so they read as a separate surface.
-			var lift := path.ups[i] * (0.02 if colors[0] == curb else 0.0)
-			_emit(st, a + lift, b + lift, c + lift, d + lift, path.ups[i], colors)
-	return st.commit()
+			# Curbs sit 2 cm proud so they read as a separate surface; mud 1 cm.
+			var lift := path.ups[i] * (0.02 if is_curb and not in_mud else (0.01 if in_mud else 0.0))
+			out.quad(a + lift, b + lift, c + lift, d + lift, path.ups[i], colors)
+
+
+## Plain dirt row between samples i and i + 1 from the cached band points.
+func _road_row_cached(path: TrackPath, i: int, curb: Color, out: MeshBatch) -> void:
+	var n := ROAD_BANDS.size()
+	var lift := path.ups[i] * 0.02
+	for j in n - 1:
+		var a := _band_points[i * n + j]
+		var b := _band_points[i * n + j + 1]
+		var c := _band_points[(i + 1) * n + j + 1]
+		var d := _band_points[(i + 1) * n + j]
+		if j == 0 or j == n - 2:
+			out.quad(a + lift, b + lift, c + lift, d + lift, path.ups[i], [curb, curb, curb, curb])
+		else:
+			out.quad(a, b, c, d, path.ups[i], [_band_colors[i * n + j], _band_colors[i * n + j + 1],
+					_band_colors[(i + 1) * n + j + 1], _band_colors[(i + 1) * n + j]])
+
+
+func _build_deck(path: TrackPath, i: int, out: MeshBatch) -> void:
+	for p in DECK_PLANKS:
+		var t0 := float(p) / DECK_PLANKS
+		var t1 := float(p + 1) / DECK_PLANKS
+		var tone := deck_colors[(i * DECK_PLANKS + p) % deck_colors.size()]
+		for j in DECK_BANDS.size() - 1:
+			var u0 := DECK_BANDS[j]
+			var u1 := DECK_BANDS[j + 1]
+			var color := deck_kerb_color if j == 0 or j == DECK_BANDS.size() - 2 else tone
+			var a := _road_point(path, i, u0).lerp(_road_point(path, i + 1, u0), t0)
+			var b := _road_point(path, i, u1).lerp(_road_point(path, i + 1, u1), t0)
+			var c := _road_point(path, i, u1).lerp(_road_point(path, i + 1, u1), t1)
+			var d := _road_point(path, i, u0).lerp(_road_point(path, i + 1, u0), t1)
+			out.flat_quad(a, b, c, d, path.ups[i], color)
+	# Deck underside and beam sides, so the bridge reads solid from below.
+	var depth := path.ups[i] * -0.7
+	var l0 := _road_point(path, i, 0.0)
+	var r0 := _road_point(path, i, 1.0)
+	var l1 := _road_point(path, i + 1, 0.0)
+	var r1 := _road_point(path, i + 1, 1.0)
+	out.flat_quad(l0 + depth, r0 + depth, r1 + depth, l1 + depth, -path.ups[i], deck_kerb_color.darkened(0.3))
 
 
 func _road_color(p: Vector3, u: float) -> Color:
@@ -144,61 +306,66 @@ func _road_color(p: Vector3, u: float) -> Color:
 	return color.lerp(verge_color, edge * 0.85)
 
 
+func _mud_color(p: Vector3) -> Color:
+	var n := clampf(0.5 + _noise.get_noise_3dv(p * 0.7) * 1.4, 0.0, 1.0)
+	return mud_color.lerp(mud_wet_color, n)
+
+
 # --- Render: barriers -------------------------------------------------------
 
-func _build_walls(path: TrackPath) -> ArrayMesh:
-	var st := _begin()
+func _build_walls(path: TrackPath, first: int, last: int, out: MeshBatch) -> void:
 	var bands: Array[float] = [0.0, 0.28, 0.33, 0.6, 0.65, 0.86, 1.0]  # plank, gap, plank, gap, plank, rail
 	for side: int in [-1, 1]:
-		for i in path.size() - 1:
-			var r0 := _wall_ring(path, i, side)
-			var r1 := _wall_ring(path, i + 1, side)
+		for i in range(first, last + 1):
+			var kind := quad_kind(i)
+			if kind == SampleKind.GAP:
+				continue
+			var bridge := kind == SampleKind.BRIDGE
+			var r0 := _ring(side, i)
+			var r1 := _ring(side, i + 1)
 			var outward := path.rights[i] * float(side)
-			var is_post := i % post_spacing_samples == 0
+			var is_post := i % (2 if bridge else post_spacing_samples) == 0
+			var palette := bridge_wall_colors if bridge else plank_colors
 			@warning_ignore("integer_division")
-			var tone := plank_colors[posmod(i / 2 + side, plank_colors.size())]
+			var tone := palette[posmod(i / 2 + side, palette.size())]
+			var rail := deck_kerb_color if bridge else rail_color
 			for k in bands.size() - 1:
 				var color := tone
 				if k % 2 == 1:
 					color = plank_gap_color
 				if k == bands.size() - 2:
-					color = rail_color
+					color = rail
 				if is_post:
-					color = post_color if k != bands.size() - 2 else rail_color.darkened(0.2)
+					color = post_color if k != bands.size() - 2 else rail.darkened(0.2)
 				var a := r0[0].lerp(r0[1], bands[k])
 				var b := r0[0].lerp(r0[1], bands[k + 1])
 				var c := r1[0].lerp(r1[1], bands[k + 1])
 				var d := r1[0].lerp(r1[1], bands[k])
-				_emit_flat(st, a, b, c, d, -outward, color)
-			_emit_flat(st, r0[1], r0[2], r1[2], r1[1], Vector3.UP, rail_color if not is_post else post_color)
-			_emit_flat(st, r0[2], r0[3], r1[3], r1[2], outward, (post_color if is_post else tone).darkened(0.18))
-	return st.commit()
+				out.flat_quad(a, b, c, d, -outward, color)
+			out.flat_quad(r0[1], r0[2], r1[2], r1[1], Vector3.UP, rail if not is_post else post_color)
+			out.flat_quad(r0[2], r0[3], r1[3], r1[2], outward, (post_color if is_post else tone).darkened(0.18))
+			if bridge:
+				# Under the parapet: continue its outer face down to the deck beam.
+				var drop := path.ups[i] * -0.7
+				out.flat_quad(r0[3], r0[3] + drop, r1[3] + drop, r1[3], outward, deck_kerb_color.darkened(0.2))
 
 
 # --- Render: slopes ---------------------------------------------------------
 
-func _build_slopes(path: TrackPath) -> ArrayMesh:
-	var st := _begin()
+func _build_slopes(path: TrackPath, first: int, last: int, out: MeshBatch) -> void:
 	# Same surface as the collision profile, sampled more finely for color.
-	var stations := PackedFloat32Array()
-	for k in slope_profile.size() - 1:
-		for s in 3:
-			stations.append(lerpf(slope_profile[k].x, slope_profile[k + 1].x, s / 3.0))
-	stations.append(slope_profile[slope_profile.size() - 1].x)
-	var far := stations[stations.size() - 1]
+	var count := _stations.size()
 	for side: int in [-1, 1]:
-		for i in path.size() - 1:
-			for k in stations.size() - 1:
-				var a := slope_point(path, i, side, stations[k])
-				var b := slope_point(path, i, side, stations[k + 1])
-				var c := slope_point(path, i + 1, side, stations[k + 1])
-				var d := slope_point(path, i + 1, side, stations[k])
-				var colors: Array[Color] = [
-					_grass_color(a, stations[k] / far), _grass_color(b, stations[k + 1] / far),
-					_grass_color(c, stations[k + 1] / far), _grass_color(d, stations[k] / far),
-				]
-				_emit(st, a, b, c, d, Vector3.UP, colors, true)
-	return st.commit()
+		var points: PackedVector3Array = _slope_points[_side_slot(side)]
+		var colors: PackedColorArray = _slope_colors[_side_slot(side)]
+		for i in range(first, last + 1):
+			if quad_kind(i) != SampleKind.NORMAL:
+				continue
+			var row0 := i * count
+			var row1 := (i + 1) * count
+			for k in count - 1:
+				out.quad(points[row0 + k], points[row0 + k + 1], points[row1 + k + 1], points[row1 + k], Vector3.UP,
+						[colors[row0 + k], colors[row0 + k + 1], colors[row1 + k + 1], colors[row1 + k]], true)
 
 
 func _grass_color(p: Vector3, depth: float) -> Color:
@@ -210,16 +377,102 @@ func _grass_color(p: Vector3, depth: float) -> Color:
 	return color.lerp(rock_slope_color, rock)
 
 
+# --- Gorge cliffs (bridge and gap ends) ---------------------------------------
+
+## Where the ground stops (start of a bridge or gap) and starts again, a
+## rocky cliff face drops from the road/slope cross-section into the gorge.
+func _build_cliffs(path: TrackPath, first: int, last: int, out: MeshBatch, faces: PackedVector3Array) -> void:
+	for i in range(maxi(first, 1), last + 1):
+		var before := quad_kind(i - 1) == SampleKind.NORMAL
+		var after := quad_kind(i) == SampleKind.NORMAL
+		if before == after:
+			continue
+		# Face toward the open gorge: forward when the gorge comes next.
+		var facing := path.forwards[i] if before else -path.forwards[i]
+		var top := _cross_section(path, i)
+		var bottom_y := INF
+		for p in top:
+			bottom_y = minf(bottom_y, p.y)
+		bottom_y -= cliff_depth
+		for k in top.size() - 1:
+			var a := top[k]
+			var b := top[k + 1]
+			var c := Vector3(b.x, bottom_y, b.z)
+			var d := Vector3(a.x, bottom_y, a.z)
+			var tone := cliff_colors[k % cliff_colors.size()]
+			out.quad(a, b, c, d, facing, [tone, tone, tone.darkened(0.25), tone.darkened(0.25)], true)
+			_collision_quad(faces, a, b, c, d)
+
+
+## Top outline across the whole track at sample i, left slope end to right
+## slope end (through the walls and the road).
+func _cross_section(path: TrackPath, i: int) -> PackedVector3Array:
+	var line := PackedVector3Array()
+	for k in range(slope_profile.size() - 1, -1, -1):
+		line.append(slope_point(path, i, -1, slope_profile[k].x))
+	var left := _wall_ring(path, i, -1)
+	line.append_array(PackedVector3Array([left[2], left[1], left[0]]))
+	var right := _wall_ring(path, i, 1)
+	line.append_array(PackedVector3Array([right[0], right[1], right[2]]))
+	for k in slope_profile.size():
+		line.append(slope_point(path, i, 1, slope_profile[k].x))
+	return line
+
+
+# --- Caches -------------------------------------------------------------------
+
+func _fill_caches(path: TrackPath) -> void:
+	_stations = PackedFloat32Array()
+	for k in slope_profile.size() - 1:
+		for s in 3:
+			_stations.append(lerpf(slope_profile[k].x, slope_profile[k + 1].x, s / 3.0))
+	_stations.append(slope_profile[slope_profile.size() - 1].x)
+	var far := _stations[_stations.size() - 1]
+	var count := path.size()
+	for side: int in [-1, 1]:
+		var points := PackedVector3Array()
+		var colors := PackedColorArray()
+		var rings := PackedVector3Array()
+		points.resize(count * _stations.size())
+		colors.resize(count * _stations.size())
+		for i in count:
+			rings.append_array(_wall_ring(path, i, side))
+			for k in _stations.size():
+				var p := slope_point(path, i, side, _stations[k])
+				points[i * _stations.size() + k] = p
+				colors[i * _stations.size() + k] = _grass_color(p, _stations[k] / far)
+		_slope_points[_side_slot(side)] = points
+		_slope_colors[_side_slot(side)] = colors
+		_wall_rings[_side_slot(side)] = rings
+	var bands := ROAD_BANDS.size()
+	_band_points.resize(count * bands)
+	_band_colors.resize(count * bands)
+	for i in count:
+		for j in bands:
+			var p := _road_point(path, i, ROAD_BANDS[j])
+			_band_points[i * bands + j] = p
+			_band_colors[i * bands + j] = _road_color(p, ROAD_BANDS[j])
+
+
+static func _side_slot(side: int) -> int:
+	return 0 if side < 0 else 1
+
+
+## Cached wall cross-section (see _wall_ring).
+func _ring(side: int, index: int) -> PackedVector3Array:
+	return (_wall_rings[_side_slot(side)] as PackedVector3Array).slice(index * 4, index * 4 + 4)
+
+
 # --- Geometry helpers -------------------------------------------------------
 
 func _road_point(path: TrackPath, index: int, u: float) -> Vector3:
-	return path.points[index] + path.rights[index] * (u - 0.5) * road_width
+	return path.points[index] + path.rights[index] * (u - 0.5) * half_width(path, index) * 2.0
 
 
 ## Wall cross-section: inner foot, inner top, outer top, outer foot.
 func _wall_ring(path: TrackPath, index: int, side: int) -> PackedVector3Array:
 	var outward := path.rights[index] * float(side)
-	var edge := path.points[index] + outward * road_width * 0.5
+	var edge := path.points[index] + outward * half_width(path, index)
 	var up := path.ups[index]
 	return PackedVector3Array([
 		edge - up * 0.2,
@@ -227,41 +480,3 @@ func _wall_ring(path: TrackPath, index: int, side: int) -> PackedVector3Array:
 		edge + outward * wall_thickness + up * wall_height,
 		wall_foot(path, index, side),
 	])
-
-
-func _begin() -> SurfaceTool:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	return st
-
-
-func _emit_flat(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, facing: Vector3, color: Color) -> void:
-	_emit(st, a, b, c, d, facing, [color, color, color, color], true)
-
-
-## Adds quad a-b-c-d with per-corner colors. `flat` uses the face normal
-## (faceted low-poly look); otherwise `facing` is used as a smooth normal.
-## Godot treats clockwise winding (seen from the front) as front-facing.
-func _emit(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, facing: Vector3,
-		colors: Array[Color], flat := false) -> void:
-	var normal := (c - a).cross(b - d)
-	if normal.length_squared() < 1e-10:
-		return
-	normal = normal.normalized()
-	if normal.dot(facing) < 0.0:
-		normal = -normal
-	if not flat:
-		normal = facing.normalized()
-	var corners := [a, b, c, d]
-	for tri: Array in [[0, 1, 2], [0, 2, 3]]:
-		var p0: Vector3 = corners[tri[0]]
-		var p1: Vector3 = corners[tri[1]]
-		var p2: Vector3 = corners[tri[2]]
-		var cross := (p1 - p0).cross(p2 - p0)
-		if cross.length_squared() < 1e-10:
-			continue
-		var order: Array = tri if cross.dot(normal) <= 0.0 else [tri[0], tri[2], tri[1]]
-		for idx: int in order:
-			st.set_normal(normal)
-			st.set_color(colors[idx])
-			st.add_vertex(corners[idx])

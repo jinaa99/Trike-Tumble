@@ -8,6 +8,8 @@ var trike: Trike
 var lookahead_samples := 7
 var steer_gain := 2.8
 var target_speed := 22.0
+## Meters right (+) or left (-) of the centerline to drive on.
+var lateral_offset := 0.0
 var _index := 0
 
 
@@ -20,7 +22,8 @@ func _init(for_track: Track, for_trike: Trike) -> void:
 func drive() -> void:
 	_index = track.path.find_nearest(trike.global_position, _index)
 	var speed_bonus := int(trike.forward_speed / 6.0)
-	var target := track.path.points[mini(_index + lookahead_samples + speed_bonus, track.path.size() - 1)]
+	var ahead := mini(_index + lookahead_samples + speed_bonus, track.path.size() - 1)
+	var target := track.path.points[ahead] + track.path.rights[ahead] * lateral_offset
 	var forward := -trike.global_basis.z
 	forward.y = 0.0
 	var to_target := target - trike.global_position

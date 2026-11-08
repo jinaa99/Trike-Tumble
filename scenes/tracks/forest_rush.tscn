@@ -1,0 +1,42 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/track/track.gd" id="1_track"]
+[ext_resource type="Script" path="res://scripts/track/track_props.gd" id="2_props"]
+[ext_resource type="Script" path="res://scripts/track/track_decorator.gd" id="3_decor"]
+[ext_resource type="Script" path="res://scripts/track/track_landmarks.gd" id="4_landmarks"]
+[ext_resource type="Script" path="res://scripts/track/track_backdrop.gd" id="5_backdrop"]
+[ext_resource type="Script" path="res://scripts/track/track_structures.gd" id="6_structures"]
+
+[node name="ForestRush" type="Node3D"]
+script = ExtResource("1_track")
+route_segments = PackedVector3Array(110, 0, 2, 140, -35, 5, 110, 25, 6, 240, 40, 11, 200, -55, 12, 160, 20, 11, 220, -35, 12, 180, 45, 11, 140, 0, 10, 40, 0, 6, 45, 115, 5, 30, 0, 6, 55, -150, 5, 30, 0, 6, 45, 120, 5, 35, 0, 6, 55, -150, 5, 30, 0, 6, 45, 110, 5, 40, 0, 6, 50, -135, 5, 35, 0, 6, 45, 115, 5, 40, 0, 6, 55, -140, 5, 40, 0, 6, 40, 80, 6, 50, 0, 6, 55, -90, 6, 60, 0, 6, 120, 10, 6, 110, 0, 2, 140, -30, 7, 80, 0, 1, 120, 25, 8, 160, 0, 5, 110, -30, 6, 140, 35, 6, 120, -20, 5, 150, 25, 6, 100, 0, 5, 90, -40, 5, 110, 35, 5, 120, -25, 5, 130, 30, 5, 140, -75, 8, 80, -20, 8, 140, 0, 10, 90, 0, 16, 120, 0, 12, 110, 30, 9, 120, -40, 10, 110, 0, 14, 90, 0, 9, 200, -35, 13, 200, 45, 14, 180, -40, 13, 160, 30, 12, 140, -20, 11, 150, 40, 10, 150, -40, 11, 160, 35, 10, 170, -45, 12, 150, 30, 11, 160, -35, 10, 150, 30, 9, 120, 0, 5, 110, 0, 2)
+route_start = Vector3(0, 520, 0)
+width_profile = PackedVector2Array(0, 18, 280, 18, 360, 14, 1490, 14, 1530, 13, 1905, 13, 1918, 9.5, 1962, 9.5, 1975, 13, 2410, 13, 2440, 14, 2545, 14, 2563, 10, 2652, 10, 2668, 14, 2795, 14, 2810, 9.5, 2874, 9.5, 2890, 14, 7236, 14, 7306, 18, 7466, 18)
+zones = [[0.0, 80.0, "clearing"], [270.0, 340.0, "overlook", -1], [1918.0, 1962.0, "rocks"], [2565.0, 2650.0, "bridge"], [2680.0, 2780.0, "overlook", 1], [2812.0, 2872.0, "bridge"], [3020.0, 3080.0, "mud", 0.05, 0.95], [3480.0, 3525.0, "mud", 0.04, 0.6], [3560.0, 3610.0, "mud", 0.4, 0.96], [3745.0, 3782.0, "mud", 0.05, 0.95], [4634.0, 4646.0, "gap"], [5480.0, 5580.0, "overlook", -1], [7216.0, 7466.0, "clearing"], [4010.0, 4075.0, "mud", 0.3, 0.96], [4150.0, 4200.0, "mud", 0.04, 0.7]]
+checkpoint_spacing = 250.0
+finish_timeout = 120.0
+item_box_rows = PackedFloat32Array(430, 940, 1440, 2025, 2520, 2960, 3390, 4240, 4500, 4750, 5250, 5730, 6350, 6520, 6990)
+
+[node name="Props" type="Node3D" parent="."]
+script = ExtResource("2_props")
+layout = [[130.0, 3.5, "crate_stack"], [205.0, -3.0, "cone_line"], [520.0, 0.0, "ramp"], [610.0, 4.0, "rock"], [700.0, -3.5, "crate_stack"], [860.0, 4.5, "rock"], [1050.0, 0.0, "ramp"], [1150.0, -4.0, "rock"], [1250.0, 3.5, "crate_stack"], [1420.0, 0.0, "cone_line"], [1605.0, 3.0, "rock"], [1860.0, -3.0, "crate"], [2291.0, 0.0, "road_tree"], [2480.0, 3.5, "crate_stack"], [2950.0, -3.5, "rock"], [3110.0, -3.2, "boulder"], [3135.0, 3.4, "boulder"], [3200.0, 2.8, "road_tree"], [3440.0, -1.0, "falling_log", {"period": 7.0, "phase": 0.0}], [3650.0, -4.6, "boulder", {"radius": 1.7}], [3650.0, 4.6, "boulder", {"radius": 1.7}], [3725.0, 1.0, "falling_log", {"period": 6.5, "phase": 3.0}], [3830.0, -2.5, "road_tree"], [3930.0, 2.5, "crate_stack"], [3950.0, -3.0, "crate"], [4634.0, 0.0, "big_ramp", {"length": 10.0, "height": 2.4}], [5080.0, 0.0, "ramp"], [5310.0, -3.5, "crate_stack"], [5400.0, 0.0, "ramp"], [5700.0, 4.0, "rock"], [5770.0, -3.0, "cone_line"], [6050.0, 0.0, "ramp"], [6200.0, 3.5, "crate_stack"], [6330.0, -4.0, "rock"], [4100.0, -4.0, "boulder", {"radius": 1.6}], [4125.0, 3.0, "crate_stack"], [4220.0, -3.0, "crate"], [6470.0, 0.0, "ramp"], [6650.0, 3.5, "crate_stack"], [6700.0, -4.0, "rock"], [6800.0, 0.0, "cone_line"], [7050.0, 3.5, "crate_stack"], [7120.0, -4.0, "rock"]]
+
+[node name="Decor" type="Node3D" parent="."]
+script = ExtResource("3_decor")
+tree_spacing_samples = 1
+tree_chance = 0.8
+pine_share = 0.8
+tree_scale = Vector2(1.2, 2.4)
+
+[node name="Landmarks" type="Node3D" parent="."]
+script = ExtResource("4_landmarks")
+
+[node name="Backdrop" type="Node3D" parent="."]
+script = ExtResource("5_backdrop")
+terrain_cell = 20.0
+terrain_margin = 750.0
+terrain_edge_blend = 400.0
+far_forest_chance = 0.6
+
+[node name="Structures" type="Node3D" parent="."]
+script = ExtResource("6_structures")

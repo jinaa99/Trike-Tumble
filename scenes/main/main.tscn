@@ -12,6 +12,14 @@
 
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="6_pause"]
 [ext_resource type="PackedScene" path="res://scenes/characters/rider_character.tscn" id="7_rider"]
+[ext_resource type="Script" path="res://scripts/race/racer_manager.gd" id="8_racers"]
+[ext_resource type="Resource" path="res://resources/ai/ai_easy.tres" id="9_easy"]
+[ext_resource type="Resource" path="res://resources/ai/ai_medium.tres" id="10_medium"]
+[ext_resource type="Resource" path="res://resources/ai/ai_hard.tres" id="11_hard"]
+[ext_resource type="Script" path="res://scripts/ai/ai_driver_config.gd" id="12_aicfg"]
+[ext_resource type="Script" path="res://scripts/race/race_controller.gd" id="13_race"]
+[ext_resource type="PackedScene" path="res://scenes/ui/results_screen.tscn" id="14_results"]
+[ext_resource type="PackedScene" path="res://scenes/ui/lobby_screen.tscn" id="15_lobby"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_material"]
 sky_top_color = Color(0.26, 0.53, 0.95, 1)
@@ -50,6 +58,7 @@ adjustment_contrast = 1.06
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
+track_scene = ExtResource("2_track")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("environment")
@@ -70,8 +79,6 @@ light_energy = 0.28
 shadow_enabled = false
 sky_mode = 1
 
-[node name="TestTrack" parent="." instance=ExtResource("2_track")]
-
 [node name="Trike" parent="." instance=ExtResource("3_trike")]
 
 [node name="RiderCharacter" parent="." node_paths=PackedStringArray("trike") instance=ExtResource("7_rider")]
@@ -83,3 +90,14 @@ target = NodePath("../Trike")
 [node name="HUD" parent="." instance=ExtResource("5_hud")]
 
 [node name="PauseMenu" parent="." instance=ExtResource("6_pause")]
+
+[node name="RacerManager" type="Node3D" parent="."]
+script = ExtResource("8_racers")
+ai_configs = Array[ExtResource("12_aicfg")]([ExtResource("9_easy"), ExtResource("10_medium"), ExtResource("11_hard")])
+
+[node name="RaceController" type="Node" parent="."]
+script = ExtResource("13_race")
+
+[node name="ResultsScreen" parent="." instance=ExtResource("14_results")]
+
+[node name="LobbyScreen" parent="." instance=ExtResource("15_lobby")]

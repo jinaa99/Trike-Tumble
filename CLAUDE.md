@@ -55,7 +55,12 @@ Godot is not on PATH on the owner's Mac. Binary:
 ```sh
 $GODOT --headless --path . --import                       # refresh class cache after adding class_name scripts
 $GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn   # full suite, exit 0 = pass
-$GODOT --path .                                            # play the game
+$GODOT --path .                                            # play the game (main menu)
+$GODOT --path . res://scenes/main/main.tscn                # straight into a 1-racer race
+$GODOT --path . res://scenes/main/race_five.tscn           # you + 4 AI (or: -- --ai=4 --difficulty=hard)
+$GODOT --path . res://scenes/main/forest_rush.tscn          # Forest Rush (the real map), you + 4 AI
+$GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn -- --only=map   # one test group
+$GODOT --headless --path . --fixed-fps 60 --scene res://tests/map_test_runner.tscn             # timed Forest Rush races (~80 s)
 ```
 
 Details, the visual capture tool and the manual checklist: `docs/TESTING.md`.
@@ -63,12 +68,13 @@ Details, the visual capture tool and the manual checklist: `docs/TESTING.md`.
 ## Project layout
 
 ```
-scenes/   main/ vehicles/ characters/ camera/ ui/ tracks/ props/
-scripts/  main/ vehicles/ characters/ camera/ ui/ track/ race/ props/ visuals/ rider/
+scenes/   menu/ main/ vehicles/ characters/ camera/ ui/ tracks/ (test_track, forest_rush) props/
+scripts/  core/ menu/ net/ maps/ main/ vehicles/ characters/ camera/ ui/ track/ race/ props/ visuals/ rider/ ai/
 resources/vehicles/default_trike_config.tres   # all handling values
 resources/rider/default_rider_config.tres      # ejection / fall / on-foot / mount values
+resources/ai/ai_easy|medium|hard.tres           # AI difficulty presets (AIDriverConfig)
 resources/ui/trike_theme.tres                  # shared UI theme (fonts, buttons, panels)
-tests/    test_runner (automated), visual_capture (screenshots/perf), track_autopilot
+tests/    test_runner (automated) + racer/race_flow/ui/net_unit/map tests, map_test_runner (timed races), net/ (multi-process), visual_capture (screenshots/perf), track_autopilot
 docs/     design, roadmap, architecture, testing, screenshots/
 ```
 
@@ -98,6 +104,37 @@ docs/     design, roadmap, architecture, testing, screenshots/
 - Track collision and track rendering are separate passes in
   `TrackMeshBuilder`. Restyle the render pass freely. Changing
   `_build_collision` changes how the track drives.
+- **Maps** (read "Track generation" in TECHNICAL_ARCHITECTURE first):
+  - A race scene doesn't contain its track. `RaceSession.track_scene` is
+    instanced at the start of `_ready`. `main.tscn` uses the 1.2 km test
+    track, which the fast tests and the menu background rely on.
+    `scenes/main/forest_rush.tscn` uses Forest Rush, and that is what the
+    menu/online "Forest Rush" loads.
+  - Forest Rush is pure data in `scenes/tracks/forest_rush.tscn`:
+    - `route_segments` (length, turn, grade)
+    - `width_profile`
+    - `zones` (bridge, gap, mud, overlook, clearing, rocks)
+    - the Props `layout`
+  - Distances in zones and props are along the **built** path, which is
+    about 0.5 % longer than the sum of the segment lengths. After changing
+    the route, re-check where features land and run `--only=map`.
+  - The road width varies: use `Track.half_width_at(i)`, never
+    `road_width`.
+- **Surfaces:** a collision body tagged with `TrackSurface` metadata is mud,
+  grass or wood; anything untagged is road. `Trike` reads the tag from its
+  wheel hits. Mud/grass values live in `TrikeConfig` ("Surfaces"). Never
+  tag the road body: road handling must stay unchanged.
+- **Respawn safety:** `Track.mark_unsafe()` / `is_safe_index()`. Props that
+  block the road (ramps, boulders, road trees, logs) mark ±10 m, and jump
+  gaps mark their run-up and landing. `VehicleProgress` only records safe
+  samples. A new blocking prop kind must mark itself too, or racers can
+  respawn inside it.
+- **Timed hazards** (`FallingLog`) move as a pure function of
+  `Track.hazard_time`, which `RacerManager` advances from GO. Don't give
+  them their own timers or physics: online peers rely on identical motion.
+- Scenery batches (MultiMesh) are positioned at the center of their
+  instances and fade by distance (`scenery_lod` group, scaled by graphics
+  quality). Keep it that way when adding scenery to long maps.
 - Scenery that looks solid (trunks, boulders, signs, bales, cabin) must get a
   matching collider. A test asserts no scenery collider enters the road corridor.
 - Body-colored trike parts are in the `body_paint` group
@@ -132,7 +169,66 @@ docs/     design, roadmap, architecture, testing, screenshots/
   pending finish, confirmed when its owner is riding again past the line.
 - `Trike.teleport(xf, notify)`: `notify=false` doesn't emit `respawned` (use
   it for setup/uprighting so it doesn't count as a respawn).
-- Teleporting the trike far in the race scene: also `RaceSession.get_progress().reset(index)`,
-  or the out-of-bounds check sends it back.
+- Teleporting the trike far in the race scene: also `RaceSession.get_progress().reset(index)`
+  (or `racer.progress.reset(index)` for any racer), or the out-of-bounds check sends it back.
+- **Racers:** `RacerManager` (node in main.tscn) owns the racer registry
+  (`Racer`: id, name, type, trike, rider, input source, progress, slot,
+  finish state), per-racer progress/out-of-bounds/respawn/emergency recovery,
+  the race clock and the `FinishTracker`. `RaceSession` only binds the local
+  racer (id 1, the scene's `Trike`/`RiderCharacter`) to camera and HUD. Add
+  racers only through `add_human_racer()` / `add_ai_racer()` (max 5).
+- **AI** (`AIDriver`, a `TrikeInputSource`) is the input source of both its
+  trike and its rider; it only writes `TrikeInput` (on foot: world-space
+  `move_direction`). Never move AI trikes/riders directly. Difficulty values
+  live in `resources/ai/ai_*.tres` (`AIDriverConfig`), not in code. AI trikes
+  have their `PlayerInputSource` node removed at spawn.
+- `main.tscn` defaults to 0 AI (the older tests rely on that). Five racers:
+  `scenes/main/race_five.tscn` or `$GODOT --path . -- --ai=4 --difficulty=mixed`.
+- **Race flow:** `RaceController` (node in main.tscn) owns the states via
+  `RaceStateMachine` (LOBBY → COUNTDOWN → RACING → FINISHED → RESULTS). Change
+  race state only through its methods (`begin_countdown`, `start_immediately`,
+  `race_again`, `return_to_lobby`), never by calling `RacerManager.start_race()`
+  in the race scene. Race Again resets in place (`RacerManager.reset_for_new_race()`);
+  new per-race state (items later) must be reset there too.
+- Tests/tools that need to drive at once set `RaceSession.skip_countdown = true`
+  before adding the scene (the old `_load_main` does); `auto_start = false`
+  keeps the race in the lobby until the test starts it.
+- `Trike.input_locked` (lobby/countdown/race over) is enforced in
+  `_integrate_forces` too: physics callbacks run *before* `_physics_process`,
+  so input written between ticks reaches the motor unless cleared there.
+- **Checkpoints:** a teleport skips them, and the finish line then refuses
+  the racer. After teleporting a racer forward in tests, call
+  `racer.checkpoints.force_passed_through(index)`.
+- Positions come from `CheckpointProgress.distance` (path distance capped at
+  the next unpassed checkpoint), never straight-line distance.
+- **Menus/UI:** the main scene is `scenes/menu/main_menu.tscn`. Autoloads
+  `GameSettings` (saved settings, key rebinding) and `GameSession` (lobby,
+  transport, race setup) are registered in project.godot. Build UI with
+  `UiKit` (palette, fonts, buttons with motion). Key names in UI must come
+  from `UiKit.action_keys()` / `GameSettings.primary_key()`, never literals.
+- Tests and the capture tool call `GameSettings.use_test_profile()` first.
+  Never let tests write `user://settings.cfg`.
+- Test hooks: `MainMenu.quit_handler/scene_changer`,
+  `RaceSession.scene_changer`, `PauseMenu.quit_handler`. Never let a test
+  call `RaceSession.restart()` (it reloads the *current* scene, which is the
+  test runner).
+- Headless test windows are 1280×1280, so check layout with minimum sizes,
+  not positions. `--script` mode runs without autoloads (use a scene).
+- **Online:** read `docs/NETWORKING.md` first.
+  - Only a racer's owner simulates it; everyone else shows a proxy
+    (`network_proxy` on Trike and RiderController). Never simulate a proxy
+    or feed it input.
+  - Clients never decide checkpoints, positions or finishes
+    (`RacerManager.authoritative` is false on clients).
+  - All RPCs live on the `Net` autoload (same path on every peer). New
+    synced state belongs in `NetSnapshot` (bump `FIELD_COUNT` and
+    `validate()`) or in the host's status list.
+  - `Trike.teleport()` increments `teleport_count`, so proxies snap
+    instead of sliding.
+  - Network suite: `tests/net/net_test_runner.tscn` (separate processes,
+    real time, ~3.5 min).
+- macOS has no `timeout`; use `perl -e 'alarm 500; exec @ARGV' $GODOT ...`.
+- Autowrap labels need a `custom_minimum_size.x`, or they collapse to one
+  word per line and blow up the layout.
 - If the Godot editor is open while files change on disk, let it reload. Saving
   stale editor state can overwrite `project.godot` (input map, renderer).

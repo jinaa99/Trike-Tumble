@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/main/main.tscn" id="1_main"]
+
+[node name="Main" instance=ExtResource("1_main")]
+ai_racer_count = 4
+ai_difficulty = 3

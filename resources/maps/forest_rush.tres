@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="MapInfo" format=3]
+
+[ext_resource type="Script" path="res://scripts/maps/map_info.gd" id="1_map"]
+
+[resource]
+script = ExtResource("1_map")
+id = "forest_rush"
+display_name = "Forest Rush"
+description = "A 7 km cartoon mountain downhill: fast pine-forest descent, hairpins, two wooden bridges, mud and falling logs, a ravine jump and a fast run to the finish."
+characteristic = "Wooden bridges, mud, falling logs and a ravine jump"
+status = 2
+race_scene = "res://scenes/main/forest_rush.tscn"
+theme_colors = Array[Color]([Color(0.55, 0.8, 0.98, 1), Color(0.42, 0.62, 0.78, 1), Color(0.27, 0.62, 0.36, 1), Color(0.75, 0.52, 0.32, 1)])

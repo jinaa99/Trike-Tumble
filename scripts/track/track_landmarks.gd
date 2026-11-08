@@ -52,7 +52,8 @@ func _place_turn_signs(track: Track) -> void:
 	var sign_mesh := _sign_mesh()
 	for i in range(12, path.size() - 12):
 		var turn := path.turn_angle(i, sign_turn_span)
-		if absf(turn) < threshold or i - last < sign_min_spacing_samples:
+		if absf(turn) < threshold or i - last < sign_min_spacing_samples \
+				or track.get_sample_kind(i) != TrackMeshBuilder.SampleKind.NORMAL:
 			continue
 		# Wait for the sharpest point of this corner.
 		if absf(path.turn_angle(i + 1, sign_turn_span)) > absf(turn):
@@ -224,7 +225,7 @@ func _flags_between(a: Vector3, b: Vector3, out: Array[Transform3D], colors: Arr
 func _wall_top(track: Track, index: int, side: int) -> Vector3:
 	var path := track.path
 	var outward := path.rights[index] * float(side)
-	return path.points[index] + outward * (track.road_width * 0.5 + track.builder.wall_thickness * 0.5) \
+	return path.points[index] + outward * (track.half_width_at(index) + track.builder.wall_thickness * 0.5) \
 			+ path.ups[index] * track.wall_height
 
 

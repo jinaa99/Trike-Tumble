@@ -3,16 +3,85 @@
 Godot 4.7.2 · GDScript · Mobile renderer · Jolt Physics · 60 Hz physics with
 physics interpolation enabled.
 
+## Game flow and autoloads (final demo milestone 04)
+
+The game starts in `scenes/menu/main_menu.tscn` (project main scene):
+
+```
+MainMenu (main_menu.gd)          one MenuScreen at a time + back history, fade/slide transitions
+├─ Background (menu_background)  test track + RacerManager with 4 AI racing + TV-style camera (loops)
+└─ UI (CanvasLayer)
+   ├─ Shade                      left-side gradient so text reads over the 3D scene
+   └─ Root                       TitleScreen, MapSelectScreen, HostScreen, JoinScreen,
+                                 LobbyMenuScreen, SettingsPanel (all built in code)
+```
+
+- **Flow:** PLAY → map select → solo lobby → Start Race →
+  `change_scene_to_file(map.race_scene)`. HOST GAME → host screen → hosted
+  lobby. JOIN GAME → join screen. In the race, Return to Lobby (pause or
+  results) goes back to the menu, which opens on the same lobby.
+- **Autoloads** (`project.godot`):
+  - `GameSettings` (`scripts/core/game_settings.gd`): settings in
+    `user://settings.cfg`, applied at launch and on every change.
+    - Audio: Master/Music/SFX bus volumes, using the `default_bus_layout.tres` buses.
+    - Video: window size (skipped headless or with `--resolution`) and
+      fullscreen. Quality applies to a viewport and its lights via
+      `apply_graphics(node)`: Low = no MSAA, 0.75 3D scale, sun shadows off;
+      Medium = 2× MSAA; High = 4× MSAA.
+    - Controls: primary key of each rebindable action, conflicts refused,
+      Reset Controls.
+    - Player name.
+    - Tests and the capture tool call `use_test_profile(path)`: default
+      controls and a separate file.
+  - `GameSession` (`scripts/core/game_session.gd`): mode (SOLO/HOST/CLIENT),
+    the current `Lobby`, the `NetworkTransport`, `race_active`, and
+    `get_race_setup()` (player name, map, AI names and difficulties) which
+    `RaceSession` reads when `race_active`.
+- **Networking** (`scripts/net/`, details in `docs/NETWORKING.md`):
+  - `NetworkTransport` interface, implemented by `ENetTransport` over the
+    `Net` autoload (ENet host/join, lobby authority, race relay).
+  - Remote racers are proxies (`Trike`/`RiderController.network_proxy`)
+    moved by `NetRaceSync` from `SnapshotBuffer`.
+  - The milestone 04 `OfflineTransport` placeholder was removed when ENet
+    replaced it.
+  - `Lobby` (seats, ready flags, host, map, `start_blocker()`, `changed`
+    signal for syncing) and `LobbyPlayer`.
+  - `NetAddress`: IPv4/localhost and port 1024–65535 validation; LAN
+    addresses.
+- **Maps:** `MapInfo` resources in `resources/maps/`, listed by `MapCatalog`.
+  Forest Rush = READY (race scene = `scenes/main/forest_rush.tscn`); Rocky
+  Canyon and Snow Slide = COMING SOON (no scene, can't be selected). No
+  preview textures yet: `MapPreview` draws a labelled placeholder.
+- **Design system:** `UiKit` (`scripts/ui/kit/ui_kit.gd`).
+  - Palette, type scale, display font.
+  - Factories: buttons (primary/normal/quiet) with hover/focus grow and
+    press squish, panels, chips, inputs, fade-in.
+  - Key names from the live InputMap, so the HUD hint, mount prompt, item
+    hint and pause controls follow rebinding.
+  - Base theme: `trike_theme.tres`.
+- **UI scaling:** 1280×720 base, `canvas_items` stretch with `expand` aspect.
+  A test checks every menu page's minimum size fits 1280×720.
+- **Race UI additions:**
+  - HUD race-state chip (GET READY / STARTING / RACING / FINISHED · WAITING / RACE OVER / RESULTS).
+  - Item slot (EMPTY + `[F] USE ITEM`, `use_item` action reserved for items).
+  - Pause menu: Resume, Restart (scene reload), Settings (overlay), Return
+    to Lobby, Quit Game, live key reminder.
+  - `RaceSession.scene_changer`, `MainMenu.quit_handler/scene_changer` and
+    `PauseMenu.quit_handler` are replaceable for tests.
+
 ## Scene graph (main.tscn)
 
 ```
-Main (RaceSession, main.gd)          race rules: spawn, respawn, timer; finish via FinishTracker
+Main (RaceSession, main.gd)          local player + race flow ↔ camera/HUD/screens, AI count/difficulty
 ├─ WorldEnvironment, Sun, FillLight
-├─ TestTrack (Track)                 builds road/barriers/slopes/collision on _ready
-│  ├─ Props (track_props.gd)         crates, cones, rocks, ramps from a data table
+├─ <track> (Track)                  instanced from `track_scene` at the start of _ready (TestTrack or ForestRush)
+│  ├─ Road_NN, Walls_NN, Slopes_NN   render chunks (60 samples = 120 m each)
+│  ├─ TrackBody / MudBody / BridgeBody / SlopeBody   collision per surface (chunked shapes)
+│  ├─ Props (track_props.gd)         crates, cones, rocks, ramps, boulders, road trees, falling logs, big kicker
 │  ├─ Decor (track_decorator.gd)     trees, bushes, boulders, flowers (+ trunk/boulder collision)
 │  ├─ Landmarks (track_landmarks.gd) turn signs, hay bales, cabin, logs, bunting (+ box collision)
-│  └─ Backdrop (track_backdrop.gd)   terrain, mountains, hills, clouds, valley, lake (no collision)
+│  ├─ Backdrop (track_backdrop.gd)   terrain, far forest, mountains, hills, clouds, valley, lake (no collision)
+│  └─ Structures (track_structures.gd) bridges, streams, jump arch, overlooks, rock gates, stands (Forest Rush)
 ├─ Trike (Trike, RigidBody3D)        vehicle physics + gameplay state
 │  ├─ ChassisShape, RiderShape
 │  ├─ PlayerInputSource              keyboard/gamepad → TrikeInput
@@ -24,8 +93,29 @@ Main (RaceSession, main.gd)          race rules: spawn, respawn, timer; finish v
 │  └─ DizzyStars
 ├─ FollowCamera (Camera3D)
 ├─ HUD (CanvasLayer)
-└─ PauseMenu (CanvasLayer, process_mode Always)
+├─ PauseMenu (CanvasLayer, process_mode Always)
+├─ RacerManager (racer_manager.gd)   racer registry, AI spawning, progress/checkpoints/positions, respawns, race clock, FinishTracker
+   └─ Racer2..Racer5 (Node3D)        one per AI racer, spawned at runtime
+      ├─ AIDriver (TrikeInputSource) AI brain: polled by both the trike and the rider
+      ├─ Trike (trike.tscn)          same scene as the player's; PlayerInputSource removed
+      └─ RiderCharacter              same scene as the player's; PlayerInputSource removed
+├─ RaceController (race_controller.gd) race flow: RaceStateMachine, countdown, finish timeout, results, race again
+├─ ResultsScreen (CanvasLayer)       results table + Race Again / Return to Lobby
+└─ LobbyScreen (CanvasLayer)         racer list + Start Race
 ```
+
+The race scene doesn't contain its track: `RaceSession.track_scene` is
+instanced first thing in `_ready` (it keeps its root name, so tests still
+find `TestTrack`). `main.tscn` uses the test track; `scenes/main/forest_rush.tscn`
+inherits it with `track_scene = forest_rush.tscn` and 4 mixed AI. The map
+catalog points Forest Rush at that scene, so menu races and online races
+load it. `RaceSession` also hands the track's `finish_timeout` (45 s test
+track, 120 s Forest Rush) to `RaceController`.
+
+`scenes/main/race_five.tscn` inherits `main.tscn` with `ai_racer_count = 4`
+and mixed difficulty. `main.tscn` alone is the 1-racer game (and what the
+older tests load); `-- --ai=N --difficulty=easy|medium|hard|mixed` on the
+command line adds AI to it.
 
 ## Vehicle movement model: decision record
 
@@ -116,9 +206,16 @@ state only.
 ## Input abstraction (multiplayer-ready)
 
 `TrikeInput` is plain data (`throttle`, `brake`, `steer`, `drift`,
-`reset_pressed`, `interact_pressed`). The trike reads it while ridden; the
-`RiderController` reads its own copy while the rider is off the trike
-(throttle/brake/steer become on-foot movement, `interact_pressed` mounts).
+`reset_pressed`, `interact_pressed`, `move_direction`). The trike reads it
+while ridden; the `RiderController` reads its own copy while the rider is off
+the trike (throttle/brake/steer become camera-relative on-foot movement,
+`interact_pressed` mounts). `move_direction` is an optional **world-space**
+on-foot direction for AI and network sources; when non-zero it replaces the
+camera-relative movement (the camera belongs to the local player only).
+
+`Trike.input_source` and `RiderController.input_source` are typed
+`TrikeInputSource` (base class with `poll(into)`). Implementations:
+`PlayerInputSource` (keyboard/gamepad) and `AIDriver`.
 
 Input map (project.godot, all `device = -1`, keys use physical keycodes):
 
@@ -135,12 +232,219 @@ Input map (project.godot, all `device = -1`, keys use physical keycodes):
 Sources:
 
 - `PlayerInputSource`: local keyboard/gamepad (polled each physics tick)
-- `TrackAutopilot`: tests and screenshots; template for future AI
+- `AIDriver`: AI racers (see below)
+- `TrackAutopilot`: tests and screenshots only (drives a trike directly)
 - future: network peer inputs
 
 For multiplayer, the server simulates with each client's `TrikeInput` and
 replicates the transform and velocities. `TrikeVisuals` holds no gameplay
 state, so remote trikes render unchanged.
+
+## Racers and RacerManager (final demo milestone 02)
+
+`Racer` (RefCounted, `scripts/race/racer.gd`) is one racer's record: `id`,
+`display_name`, `type` (HUMAN/AI), `trike`, `rider`, `input_source`,
+`progress` (own `VehicleProgress`), `spawn_slot`, `spawn_transform`, `color`,
+`lane_offset`, `root` (spawned node, null for the scene-placed player),
+`finished`/`finish_position`/`finish_time`, `respawn_count`.
+
+`RacerManager` (Node3D in `main.tscn`):
+
+- `setup(track)` creates the `FinishTracker`, listens to `finish_crossed`
+  and collects AI obstacles from the track's `Props` (crates, cones, rocks by
+  scene name; ramps by class).
+- `add_human_racer(trike, rider, id, name, slot)` registers the
+  scene-placed local player; `add_ai_racer(difficulty, name, id, slot)`
+  instantiates `trike.tscn` + `rider_character.tscn`, **removes their
+  `PlayerInputSource` nodes** (AI can never read the keyboard), creates an
+  `AIDriver` and sets it as both input sources, and `attach_to()`s the rider.
+  Both return null when the race is full (`max_racers` = 5) or the id is
+  taken. Ids default to the lowest free id (local player = 1), slots to the
+  lowest free grid slot.
+- Registration teleports the trike to `Track.get_start_transform(slot)`
+  (`notify=false`), gives it its own `VehicleProgress`, connects
+  `respawn_requested` and `emergency_recovery_requested` **bound to that
+  racer**, registers it with `FinishTracker` and applies the livery
+  (`TrikeVisuals.body_color`, number decals) from `racer_colors` /
+  `racer_numbers`.
+- `_physics_process`: advances `race_time` between start and
+  `stop_race()`. Updates every racer's progress, checkpoints and
+  out-of-bounds respawn, then `finish_tracker.update()` and positions.
+- `start_race()` activates every `AIDriver` and starts the clock.
+  `RaceController` calls it at GO.
+- Queries: `get_racers()`, `get_racer(id)`, `get_racer_for_body(body)`,
+  `get_obstacles()`, `get_ramps()`, `is_everyone_finished()`.
+- Signals: `racer_added`, `racer_respawned`, `racer_finished`, `race_started`.
+
+`RaceSession` keeps the old public API (`trike`, `rider`, `get_progress()`,
+`get_race_time()`, `is_race_finished()`, `get_finish_tracker()`) for the
+local racer, plus `racers` and `get_local_racer()`.
+
+`Track.get_start_transform(slot)` now places rows at their exact distance
+(it used to round to 2 m path samples, which put slots 1 and 3 only 2.1 m
+apart). Slot 0 is unchanged.
+
+## AI driver (final demo milestone 02)
+
+`AIDriver` (`scripts/ai/ai_driver.gd`) extends `TrikeInputSource`. The trike
+polls it while ridden and the `RiderController` polls it while off the
+trike, so one brain covers both. It only writes `TrikeInput`: the AI drives
+the real `Trike` physics with the same `TrikeConfig` as the player, and falls
+off, gets up and remounts through the normal rider state machine. It never
+moves a trike or rider itself.
+
+Riding, every tick:
+
+1. **Track following:** nearest path sample (windowed search), then a
+   look-ahead point `max(lookahead_min, speed × lookahead_time)` ahead on the
+   centerline, shifted by the planned lateral offset. Steering = heading
+   error × `steer_gain`, rate-limited by `steer_rate`, plus a smooth
+   two-sine wobble of `steer_noise`.
+2. **Planned lateral:** the racer's lane (`RacerManager.lane_offsets` by
+   grid slot), pulled toward the inside of the coming corner by `corner_cut`,
+   then obstacle avoidance (below). It slews at `lane_change_speed`.
+3. **Speed planning:** per-sample signed curvature is precomputed. Target
+   speed = `top_speed_ratio × max_speed`, lowered so that for every sample
+   within braking range `v ≤ sqrt(v_corner² + 2·a·d)` with
+   `v_corner = sqrt(corner_lateral_accel / curvature)`. Throttle below
+   target, `cruise_throttle` near it, brake above `target + brake_margin`.
+   Pointing the wrong way (> 1.1 rad off) caps speed while turning round.
+4. **Obstacles:** props within `avoid_distance` ahead and racers we close in
+   on (or that are < 4 m ahead) become blocked lateral intervals
+   (radius + trike half-width + `avoid_margin`). An obstacle only counts
+   after it has been in view for `reaction_time`. The AI picks the free
+   lateral closest to its desired line. Crates and cones are **soft**: when
+   no clean gap exists the AI pushes through them. Only when rocks or racers
+   wall off the road is it `blocked`, and then it follows the slowest blocker.
+5. **Ramps / jumps:** a ramp the planned line would clip takes over the
+   lateral target (taken straight and centered, no dodging or drifting).
+   Airborne, the AI steers to align the nose with the road (air control) and
+   doesn't brake or drift.
+6. **Drifting:** once per sharp-enough corner (`drift_min_curvature`) it
+   rolls `drift_chance`. It drifts only when steering into the corner above
+   the drift threshold, fast enough and with nothing in the avoidance window.
+   It bails out on counter-steer, a big heading error or near the barrier.
+   Releasing gives the normal drift boost: no hidden boosts.
+7. **Recovery:** stuck (trying to drive, < 1 m/s, grounded for `stuck_time`)
+   → reverse with opposite steer for `reverse_time`. After
+   `max_unstick_attempts`, or no new ground for `no_progress_time`, it
+   presses R: the same respawn a human has.
+8. **Finish:** once its finish is confirmed it pulls to the side of the road
+   and brakes with `finish_brake`.
+
+Off the trike: nothing during EJECTED/RAGDOLL/GETTING_UP/MOUNTING. ON_FOOT:
+writes `move_direction` toward its own trike (slowing within
+`on_foot_slow_radius`) and presses E `mount_delay` after the GET ON prompt
+appears. If it moves < 0.1 m in 0.4 s it side-steps (80°) for 0.9 s,
+alternating sides. Last resort after `on_foot_give_up_time` (15 s): R, the
+same emergency recovery a human has (never reached in the tested races).
+
+**Difficulty** = `AIDriverConfig` resource (`resources/ai/ai_easy.tres`,
+`ai_medium.tres`, `ai_hard.tres`; assigned in `main.tscn` →
+`RacerManager.ai_configs`):
+
+| Value | Easy | Medium | Hard |
+|---|---|---|---|
+| top_speed_ratio | 0.74 | 0.9 | 1.0 |
+| corner_lateral_accel (m/s²) | 10 | 15 | 19 |
+| planning_deceleration (m/s²) | 9 | 14 | 18 |
+| steer_gain / steer_rate | 2.0 / 3.5 | 2.6 / 6 | 3.0 / 9 |
+| steer_noise | 0.16 | 0.06 | 0.02 |
+| corner_cut | 0 | 0.25 | 0.5 |
+| drift_chance (min curvature) | 0 | 0.35 (0.01) | 0.75 (0.008) |
+| avoid_distance / reaction_time | 30 m / 0.45 s | 40 m / 0.25 s | 50 m / 0.08 s |
+| lane_change_speed | 4 | 6 | 8 m/s |
+| avoids cones | no | yes | yes |
+| start / mount delay | 0.7 / 0.8 s | 0.2 / 0.2 s | 0.05 / 0.05 s |
+
+## Race flow (final demo milestone 03)
+
+**States** (`RaceStateMachine`, pure logic, `scripts/race/race_state_machine.gd`):
+`LOBBY → COUNTDOWN → RACING → FINISHED → RESULTS → LOBBY`, plus aborts back to
+LOBBY from COUNTDOWN, RACING and FINISHED. `transition()` refuses anything else
+(returns false), emits `state_changed`, and records `history`.
+
+**`RaceController`** (node in `main.tscn`) drives it on top of `RacerManager`:
+
+| State | What happens | Leaves when |
+|---|---|---|
+| LOBBY | racers on their grid slots, `set_controls_locked(true)` | `auto_start` and `lobby_delay` (1 s) passed, or `begin_countdown()` (Start Race) |
+| COUNTDOWN | `countdown_step` "3", "2", "1" every `countdown_step_time` (1 s); still locked | after 3 steps → `_go()` |
+| RACING | "GO!", controls unlocked, `RacerManager.start_race()` (AI on, clock runs). First finisher starts `finish_timeout` (45 s, 0 = none) | everyone finished, or the timeout runs out |
+| FINISHED | `stop_race()`: clock stops, finish line ignored, unfinished = DNF, AI off, locked. `results` built | `results_delay` (2.5 s) |
+| RESULTS | `ResultsScreen` | `race_again()` or `return_to_lobby()` |
+
+- `race_again()` = RESULTS → LOBBY (reset) → COUNTDOWN.
+- `return_to_lobby()` = RESULTS → LOBBY (reset) and wait for Start Race.
+- `start_immediately()` = LOBBY → COUNTDOWN → RACING in one tick (tools and
+  tests; `RaceSession.skip_countdown`).
+- `race_duration` = the last finisher's time when everyone finished, else
+  the clock at the timeout.
+- Results entries: `{position, id, name, is_ai, finished, time}`, in final
+  race order.
+
+**Controls lock:** `Trike.input_locked` clears input and brakes gently like a
+riderless trike. It is applied in `_physics_process` and again in
+`_integrate_forces`: physics callbacks run *before* `_physics_process`
+each tick, so input written between ticks would otherwise reach the motor
+once.
+
+**Reset** (`RacerManager.reset_for_new_race()`, no scene reload):
+- riders off their trikes are `force_mount()`ed
+- trikes teleported to their `spawn_transform` (`notify=false`)
+- inputs cleared and locked
+- `VehicleProgress`, `CheckpointProgress`, finish fields, DNF and respawn
+  counts reset
+- `FinishTracker.reset()`, `AIDriver.reset_for_race()` (inactive, unhinted
+  path search)
+- `TrackProps.reset_props()` puts crates and cones back at their spawn
+  transforms
+- clock zeroed
+
+Ids, slots, colors and AI difficulty stay. There are no items yet; item
+state will hook into the same reset. The pause menu's Restart still reloads
+the whole scene.
+
+## Checkpoints and positions (final demo milestone 03)
+
+`Track.get_checkpoints()`: path indices every `checkpoint_spacing` (100 m)
+after the start, none within `checkpoint_finish_gap` (20 m) of the finish,
+then the finish index as the last one. The test track has 12. A test checks
+every track scene in `scenes/tracks/`.
+
+`CheckpointProgress` (one per racer, `racer.checkpoints`), updated by
+`RacerManager` every tick from the trike's `VehicleProgress.current_index`:
+- **Ordered:** only `next_checkpoint` can be passed, and only while the trike
+  is within `pass_window` (15 samples = 30 m) after it. Jumping further
+  (teleport, shortcut) sets `missed_checkpoint`, and nothing after it can
+  count. The skip is never repaired automatically.
+- **Once:** passing increments `next_checkpoint`; reversing back over it and
+  through again changes nothing. `checkpoint_passed(i)` fires once per
+  checkpoint.
+- **Valid distance** (`distance`, m) = path index × spacing + the offset
+  along the path, capped at the next unpassed checkpoint. Reversing lowers
+  it; skipping gains nothing beyond the skipped checkpoint.
+- Based on the trike, so a wipeout changes nothing (the empty trike keeps
+  its state).
+- `segment_distance`, `get_overall_progress()` (0..1),
+  `force_passed_through(index)` (tests/tools after a teleport), `complete()`
+  on finish.
+
+**Finish gate:** `FinishTracker.can_finish` (new optional Callable) is
+`RacerManager._can_finish`: a crossing only counts once every checkpoint
+before the line was passed. Ids the manager doesn't own aren't gated. The
+pending-finish logic is unchanged; `FinishTracker.reset()` was added for new
+races.
+
+**Positions** (`RacePositions.rank`, every tick, into `racer.position` and
+`RacerManager.get_ranking()`):
+1. finished racers, by finishing order
+2. then more checkpoints passed
+3. then more valid distance along the path (not straight-line distance)
+
+Two racers on the same checkpoint within `position_swap_margin` (1 m) keep
+their previous order (no flicker). The HUD shows "2nd / 5", "CP 3/12" and,
+while it runs, the finish timeout.
 
 ## Signals and APIs
 
@@ -180,13 +484,14 @@ state, so remote trikes render unchanged.
 - `VehicleProgress` (one per racer): nearest track sample plus last safe
   on-road sample (the respawn point). Windowed search, so it never jumps to a
   nearby section of road.
-- `RaceSession` (main.gd): connects everything and owns race rules. The local
-  racer is `LOCAL_PLAYER_ID` (1).
+- `RaceSession` (main.gd): binds the local racer (`LOCAL_PLAYER_ID` = 1) to
+  camera and HUD and starts the race; racer rules live in `RacerManager`.
+- `RacerManager`, `Racer`, `AIDriver`, `AIDriverConfig`: see the sections above.
 
 ## Finish detection
 
 The finish `Area3D` (mask: vehicles) emits `Track.finish_crossed(body)` for
-any vehicle. `RaceSession` forwards it to `FinishTracker` (once the race
+any vehicle. `RacerManager` forwards it to `FinishTracker` (once the race
 has started), which resolves the body to the **owning player** through the
 racer registry. Unknown bodies are ignored, so one player's vehicle can never
 finish for another.
@@ -202,16 +507,106 @@ finish for another.
 - Pure logic with no nodes, keyed by player id: a future host can run it
   authoritatively and broadcast `racer_finished`. No results screen yet.
 
-## Track generation
+## Track generation (rewritten in final demo milestone 06)
 
-`TrackPath` smooths control points (Catmull-Rom → Curve3D) and samples every
-2 m with a frame per sample (forward along slope, level right vector).
-`TrackMeshBuilder` emits flat-shaded quads with vertex colors: road (4 strips),
-striped walls (inner/top/outer), and a multi-segment slope falling away on
-each side. Collision is three `ConcavePolygonShape3D`s (backface collision
-on) on one `StaticBody3D`. The track also adds end blockers, start/finish
-gates (`track_gate.gd`) and a finish `Area3D`. Children with
-`build_for_track(track)` (props, decor) run after the track is built.
+**Data → path.**
+- A map is a `Track` scene with data only.
+  - `route_segments`: each segment is `Vector3(length m, turn °, grade %
+    downhill)` and is turned into control points by `TrackRoute`. A segment
+    is a constant-radius arc, so the tightest corner is simply
+    `min(length / turn)` (`TrackRoute.min_radius`).
+  - The old `control_points` still work (the test track uses them).
+- `width_profile` holds `(distance, width)` keys, eased between keys.
+- `zones` holds `[start, end, kind, ...]` entries: `bridge`, `gap`,
+  `mud u0 u1`, `overlook side`, `clearing` and `rocks`.
+- `TrackPath` samples every 2 m. Each sample has a frame (forward, a level
+  right vector, up) and a road width (`widths`). Read the width through
+  `Track.half_width_at(i)`; never use `road_width` directly.
+
+**Lookup.**
+- `TrackPath` keeps a 40 m spatial grid. An unhinted `find_nearest()`
+  searches ring by ring and gives the same answer as a full scan (tested on
+  400 random probes).
+- `samples_near()` serves scenery placement.
+- Hinted lookups (per-frame racer tracking) stay windowed.
+
+**Geometry (`TrackMeshBuilder`).**
+- Every sample has a kind: NORMAL (road, walls, slopes), BRIDGE (plank deck
+  and parapets; no slopes, an open gorge below) or GAP (nothing).
+- At every bridge and gap end the full cross-section drops as a rocky cliff
+  face (rendered and solid).
+- The road and the collision cross-section are cached per sample, so each
+  slope point and noise color is computed once.
+- Quads go into `MeshBatch` (packed arrays, no SurfaceTool calls per vertex).
+- The track is built in chunks of 60 samples (120 m). Each chunk gets its own
+  meshes (frustum culling) and its own collision shapes.
+
+**Collision by surface.** One `StaticBody3D` per surface:
+- `TrackBody`: road, walls, cliffs and end blockers
+- `MudBody`: mud strips
+- `BridgeBody`: plank deck
+- `SlopeBody`: grass
+
+The non-road bodies carry `TrackSurface` metadata. `Trike` reads the
+surface from each wheel's raycast hit (`wheel_surface`, `surface`) and
+averages the TrikeConfig "Surfaces" factors over the grounded wheels:
+- top speed factor
+- drag above that speed
+- grip factor
+
+Untagged ground (props, ramps, test arenas) is ROAD, so road handling is
+exactly what it was before.
+
+**Safety and race data (`Track`).**
+- `is_safe_index()` / `mark_unsafe()`: jump gaps (45 m before, 12 m after)
+  and props (ramps, boulders, road trees and logs, ±10 m) are not respawn
+  points.
+- `VehicleProgress` only records a safe index as `last_safe_index`, and
+  `reset()` falls back to `get_recovery_index()`.
+- `get_item_box_transforms()` gives the item box spawn points (rows ×
+  columns).
+- `surface_at()` gives the expected surface at a point.
+- `hazard_time` is the race clock for timed hazards. `RacerManager` advances
+  it from GO.
+- `build_timings` records milliseconds per build stage.
+
+**Children.** Each child with `build_for_track(track)` runs in scene order:
+1. Props (layout table, including `boulder`, `road_tree`, `falling_log` and
+   `big_ramp`)
+2. Decor (chunked MultiMesh batches with fade distances, grid-based
+   road-clearance checks; nothing on bridges, gaps, clearings or open
+   overlook sides)
+3. Landmarks
+4. Backdrop (terrain heightfield in tiles, nearest track sample per vertex by
+   a two-pass grid sweep instead of vertices × samples; edges eased into the
+   valley; a noise-warped section choice away from the road so cliffs
+   between levels wind; far-forest pines on the terrain)
+5. Structures (needs Backdrop's `terrain_height()`)
+
+**Falling logs (`FallingLog`).**
+- An `AnimatableBody3D` whose pose is a pure function of
+  `Track.hazard_time`, so online peers see the same log at the same time
+  with no extra sync.
+- The AI ignores it while it's off the road (`is_active()`).
+
+**Level of detail.**
+- Trees, bushes, flowers, boulders and the far forest fade out by distance
+  (`visibility_range_end`). Each batch node sits at the center of its
+  instances, so the distance is measured from there.
+- `GameSettings.apply_graphics` scales those distances by quality: Low 0.55,
+  Medium 0.85, High 1.0 (group `scenery_lod`).
+
+**Build profile.** Measured on a MacBook Air M4:
+
+| Map | Before (old code) | After | Main stages after the rewrite |
+|---|---|---|---|
+| Test track, 1.2 km, headless | 330 ms | ~250 ms | geometry 99, backdrop 50 |
+| Forest Rush, 7.45 km, headless | — | 1.1–1.4 s | geometry ~600, backdrop ~300–450, decor ~250 |
+| Forest Rush, windowed | — | ~1.6 s | mesh uploads make the decorative parts slower |
+
+The old code's cost grew with the square of the map size (terrain vertices
+× track samples, and scenery × samples). For Forest Rush it would have taken
+several seconds.
 
 ## Camera
 
@@ -236,7 +631,7 @@ clearance. It snaps on respawn (`respawned`).
 
 | Layer | Bit value | Used by | Collides with (mask) |
 |---|---|---|---|
-| 1 world | 1 | track, barriers, slopes, gates, rocks, ramps, scenery colliders | — (static) |
+| 1 world | 1 | track (road, mud, bridge, slope, walls, cliffs), gates, rocks, ramps, boulders, road trees, falling logs (kinematic), scenery and structure colliders | — (static) |
 | 2 vehicles | 2 | trikes (chassis + rider capsule; the capsule is disabled while the rider is off) | world, vehicles, props (1+2+4) |
 | 3 props | 4 | crates, cones | world, vehicles, props (1+2+4) |
 | 4 riders | 8 | thrown rider (`RiderRagdoll`), rider on foot (`RiderOnFoot`) | ragdoll: world, vehicles, props (1+2+4), own trike ignored until 1.6 m clear · on foot: 1+2+4 |
@@ -310,8 +705,35 @@ below the out-of-bounds depth, so a falling trike respawns before reaching it.
 | `scripts/rider/rider_config.gd` | `RiderConfig`: all ejection/fall/on-foot/mount values |
 | `scripts/rider/rider_ragdoll.gd`, `rider_on_foot.gd` | Falling body and walking body |
 | `scripts/camera/follow_camera.gd` | Chase camera |
-| `scripts/track/*.gd` | Track path, mesh builder, track node, gate, props, decor |
+| `scripts/track/*.gd` | Track path (+ grid lookup), route builder (`TrackRoute`), mesh builder (chunks, surfaces), `MeshBatch`, `TrackSurface`, track node (zones, safety, item boxes), gate, props, decor, structures |
+| `scenes/tracks/forest_rush.tscn`, `scenes/main/forest_rush.tscn` | Forest Rush map data and its race scene |
+| `scripts/props/road_boulder.gd`, `road_tree.gd`, `falling_log.gd` (+ `scenes/props/*.tscn`) | Road obstacles and the timed log hazard |
+| `tests/map_tests.gd`, `tests/map_test_runner.*` | Forest Rush checks (main suite); long timed races |
 | `scripts/race/vehicle_progress.gd` | Per-racer progress and respawn point |
+| `scripts/race/finish_tracker.gd` | `FinishTracker`: player-specific finish and pending finish |
+| `scripts/race/racer.gd` | `Racer`: one racer's record |
+| `scripts/race/racer_manager.gd` | `RacerManager`: registry, AI spawning, progress, respawns, race clock |
+| `scripts/ai/ai_driver.gd` | `AIDriver`: AI racer brain (`TrikeInputSource`) |
+| `scripts/ai/ai_driver_config.gd` | `AIDriverConfig`: difficulty resource |
+| `resources/ai/ai_*.tres` | Easy / Medium / Hard presets |
+| `scripts/vehicles/trike_input_source.gd` | `TrikeInputSource`: base for keyboard/AI/network input |
+| `scenes/main/race_five.tscn` | 5-racer race (1 human + 4 mixed AI) |
+| `tests/racer_tests.gd` | Racer registry and AI tests (run by `test_runner.gd`) |
+| `scripts/race/race_state_machine.gd` | `RaceStateMachine`: states and allowed transitions |
+| `scripts/race/race_controller.gd` | `RaceController`: countdown, racing, finish timeout, results, race again |
+| `scripts/race/checkpoint_progress.gd` | `CheckpointProgress`: ordered checkpoints, valid distance |
+| `scripts/race/race_positions.gd` | `RacePositions`: ranking with hysteresis |
+| `scripts/ui/race_menu_base.gd`, `results_screen.gd`, `lobby_screen.gd` | Results and lobby screens (built in code from the UI theme) |
+| `tests/race_flow_tests.gd` | Race flow tests (run by `test_runner.gd`) |
+| `scripts/core/game_settings.gd`, `game_session.gd` | Autoloads `GameSettings`, `GameSession` |
+| `scripts/net/*.gd` | `Net` (autoload), `NetworkTransport`, `ENetTransport`, `NetSnapshot`, `SnapshotBuffer`, `NetRaceSync`, `Lobby`, `LobbyPlayer`, `NetAddress` |
+| `tests/net_unit_tests.gd`, `tests/net/*` | In-process network tests; multi-process network suite |
+| `scripts/maps/*.gd`, `resources/maps/*.tres` | `MapInfo`, `MapCatalog`, the three maps |
+| `scripts/menu/*.gd`, `scenes/menu/*.tscn` | Main menu, its screens and 3D background |
+| `scripts/ui/kit/ui_kit.gd` | `UiKit` design system |
+| `scripts/ui/settings_panel.gd`, `map_card.gd`, `map_preview.gd` | Shared settings page, map card, preview placeholder |
+| `default_bus_layout.tres` | Audio buses Master, Music, SFX |
+| `tests/ui_tests.gd` | Menu/lobby/settings/pause/HUD tests (run by `test_runner.gd`) |
 | `scripts/ui/hud.gd`, `pause_menu.gd` | UI |
 | `scripts/main/main.gd` | `RaceSession` |
 | `scripts/props/ramp.gd` | Tool script: wedge ramp mesh (striped planks) + collision |

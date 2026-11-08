@@ -130,6 +130,36 @@ theme_override_constants/outline_size = 0
 theme_override_font_sizes/font_size = 42
 text = "00:00.00"
 
+[node name="PositionPanel" type="PanelContainer" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 30.0
+offset_top = 114.0
+offset_right = 270.0
+offset_bottom = 196.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("timer_panel")
+
+[node name="VBox" type="VBoxContainer" parent="Root/PositionPanel"]
+layout_mode = 2
+theme_override_constants/separation = -8
+
+[node name="PositionTitle" type="Label" parent="Root/PositionPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.82, 0.22, 1)
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 16
+text = "POSITION"
+
+[node name="PositionLabel" type="Label" parent="Root/PositionPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_fonts/font = SubResource("font_display")
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 42
+text = "1st / 1"
+
 [node name="SpeedGauge" type="Control" parent="Root"]
 unique_name_in_owner = true
 layout_mode = 1
@@ -300,6 +330,7 @@ mouse_filter = 2
 theme_override_styles/panel = SubResource("hint_panel")
 
 [node name="HintLabel" type="Label" parent="Root/HintPanel"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/outline_size = 0
 theme_override_constants/line_spacing = 2
@@ -332,7 +363,8 @@ layout_mode = 2
 alignment = 1
 theme_override_constants/separation = 14
 
-[node name="Key" type="Label" parent="Root/PromptPanel/HBox"]
+[node name="PromptKey" type="Label" parent="Root/PromptPanel/HBox"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.17, 0.14, 0.32, 1)
 theme_override_constants/outline_size = 0

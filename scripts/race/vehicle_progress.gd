@@ -14,15 +14,18 @@ func _init(for_track: Track, start_index := 0) -> void:
 	reset(start_index)
 
 
+## Placed at `index` (start, respawn, teleport). The respawn point is the
+## nearest safe sample at or before it.
 func reset(index: int) -> void:
 	current_index = index
-	last_safe_index = index
+	last_safe_index = track.get_recovery_index(index)
 
 
 func update(trike: Trike) -> void:
 	current_index = track.path.find_nearest(trike.global_position, current_index)
 	var upright := trike.global_basis.y.dot(Vector3.UP) > 0.7
-	if trike.is_grounded() and upright and track.is_on_road(trike.global_position, current_index):
+	if trike.is_grounded() and upright and track.is_on_road(trike.global_position, current_index) \
+			and track.is_safe_index(current_index):
 		last_safe_index = current_index
 
 

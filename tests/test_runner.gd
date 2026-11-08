@@ -9,6 +9,11 @@ const TRIKE_SCENE := preload("res://scenes/vehicles/trike.tscn")
 const CRATE_SCENE := preload("res://scenes/props/crate.tscn")
 const RIDER_SCENE := preload("res://scenes/characters/rider_character.tscn")
 const CAMERA_SCENE := preload("res://scenes/camera/follow_camera.tscn")
+const RACER_TESTS := preload("res://tests/racer_tests.gd")
+const RACE_FLOW_TESTS := preload("res://tests/race_flow_tests.gd")
+const UI_TESTS := preload("res://tests/ui_tests.gd")
+const NET_UNIT_TESTS := preload("res://tests/net_unit_tests.gd")
+const MAP_TESTS := preload("res://tests/map_tests.gd")
 const REQUIRED_ACTIONS: Array[StringName] = [
 	&"accelerate", &"brake", &"steer_left", &"steer_right", &"drift", &"reset", &"pause", &"interact",
 ]
@@ -19,11 +24,36 @@ var _arena: Node3D
 
 
 func _ready() -> void:
+	# Default controls and a separate settings file: the player's saved
+	# settings never affect tests, and tests never overwrite them.
+	GameSettings.use_test_profile("user://test_settings.cfg")
 	_run_all.call_deferred()
 
 
 func _run_all() -> void:
 	print("\n=== TRIKE TUMBLE TESTS ===")
+	# `-- --only=core|racers|flow|ui|net|map` runs one group (while working on it).
+	var only := ""
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--only="):
+			only = arg.trim_prefix("--only=")
+	if only.is_empty() or only == "core":
+		await _run_core()
+	if only.is_empty() or only == "racers":
+		await RACER_TESTS.new(self).run()
+	if only.is_empty() or only == "flow":
+		await RACE_FLOW_TESTS.new(self).run()
+	if only.is_empty() or only == "ui":
+		await UI_TESTS.new(self).run()
+	if only.is_empty() or only == "net":
+		await NET_UNIT_TESTS.new(self).run()
+	if only.is_empty() or only == "map":
+		await MAP_TESTS.new(self).run()
+	print("\n=== RESULT: %d passed, %d failed ===" % [_passed, _failed])
+	get_tree().quit(1 if _failed > 0 or _passed == 0 else 0)
+
+
+func _run_core() -> void:
 	_test_input_map()
 	await _test_keyboard_controls()
 	await _test_settle()
@@ -55,8 +85,6 @@ func _run_all() -> void:
 	await _test_finish_other_player()
 	await _test_scenery_clear_of_road()
 	await _test_full_track_run()
-	print("\n=== RESULT: %d passed, %d failed ===" % [_passed, _failed])
-	get_tree().quit(1 if _failed > 0 else 0)
 
 
 # --- Helpers ----------------------------------------------------------------
@@ -414,6 +442,7 @@ func _load_main() -> RaceSession:
 		_arena.queue_free()
 		_arena = null
 	var main: RaceSession = MAIN_SCENE.instantiate()
+	main.skip_countdown = true  # these tests drive from the first tick
 	add_child(main)
 	var trike: Trike = main.get_node("Trike")
 	trike.input_source = null
@@ -519,23 +548,43 @@ func _test_scenery_clear_of_road() -> void:
 	var main := _load_main()
 	await get_tree().process_frame
 	var track := main.track
-	var shapes: Array[Node] = []
-	shapes.append_array(track.get_node("Decor/SceneryCollision").get_children())
-	shapes.append_array(track.get_node("Landmarks/LandmarkCollision").get_children())
+	var shapes := scenery_colliders(track)
+	var intrusions := count_road_intrusions(track, shapes)
+	_check(shapes.size() > 100, "scenery has collision", "(%d colliders)" % shapes.size())
+	_check(intrusions == 0, "no scenery collider inside the road corridor", "(%d intrusions)" % intrusions)
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## Every scenery, landmark and structure collider of a track.
+static func scenery_colliders(track: Track) -> Array[CollisionShape3D]:
+	var shapes: Array[CollisionShape3D] = []
+	var stack: Array[Node] = []
+	for path: String in ["Decor/SceneryCollision", "Landmarks/LandmarkCollision", "Structures/StructureCollision"]:
+		var node := track.get_node_or_null(path)
+		if node:
+			stack.append(node)
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		if node is CollisionShape3D:
+			shapes.append(node)
+		stack.append_array(node.get_children())
+	return shapes
+
+
+## Colliders whose center lies inside the drivable road corridor.
+static func count_road_intrusions(track: Track, shapes: Array[CollisionShape3D]) -> int:
 	var intrusions := 0
-	for node in shapes:
-		var collider := node as CollisionShape3D
+	for collider in shapes:
 		var p := collider.global_position
 		var i := track.path.find_nearest(p)
 		var offset := p - track.path.points[i]
 		var lateral := absf(offset.dot(track.path.rights[i]))
 		var vertical := offset.dot(track.path.ups[i])
-		if lateral < track.road_width * 0.5 + 0.3 and vertical > -3.0 and vertical < 6.0:
+		if lateral < track.half_width_at(i) + 0.3 and vertical > -3.0 and vertical < 6.0 \
+				and track.get_sample_kind(i) != TrackMeshBuilder.SampleKind.GAP:
 			intrusions += 1
-	_check(shapes.size() > 100, "scenery has collision", "(%d colliders)" % shapes.size())
-	_check(intrusions == 0, "no scenery collider inside the road corridor", "(%d intrusions)" % intrusions)
-	main.queue_free()
-	await get_tree().process_frame
+	return intrusions
 
 
 # --- Rider ejection & recovery ------------------------------------------------
@@ -961,6 +1010,8 @@ func _place_before_finish(main: RaceSession, trike: Trike, samples_before: int) 
 	trike.teleport(main.track.path.get_frame(start).translated_local(Vector3(0, 0.8, 0)))
 	if trike == main.trike:
 		main.get_progress().reset(start)
+		# Teleporting skips checkpoints, which the finish line now rejects.
+		main.get_local_racer().checkpoints.force_passed_through(start)
 	return start
 
 
