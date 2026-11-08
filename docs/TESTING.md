@@ -21,12 +21,12 @@ printf '[debug]\n\ngdscript/warnings/treat_warnings_as_errors=true\n' > override
 $GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn; rm override.cfg
 ```
 
-### What the suite covers (112 checks)
+### What the suite covers (143 checks)
 
 | Area | Checks |
 |---|---|
-| Input map | all 7 actions exist with bindings |
-| Keyboard | real key events (W/S/A/D, arrows, SPACE, R) reach the trike through `PlayerInputSource` |
+| Input map | all 8 actions exist with bindings (incl. `interact`); E is mapped to `interact` |
+| Keyboard | real key events (W/S/A/D, arrows, SPACE, R, E) reach the input through `PlayerInputSource` |
 | Suspension | 3 wheels down, upright, settles without bounce, no creep |
 | Engine | 0→12 m/s in 1 s, top speed near config, upright at speed |
 | Brakes | stop from ~78 km/h < 1.5 s, reverse works and is capped |
@@ -34,7 +34,7 @@ $GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn; 
 | Drift | starts with SPACE + steer, slides > 12°, charges tiers, boost on release, boost adds speed |
 | Handbrake | SPACE without steer slows, doesn't drift |
 | Collision | can't pass through a wall, impact stops it, crates get knocked away |
-| Recovery | auto-recover when upside down, R reset, stuck (high-centered) detection |
+| Recovery | standalone trike without a rider system (arena only): auto-recover when upside down; R reset; stuck (high-centered) detection. In the game, flips eject the rider instead (see Rider rows) |
 | Main scene | track builds, spawns on road, holds still on slope, HUD km/h matches, camera behind, timer runs |
 | Out of bounds | falling off the course respawns on the road |
 | Pause | ESC action pauses and resumes |
@@ -47,11 +47,16 @@ $GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn; 
 | Rider: no auto respawn | 10 s idle on foot: no respawn, no auto-mount, trike stays put |
 | Rider: race scene | camera follows rider; race clock runs; HUD prompt shows/hides; R on foot = emergency recovery |
 | Rider: real track crash | missing a corner into the barrier ejects; rider gets up on the road near the trike |
+| Rider: attach_to lifecycle | attach before `_ready` deferred and completed; `impact` connected once; repeated calls no duplicates; switching trikes moves the binding and restores flip recovery; null rejected; freed trike released safely; re-attach works |
+| Rider: real E key | real `InputEventKey` E outside the mount distance does nothing; inside it offers the prompt and mounts |
+| Finish: mounted | riding across the line finishes 1st, time recorded, clock stops, exactly once even with extra crossings |
+| Finish: after ejection | thrown before the line → empty trike crossing = pending (not finished) → still not finished on foot → remount confirms 1st; official time = confirmation time; exactly once |
+| Finish: player-specific | each vehicle resolves to its owner; player 2's trike finishes only player 2; unregistered bodies ignored; player 1 then finishes 2nd |
 | Full run | autopilot finishes the whole track with ≤ 3 respawns and **0 ejections** |
 
-Last result (milestone 3): **112 passed, 0 failed**, zero GDScript warnings
-in strict mode. Driving numbers are still identical to milestone 1 (autopilot
-run 49.2 s, 0 respawns, top 88 km/h, 3.8 s airtime).
+Last result (final-demo milestone 01): **143 passed, 0 failed**, zero GDScript
+warnings in strict mode. Driving numbers are still identical to milestone 1
+(autopilot run 49.2 s, 0 respawns, top 88 km/h, 3.8 s airtime).
 
 ## 2. Visual capture (renders the real game)
 
@@ -96,14 +101,16 @@ Run `$GODOT --path .` (or press Play in the editor) and check:
 - [ ] SPACE alone slows you down like a handbrake
 - [ ] Ramps launch you and landings feel OK
 - [ ] Crashing into crates/cones/rocks/walls feels good, not sticky
-- [ ] R resets onto the road; flipping over recovers automatically
+- [ ] R resets onto the road (emergency recovery, works riding and on foot)
+- [ ] Flipping over throws the rider off; the empty trike stays flipped until you get back on (E rights it)
 - [ ] Driving off the edge respawns you on the road
 - [ ] ESC pauses; Resume/Restart/Quit work with the mouse
 - [ ] Camera stays stable and doesn't clip through walls or terrain
 - [ ] The road edges (curbs, barriers) are easy to read at speed
 - [ ] Gloves stay on the handlebar and boots on the footrests at full lock
 - [ ] Chevron signs warn of sharp corners
-- [ ] Speed HUD, timer and FINISH message look right
+- [ ] Speed HUD, timer and FINISH message look right (FINISH shows position, e.g. "1st")
+- [ ] Finish edge case: crash into a barrier just before the finish line so the empty trike rolls over it → "Get back on to finish!" → run to the trike, press E → FINISH appears once, timer stops
 - [ ] **Wipeouts:** crash head-on into a rock/barrier at speed → thrown off with a WIPEOUT!-style message
 - [ ] Scraping barriers, hitting crates/cones and landing ramps do NOT throw you off
 - [ ] Fall feels funny and short (about 1–2 s); get-up shows the head shake and dizzy stars

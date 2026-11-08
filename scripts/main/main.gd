@@ -8,10 +8,14 @@ extends Node3D
 ## only connects it to the camera, HUD and track. Systems talk through signals and small APIs so this can later
 ## become a multiplayer race manager that handles several trikes.
 
+## Player id of the local racer (single player today; one id per racer later).
+const LOCAL_PLAYER_ID := 1
+
 @export var respawn_message := "Back on track!"
 @export var wipeout_messages: Array[String] = ["WIPEOUT!", "BONK!", "OOF!", "WHOOPS!"]
 
 var _progress: VehicleProgress
+var _finish_tracker: FinishTracker
 var _race_time := 0.0
 var _race_started := false
 var _race_finished := false
@@ -31,6 +35,11 @@ func _ready() -> void:
 	trike.respawned.connect(follow_camera.snap_to_target)
 	track.finish_crossed.connect(_on_finish_crossed)
 	pause_menu.restart_requested.connect(restart)
+
+	_finish_tracker = FinishTracker.new(track.get_finish_index())
+	_finish_tracker.register_racer(LOCAL_PLAYER_ID, trike, rider, _progress)
+	_finish_tracker.racer_finished.connect(_on_racer_finished)
+	_finish_tracker.finish_pending.connect(_on_finish_pending)
 
 	rider.track = track
 	rider.focus_changed.connect(follow_camera.set_target)
@@ -56,6 +65,7 @@ func _physics_process(delta: float) -> void:
 	if _race_started and not _race_finished:
 		_race_time += delta
 		hud.set_race_time(_race_time)
+	_finish_tracker.update(_race_time)
 
 
 func restart() -> void:
@@ -72,6 +82,10 @@ func get_race_time() -> float:
 
 func is_race_finished() -> bool:
 	return _race_finished
+
+
+func get_finish_tracker() -> FinishTracker:
+	return _finish_tracker
 
 
 func _on_respawn_requested(target: Trike) -> void:
@@ -94,9 +108,30 @@ func _on_emergency_recovery() -> void:
 	hud.show_message(respawn_message, 1.2)
 
 
+## Any body entering the finish line; the tracker resolves which player's
+## vehicle it is (if any) and whether the rider is aboard.
 func _on_finish_crossed(body: Node3D) -> void:
-	if body != trike or not rider.is_riding() or _race_finished or not _race_started:
+	if not _race_started:
+		return
+	_finish_tracker.on_body_crossed(body, _race_time)
+
+
+func _on_finish_pending(player_id: int, _crossed_time: float) -> void:
+	if player_id == LOCAL_PLAYER_ID:
+		hud.show_message("Get back on to finish!", 2.5)
+
+
+func _on_racer_finished(player_id: int, position: int, finish_time: float) -> void:
+	if player_id != LOCAL_PLAYER_ID:
 		return
 	_race_finished = true
-	hud.set_race_time(_race_time)
-	hud.show_message("FINISH!  %s" % Hud.format_time(_race_time), 6.0)
+	_race_time = finish_time
+	hud.set_race_time(finish_time)
+	hud.show_message("FINISH!  %s  %s" % [ordinal(position), Hud.format_time(finish_time)], 6.0)
+
+
+static func ordinal(n: int) -> String:
+	var suffix := "th"
+	if n % 100 < 11 or n % 100 > 13:
+		suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+	return "%d%s" % [n, suffix]

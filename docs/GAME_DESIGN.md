@@ -25,15 +25,35 @@ recover → finish.
 ## Vehicle: the trike
 
 - One big front wheel (steers), two small rear wheels (drive).
-- Controls: accelerate, brake/reverse, steer, drift/handbrake, reset, pause.
+- Controls (keyboard / gamepad):
+
+  | Action | Keyboard | Gamepad |
+  |---|---|---|
+  | Accelerate | W / ↑ | RT |
+  | Brake / reverse | S / ↓ | LT |
+  | Steer | A D / ← → | Left stick |
+  | Drift / handbrake | Space | RB / B |
+  | Reset (emergency recovery) | R | Y |
+  | Interact (get back on the trike) | E | X |
+  | Pause | Esc | Start |
+
+  On foot after a wipeout, the same W/A/S/D (arrows) move the rider relative to the camera.
 - **Drift:** hold Drift while steering above ~29 km/h. The trike hops,
   slides at a 25–45° angle and charges a boost. Steering into the drift
   tightens it and charges faster. Release to boost:
   - tier 1 (blue sparks) after ~0.9 s: short boost
   - tier 2 (orange sparks) after ~2.0 s: long boost
 - **Handbrake:** Drift with no steering brakes and loosens grip.
-- **Recovery:** R resets onto the road. Automatic recovery after 1.5 s upside
-  down, 3 s stuck, or falling off the course.
+- **Recovery:**
+  - Overturning or a big crash **throws the rider off** (see Wipeouts). The
+    trike stays where it is. Getting back on with E rights an overturned
+    trike in place. An empty trike never rights itself or teleports.
+  - Falling off the course puts the trike back on the road at its last safe
+    point.
+  - Stuck on top of something (wheels off the ground for 3 s while riding and
+    giving throttle) respawns on the road.
+  - **R** is the emergency button: trike and rider back on the road, rider
+    seated.
 
 ## Wipeouts (milestone 3) — the signature mechanic
 
@@ -53,6 +73,11 @@ clock keeps running.
 - Thrown over a barrier? The rider climbs back onto the road within 8 m of the trike.
 - The trike never comes to you, and you're never put back on automatically.
   **R** is the emergency button (trike and rider back on the road).
+- **Finishing needs the rider aboard.** If your empty trike rolls over the
+  finish line after a wipeout, the finish is *pending*. It counts the moment
+  you're back on that trike past the line. Your finish time and position are
+  taken at that moment. Every player finishes once, and only their own trike
+  can finish for them.
 
 ## Visual identity (milestone 2)
 
@@ -87,7 +112,6 @@ Final maps will be longer or multi-lap to reach 5–10 minutes.
 
 ## Planned features (not in the first milestone)
 
-- Players falling off the trike (ragdoll-ish tumble) and climbing back on.
 - Item boxes and throwable items with knockback.
 - Racer-vs-racer bumping and knockback.
 - Online/LAN multiplayer for up to 5 players.

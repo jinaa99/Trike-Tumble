@@ -10,7 +10,7 @@ const CRATE_SCENE := preload("res://scenes/props/crate.tscn")
 const RIDER_SCENE := preload("res://scenes/characters/rider_character.tscn")
 const CAMERA_SCENE := preload("res://scenes/camera/follow_camera.tscn")
 const REQUIRED_ACTIONS: Array[StringName] = [
-	&"accelerate", &"brake", &"steer_left", &"steer_right", &"drift", &"reset", &"pause",
+	&"accelerate", &"brake", &"steer_left", &"steer_right", &"drift", &"reset", &"pause", &"interact",
 ]
 
 var _passed := 0
@@ -48,6 +48,11 @@ func _run_all() -> void:
 	await _test_rider_no_auto_respawn()
 	await _test_rider_in_race_scene()
 	await _test_rider_real_track_crash()
+	await _test_rider_attach_lifecycle()
+	await _test_rider_e_key_mount()
+	await _test_finish_mounted()
+	await _test_finish_after_ejection()
+	await _test_finish_other_player()
 	await _test_scenery_clear_of_road()
 	await _test_full_track_run()
 	print("\n=== RESULT: %d passed, %d failed ===" % [_passed, _failed])
@@ -156,6 +161,12 @@ func _test_input_map() -> void:
 	for action in REQUIRED_ACTIONS:
 		_check(InputMap.has_action(action) and not InputMap.action_get_events(action).is_empty(),
 				"action '%s' mapped" % action)
+	var e_mapped := false
+	for event in InputMap.action_get_events(&"interact"):
+		var key := event as InputEventKey
+		if key and (key.physical_keycode == KEY_E or key.keycode == KEY_E):
+			e_mapped = true
+	_check(e_mapped, "E key is mapped to 'interact'")
 
 
 ## Sends real key events through Input and checks PlayerInputSource reads them.
@@ -171,6 +182,7 @@ func _test_keyboard_controls() -> void:
 		[KEY_A, "steer", -1.0], [KEY_LEFT, "steer", -1.0],
 		[KEY_D, "steer", 1.0], [KEY_RIGHT, "steer", 1.0],
 		[KEY_SPACE, "drift", true],
+		[KEY_E, "interact_pressed", true],
 	]
 	for entry: Array in cases:
 		var key: Key = entry[0]
@@ -846,6 +858,224 @@ func _test_rider_real_track_crash() -> void:
 			"rider gets up on the road, even if thrown over the barrier")
 	_check(spot.distance_to(trike.global_position) < 15.0, "and close to the trike",
 			"(%.1f m)" % spot.distance_to(trike.global_position))
+	main.queue_free()
+	await get_tree().process_frame
+
+
+# --- Rider lifecycle, real E key, finish rules (final-demo milestone 01) ------
+
+## Connections from `trike.impact` to this rider controller.
+func _impact_links(trike: Trike, rider: RiderController) -> int:
+	var count := 0
+	for connection: Dictionary in trike.impact.get_connections():
+		if (connection["callable"] as Callable).get_object() == rider:
+			count += 1
+	return count
+
+
+func _test_rider_attach_lifecycle() -> void:
+	print("\n[Rider: attach_to lifecycle]")
+	await _new_arena()
+	var trike_a := _spawn_trike(Vector3(0.0, 0.9, 0.0))
+	var trike_b := _spawn_trike(Vector3(6.0, 0.9, 0.0))
+	await _wait(0.2)
+	var rider: RiderController = RIDER_SCENE.instantiate()
+	# Before the node is in the tree (not ready): must not crash, binds in _ready.
+	var early := rider.attach_to(trike_a)
+	_check(early and not rider.is_node_ready(), "attach_to() before _ready is accepted (deferred)")
+	_arena.add_child(rider)
+	rider.input_source = null
+	await get_tree().physics_frame
+	_check(rider.is_attached() and rider.trike == trike_a and not trike_a.auto_recover_when_flipped,
+			"deferred attach completes in _ready")
+	_check(_impact_links(trike_a, rider) == 1, "impact signal connected once after deferred attach",
+			"(%d)" % _impact_links(trike_a, rider))
+	for i in 3:
+		rider.attach_to(trike_a)
+	_check(_impact_links(trike_a, rider) == 1, "repeated attach_to() never duplicates the connection",
+			"(%d after 3 more calls)" % _impact_links(trike_a, rider))
+	rider.attach_to(trike_b)
+	_check(_impact_links(trike_a, rider) == 0 and _impact_links(trike_b, rider) == 1 and rider.trike == trike_b,
+			"attaching to another trike moves the binding cleanly")
+	_check(trike_a.auto_recover_when_flipped and not trike_b.auto_recover_when_flipped,
+			"the released trike gets its own flip recovery back")
+	_check(not rider.attach_to(null), "attach_to(null) is rejected without side effects")
+	_check(rider.trike == trike_b and rider.is_attached(), "...and the current binding is kept")
+	# Trike freed while the rider is off it: controller must let go safely.
+	await _hold(trike_b, 1.0, 1.0)
+	rider.eject()
+	await _wait(0.3)
+	trike_b.queue_free()
+	await _wait(0.3)
+	_check(not rider.is_attached() and rider.is_riding() and not rider.ragdoll.is_active(),
+			"freed trike: rider controller releases it without errors", "(state %s)" % rider.get_state_name())
+	_check(rider.attach_to(trike_a) and rider.is_attached() and _impact_links(trike_a, rider) == 1,
+			"...and can attach to a new trike afterwards")
+
+
+## Mounting through a real E key event, at the edge of the allowed distance.
+func _test_rider_e_key_mount() -> void:
+	print("\n[Rider: real E key mounting]")
+	await _new_arena()
+	var rig := _rider_rig()
+	var trike: Trike = rig["trike"]
+	var rider: RiderController = rig["rider"]
+	rider.input_source = rider.get_node("PlayerInputSource") as PlayerInputSource
+	await _wait(0.3)
+	rider.eject()
+	await _wait_for_state(rider, RiderController.State.ON_FOOT, 4.0)
+	await _wait(1.0)  # let the trike come to rest
+	var limit := rider.config.mount_distance
+	var side := trike.global_basis.x
+	side.y = 0.0
+	side = side.normalized()
+	# Just outside the limit: no prompt, real E does nothing.
+	var outside := trike.global_position + side * (limit + 0.4)
+	rider.on_foot.activate(Vector3(outside.x, trike.global_position.y - 0.5, outside.z), -side)
+	await _wait(0.3)
+	var far_distance := rider.on_foot.global_position.distance_to(trike.global_position)
+	await _send_key(KEY_E, true)
+	await _wait(0.1)
+	await _send_key(KEY_E, false)
+	await _wait(0.3)
+	_check(not rider.can_mount and rider.state == RiderController.State.ON_FOOT,
+			"real E key does nothing just outside the mount distance", "(%.2f m, limit %.1f m)" % [far_distance, limit])
+	# Just inside the limit: prompt, real E mounts.
+	var inside := trike.global_position + side * (limit - 0.6)
+	rider.on_foot.activate(Vector3(inside.x, trike.global_position.y - 0.5, inside.z), -side)
+	await _wait(0.3)
+	var near_distance := rider.on_foot.global_position.distance_to(trike.global_position)
+	_check(rider.can_mount, "[E] GET ON offered just inside the mount distance", "(%.2f m)" % near_distance)
+	await _send_key(KEY_E, true)
+	await _wait(0.1)
+	await _send_key(KEY_E, false)
+	var t := await _wait_for_state(rider, RiderController.State.RIDING, 2.0)
+	_check(rider.is_riding(), "real E key press mounts the trike", "(%.2f s)" % t)
+	rider.input_source = null
+
+
+## Drives `trike` from `samples_before` path samples before the finish line
+## (resetting race progress so the out-of-bounds check accepts the jump).
+func _place_before_finish(main: RaceSession, trike: Trike, samples_before: int) -> int:
+	var start := main.track.get_finish_index() - samples_before
+	trike.teleport(main.track.path.get_frame(start).translated_local(Vector3(0, 0.8, 0)))
+	if trike == main.trike:
+		main.get_progress().reset(start)
+	return start
+
+
+func _start_race(main: RaceSession) -> void:
+	for i in 5:
+		main.trike.input.throttle = 1.0
+		await get_tree().physics_frame
+	main.trike.input.clear()
+
+
+func _test_finish_mounted() -> void:
+	print("\n[Finish: normal mounted finish]")
+	var main := _load_main()
+	main.rider.input_source = null
+	await _wait(0.5)
+	await _start_race(main)
+	var finishes := [0]
+	main.get_finish_tracker().racer_finished.connect(func(_id: int, _pos: int, _t: float) -> void: finishes[0] += 1)
+	_place_before_finish(main, main.trike, 20)
+	await _wait(0.2)
+	var t := 0.0
+	while not main.is_race_finished() and t < 8.0:
+		main.trike.input.throttle = 1.0
+		await get_tree().physics_frame
+		t += 1.0 / Engine.physics_ticks_per_second
+	var result := main.get_finish_tracker().get_result(RaceSession.LOCAL_PLAYER_ID)
+	_check(main.is_race_finished() and result.get("position") == 1, "riding across the line finishes 1st",
+			"(time %.2f s)" % result.get("time", -1.0))
+	_check(absf(float(result.get("time", -1.0)) - main.get_race_time()) < 0.001, "finish time is recorded and the clock stops")
+	# Keep driving, and fake extra crossings: still exactly one finish.
+	await _hold(main.trike, 1.0, 1.0)
+	main.get_finish_tracker().on_body_crossed(main.trike, main.get_race_time() + 5.0)
+	await _wait(0.2)
+	_check(finishes[0] == 1 and main.get_finish_tracker().get_finished_count() == 1,
+			"finish registers exactly once", "(%d events)" % finishes[0])
+	main.queue_free()
+	await get_tree().process_frame
+
+
+func _test_finish_after_ejection() -> void:
+	print("\n[Finish: thrown off just before the line]")
+	var main := _load_main()
+	var trike := main.trike
+	var rider := main.rider
+	rider.input_source = null
+	await _wait(0.5)
+	await _start_race(main)
+	var tracker := main.get_finish_tracker()
+	var finishes := [0]
+	tracker.racer_finished.connect(func(_id: int, _pos: int, _t: float) -> void: finishes[0] += 1)
+	_place_before_finish(main, trike, 12)
+	await _hold(trike, 1.3, 1.0)
+	_check(not main.is_race_finished(), "not finished yet before the line (setup)")
+	rider.eject()
+	_check(not rider.is_riding(), "rider ejected before the finish line")
+	var t := 0.0
+	while not tracker.is_pending(RaceSession.LOCAL_PLAYER_ID) and t < 6.0:
+		await get_tree().physics_frame
+		t += 1.0 / Engine.physics_ticks_per_second
+	_check(tracker.is_pending(RaceSession.LOCAL_PLAYER_ID) and not main.is_race_finished(),
+			"empty trike crossing the line records a PENDING finish (not a finish)")
+	await _wait_for_state(rider, RiderController.State.ON_FOOT, 4.0)
+	await _wait(1.0)
+	_check(not main.is_race_finished(), "still not finished while on foot past the line")
+	var side := trike.global_basis.x
+	side.y = 0.0
+	var spot := trike.global_position + side.normalized() * 1.4
+	rider.on_foot.activate(Vector3(spot.x, trike.global_position.y - 0.5, spot.z), -side)
+	await _wait(0.2)
+	rider.input.interact_pressed = true
+	await _wait_for_state(rider, RiderController.State.RIDING, 2.0)
+	await _wait(0.2)
+	var result := tracker.get_result(RaceSession.LOCAL_PLAYER_ID)
+	_check(main.is_race_finished() and result.get("position") == 1, "remounting beyond the line confirms the finish",
+			"(crossed %.2f s, confirmed %.2f s)" % [result.get("crossed_time", -1.0), result.get("time", -1.0)])
+	_check(float(result.get("time", 0.0)) >= float(result.get("crossed_time", 1e9)), "official time is the confirmation time")
+	await _hold(trike, 1.0, 1.0)
+	_check(finishes[0] == 1 and not tracker.is_pending(RaceSession.LOCAL_PLAYER_ID), "pending finish confirmed exactly once",
+			"(%d events)" % finishes[0])
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## A second registered player: their vehicle finishes only for them.
+func _test_finish_other_player() -> void:
+	print("\n[Finish: player-specific]")
+	var main := _load_main()
+	main.rider.input_source = null
+	await _wait(0.5)
+	await _start_race(main)
+	var tracker := main.get_finish_tracker()
+	var trike2: Trike = TRIKE_SCENE.instantiate()
+	main.add_child(trike2)
+	trike2.input_source = null
+	var rider2: RiderController = RIDER_SCENE.instantiate()
+	main.add_child(rider2)
+	rider2.input_source = null
+	rider2.attach_to(trike2)
+	var start2 := _place_before_finish(main, trike2, 15)
+	var progress2 := VehicleProgress.new(main.track, start2)
+	tracker.register_racer(2, trike2, rider2, progress2)
+	_check(tracker.get_owner_id(trike2) == 2 and tracker.get_owner_id(main.trike) == RaceSession.LOCAL_PLAYER_ID,
+			"each vehicle resolves to its own player")
+	await _wait(0.2)
+	await _hold(trike2, 3.0, 1.0)
+	_check(tracker.has_finished(2) and tracker.get_result(2).get("position") == 1, "player 2 finishes 1st with their own trike")
+	_check(not tracker.has_finished(RaceSession.LOCAL_PLAYER_ID) and not main.is_race_finished(),
+			"player 2's vehicle does not finish player 1")
+	tracker.on_body_crossed(main.rider.ragdoll, main.get_race_time())
+	_check(tracker.get_finished_count() == 1, "an unregistered body crossing the line is ignored")
+	_place_before_finish(main, main.trike, 15)
+	await _wait(0.2)
+	await _hold(main.trike, 3.0, 1.0)
+	_check(tracker.get_result(RaceSession.LOCAL_PLAYER_ID).get("position") == 2 and main.is_race_finished(),
+			"player 1 then finishes 2nd")
 	main.queue_free()
 	await get_tree().process_frame
 

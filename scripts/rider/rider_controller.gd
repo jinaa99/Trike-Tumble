@@ -65,17 +65,65 @@ func _ready() -> void:
 		config = RiderConfig.new()
 	_rng.seed = config.fling_seed
 	_stars.visible = false
-	if trike:
-		attach_to(trike)
-
-
-## Binds this rider to a trike (called automatically for the exported one).
-func attach_to(target: Trike) -> void:
-	trike = target
-	_rider = trike.get_node("Visuals/Rider") as Rider
-	trike.auto_recover_when_flipped = false
-	trike.impact.connect(_on_trike_impact)
 	on_foot.add_collision_exception_with(ragdoll)
+	# A trike set before we were ready (scene export or an early attach_to)
+	# is bound now, once the child bodies exist.
+	if trike:
+		_bind(trike)
+
+
+## Binds this rider to a trike. Safe to call at any time and repeatedly:
+## before _ready the binding is deferred to _ready; calling it again with the
+## same trike does nothing; a different trike replaces the old binding.
+## Returns false if `target` is not a usable trike.
+func attach_to(target: Trike) -> bool:
+	if not _is_valid_trike(target):
+		return false  # null or freed (e.g. a despawned racer): nothing to bind
+	if target.get_node_or_null(^"Visuals/Rider") == null:
+		push_error("RiderController.attach_to: trike has no Visuals/Rider model.")
+		return false
+	if not is_node_ready():
+		trike = target  # bound in _ready
+		return true
+	return _bind(target)
+
+
+## Releases the current trike (signals, flags). Safe if nothing is attached
+## or the trike was already freed.
+func detach() -> void:
+	if _is_valid_trike(trike) and trike.impact.is_connected(_on_trike_impact):
+		trike.impact.disconnect(_on_trike_impact)
+	if _is_valid_trike(trike) and is_node_ready():
+		ragdoll.remove_collision_exception_with(trike)
+		trike.auto_recover_when_flipped = true
+	trike = null
+	_rider = null
+	_set_can_mount(false)
+
+
+func is_attached() -> bool:
+	return _is_valid_trike(trike) and _rider != null and is_instance_valid(_rider)
+
+
+func _bind(target: Trike) -> bool:
+	if target == trike and is_attached() and trike.impact.is_connected(_on_trike_impact):
+		return true  # already bound to this trike
+	if _is_valid_trike(trike) and trike != target:
+		detach()
+	var model := target.get_node_or_null(^"Visuals/Rider") as Rider
+	if model == null:
+		push_error("RiderController: trike has no Visuals/Rider model.")
+		return false
+	trike = target
+	_rider = model
+	trike.auto_recover_when_flipped = false
+	if not trike.impact.is_connected(_on_trike_impact):
+		trike.impact.connect(_on_trike_impact)
+	return true
+
+
+static func _is_valid_trike(target: Object) -> bool:
+	return target != null and is_instance_valid(target) and not (target as Node).is_queued_for_deletion()
 
 
 func is_riding() -> bool:
@@ -117,7 +165,7 @@ func get_sync_state() -> Dictionary:
 
 ## Throws the rider off now (also used by tests and future items).
 func eject(impact_strength := 0.0, velocity_before := Vector3.ZERO) -> void:
-	if state != State.RIDING:
+	if state != State.RIDING or not is_attached():
 		return
 	if velocity_before == Vector3.ZERO:
 		velocity_before = trike.linear_velocity
@@ -144,6 +192,8 @@ func eject(impact_strength := 0.0, velocity_before := Vector3.ZERO) -> void:
 
 ## Puts the rider straight back on the seat (emergency recovery / respawn).
 func force_mount() -> void:
+	if not is_attached():
+		return
 	ragdoll.deactivate()
 	on_foot.deactivate()
 	_attach_model()
@@ -153,7 +203,9 @@ func force_mount() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if trike == null:
+	if not is_attached():
+		if trike != null or _rider != null:
+			_release_freed_trike()
 		return
 	state_time += delta
 	if state == State.RIDING:
@@ -183,7 +235,7 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
-	if _rider == null or state == State.RIDING:
+	if not is_attached() or state == State.RIDING:
 		return
 	match state:
 		State.EJECTED, State.RAGDOLL:
@@ -292,6 +344,18 @@ func _finish_mount() -> void:
 
 
 # --- Helpers ----------------------------------------------------------------
+
+## The trike (or its rider model) was freed under us: stop driving bodies
+## and forget it. A new attach_to() starts fresh.
+func _release_freed_trike() -> void:
+	ragdoll.deactivate()
+	on_foot.deactivate()
+	_stars.visible = false
+	trike = null
+	_rider = null
+	_set_can_mount(false)
+	if state != State.RIDING:
+		_change_state(State.RIDING)
 
 func _change_state(new_state: State) -> void:
 	var old := state

@@ -27,6 +27,26 @@ drift trikes. Funny physics, collisions, falling off, items. See
 8. Keep these docs current: `CLAUDE.md`, `docs/GAME_DESIGN.md`,
    `docs/ROADMAP.md`, `docs/TECHNICAL_ARCHITECTURE.md`, `docs/TESTING.md`.
 
+## Owner decisions (2026-11-08, final demo stage)
+
+- **Work milestone by milestone, only when the owner says to start one.**
+  Never rebuild working systems unnecessarily. Never claim a feature is
+  complete without testing it.
+- **Export templates:** official Godot 4.7.2 stable **standard** templates
+  are approved. Never the .NET templates.
+- **External assets:** only SIL OFL fonts, CC0 sound effects and original
+  procedural assets. No paid assets, plugins or services; no copyrighted
+  commercial music. Download only when the milestone needs them, verify the
+  license at the source, and record every external asset in
+  `docs/ASSET_CREDITS.md` before use.
+- **Collision design:** a strong rear-end hit **can** eject a stationary
+  rider. Small bumps never eject. High-speed impacts can. Judge impacts by
+  relative impact speed and collision impulse. Weak impacts give only a small
+  knockback or vehicle shake. All thresholds configurable.
+- **Windows:** prepare an x86_64 export, but never call Windows compatibility
+  verified until the game has run on a real Windows PC.
+- Final demo plan and priorities: `docs/FINAL_DEMO_AUDIT.md`.
+
 ## Running and testing
 
 Godot is not on PATH on the owner's Mac. Binary:
@@ -69,7 +89,7 @@ docs/     design, roadmap, architecture, testing, screenshots/
 - Child `_ready` runs before parent `_ready`. `Trike` sets up its wheels in
   `_enter_tree` so `TrikeVisuals` can query them.
 - Vertex-colored materials need `vertex_color_is_srgb = true`, or colors wash out.
-- Physics layers: 1 world, 2 vehicles, 3 props (bit value 4).
+- Physics layers: 1 world, 2 vehicles, 3 props (bit value 4), 4 riders (bit value 8).
 - **Visuals never drive physics.** The trike's `Visuals` subtree is cosmetic:
   wheel nodes are placed from `Trike.wheel_suspension_length`, the rider is
   posed by IK. Never add collision shapes or change the `Trike` body/shapes when
@@ -104,6 +124,12 @@ docs/     design, roadmap, architecture, testing, screenshots/
 - The rider model (`Visuals/Rider`) leaves the trike by switching to
   `top_level` while off, and RiderController drives its transform and pose.
   TrikeVisuals only poses it while it is seated.
+- `RiderController.attach_to()` is lifecycle-safe (deferred before `_ready`,
+  idempotent, never double-connects). Use it for spawning riders, never
+  connect `Trike.impact` by hand.
+- Finishing goes through `FinishTracker` (player id → trike/rider/progress).
+  Never check `body == trike` directly. An empty trike crossing the line =
+  pending finish, confirmed when its owner is riding again past the line.
 - `Trike.teleport(xf, notify)`: `notify=false` doesn't emit `respawned` (use
   it for setup/uprighting so it doesn't count as a respawn).
 - Teleporting the trike far in the race scene: also `RaceSession.get_progress().reset(index)`,

@@ -6,7 +6,7 @@ physics interpolation enabled.
 ## Scene graph (main.tscn)
 
 ```
-Main (RaceSession, main.gd)          race rules: spawn, respawn, timer, finish
+Main (RaceSession, main.gd)          race rules: spawn, respawn, timer; finish via FinishTracker
 ├─ WorldEnvironment, Sun, FillLight
 ├─ TestTrack (Track)                 builds road/barriers/slopes/collision on _ready
 │  ├─ Props (track_props.gd)         crates, cones, rocks, ramps from a data table
@@ -116,7 +116,23 @@ state only.
 ## Input abstraction (multiplayer-ready)
 
 `TrikeInput` is plain data (`throttle`, `brake`, `steer`, `drift`,
-`reset_pressed`). The trike reads only this object. Sources:
+`reset_pressed`, `interact_pressed`). The trike reads it while ridden; the
+`RiderController` reads its own copy while the rider is off the trike
+(throttle/brake/steer become on-foot movement, `interact_pressed` mounts).
+
+Input map (project.godot, all `device = -1`, keys use physical keycodes):
+
+| Action | Keys | Gamepad |
+|---|---|---|
+| `accelerate` | W, ↑ | right trigger (axis 5) |
+| `brake` | S, ↓ | left trigger (axis 4) |
+| `steer_left` / `steer_right` | A, ← / D, → | left stick X (axis 0) |
+| `drift` | Space | RB (button 10), B (button 1) |
+| `reset` | R | Y (button 3) |
+| `interact` | E | X (button 2) |
+| `pause` | Esc | Start (button 6) |
+
+Sources:
 
 - `PlayerInputSource`: local keyboard/gamepad (polled each physics tick)
 - `TrackAutopilot`: tests and screenshots; template for future AI
@@ -128,19 +144,63 @@ state, so remote trikes render unchanged.
 
 ## Signals and APIs
 
-- `Trike`: signals `respawn_requested(trike)`, `respawned`,
-  `drift_started(dir)`, `drift_ended(tier)`. Methods `request_respawn()`,
-  `teleport(xf)`, `apply_knockback(impulse, spin)`, `get_drift_tier()`,
-  `is_grounded()`.
-  With no `respawn_requested` listener, the trike rights itself in place, which
-  keeps it usable in isolation and in tests.
+- `Trike`:
+  - **Signals:** `respawn_requested(trike)`, `respawned`,
+    `drift_started(dir)`, `drift_ended(tier)`,
+    `impact(strength, velocity_before)`.
+  - **Methods:** `request_respawn()`, `teleport(xf, notify := true)`,
+    `set_rider_aboard(bool)`, `set_upright()`,
+    `apply_knockback(impulse, spin)`, `get_drift_tier()`, `is_grounded()`.
+  - **State:** `has_rider`, `auto_recover_when_flipped` (true only for a
+    standalone trike without a rider system).
+  - With no `respawn_requested` listener, a reset rights the trike in place,
+    which keeps it usable in isolation and in tests.
+- `RiderController`:
+  - **Signals:** `state_changed`, `ejected`, `mounted`,
+    `mount_prompt_changed`, `focus_changed`, `emergency_recovery_requested`.
+  - **Methods:** `attach_to(trike) -> bool`, `detach()`, `is_attached()`,
+    `eject()`, `force_mount()`, `is_riding()`, `get_sync_state()`.
+  - **`attach_to()` lifecycle:**
+    - Safe at any time. Before `_ready` it only stores the trike, and
+      `_ready` binds it once the child bodies exist.
+    - Calling it again with the same trike is a no-op, and the `impact`
+      signal is never connected twice.
+    - A different trike first detaches the old one (disconnects `impact`,
+      restores its flip recovery).
+    - null or freed returns false and keeps the current binding.
+    - A trike freed while bound is released on the next tick: the rider stops
+      falling or walking and returns to the RIDING state, unattached.
+- `FinishTracker` (see below): `register_racer(id, trike, rider, progress)`,
+  `on_body_crossed(body, time)`, `update(time)`, `has_finished(id)`,
+  `is_pending(id)`, `get_result(id)`; signals `racer_finished(id, position,
+  time)`, `finish_pending(id, time)`.
 - `Track`: signal `finish_crossed(body)`. Methods `get_start_transform(slot)`
   (5 grid slots), `get_respawn_transform(index)`, `is_on_road()`,
   `is_out_of_bounds()`, `path: TrackPath`.
 - `VehicleProgress` (one per racer): nearest track sample plus last safe
   on-road sample (the respawn point). Windowed search, so it never jumps to a
   nearby section of road.
-- `RaceSession` (main.gd): connects everything and owns race rules.
+- `RaceSession` (main.gd): connects everything and owns race rules. The local
+  racer is `LOCAL_PLAYER_ID` (1).
+
+## Finish detection
+
+The finish `Area3D` (mask: vehicles) emits `Track.finish_crossed(body)` for
+any vehicle. `RaceSession` forwards it to `FinishTracker` (once the race
+has started), which resolves the body to the **owning player** through the
+racer registry. Unknown bodies are ignored, so one player's vehicle can never
+finish for another.
+
+- Crossed with the rider aboard: finish confirmed immediately.
+- Crossed **empty**: recorded as *pending*. `update()` (every physics tick)
+  confirms it on the first tick the owner is riding that trike again (E mount
+  or R emergency recovery) while its progress is still at or past the line.
+  If the trike ends up back before the line, the pending finish is dropped
+  and the line counts again on the next crossing.
+- Each player finishes once. Position = confirmation order. Official time =
+  race time at confirmation (`crossed_time` is kept too).
+- Pure logic with no nodes, keyed by player id: a future host can run it
+  authoritatively and broadcast `racer_finished`. No results screen yet.
 
 ## Track generation
 
@@ -156,20 +216,34 @@ gates (`track_gate.gd`) and a finish `Area3D`. Children with
 ## Camera
 
 `FollowCamera` is separate from the trike, so it never inherits roll or pitch.
-It updates in `_process` from `get_global_transform_interpolated()`. Yaw blends
-heading and velocity direction (steady during drifts). Position is smoothed
-with exponential decay (separately for vertical). FOV widens with speed. A ray
-keeps it in front of walls. Snaps on respawn.
+It updates in `_process` from `get_global_transform_interpolated()`. Two
+modes, picked from the target type:
+
+- **Vehicle** (target is a `Trike`):
+  - yaw blends heading and velocity direction (steady in drifts)
+  - aims down the slope
+  - with speed it pulls back, drops, looks further ahead and widens FOV
+  - boost adds an FOV kick
+- **Character** (falling or on-foot rider): a "dragged" follow camera at fixed
+  distance that never auto-turns, so camera-relative walking stays stable.
+
+`set_target(node)` blends over `transition_time` (0.9 s) with softened
+following and position smoothing; tested max 0.27 m per frame, no cuts. A
+sphere cast keeps it out of walls and terrain, with a minimum ground
+clearance. It snaps on respawn (`respawned`).
 
 ## Physics layers
 
-| Layer | Bit value | Used by |
-|---|---|---|
-| 1 world | 1 | track, gates, rocks, ramps |
-| 2 vehicles | 2 | trikes (mask 1+2+4) |
-| 3 props | 4 | crates, cones (mask 1+2+4) |
+| Layer | Bit value | Used by | Collides with (mask) |
+|---|---|---|---|
+| 1 world | 1 | track, barriers, slopes, gates, rocks, ramps, scenery colliders | — (static) |
+| 2 vehicles | 2 | trikes (chassis + rider capsule; the capsule is disabled while the rider is off) | world, vehicles, props (1+2+4) |
+| 3 props | 4 | crates, cones | world, vehicles, props (1+2+4) |
+| 4 riders | 8 | thrown rider (`RiderRagdoll`), rider on foot (`RiderOnFoot`) | ragdoll: world, vehicles, props (1+2+4), own trike ignored until 1.6 m clear · on foot: 1+2+4 |
 
-Wheel rays: mask 1+4. Camera ray: mask 1. Finish trigger: mask 2.
+Other queries: wheel rays mask 1+4 (world + props). Camera sphere cast and
+ground check mask 1. Rider ground probe mask 1. Finish trigger mask 2
+(vehicles only; riders on foot can't finish).
 
 ## Rendering and visual architecture (milestone 2)
 
