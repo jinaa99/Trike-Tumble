@@ -13,6 +13,8 @@ enum Quality { LOW, MEDIUM, HIGH }
 const QUALITY_NAMES: Array[String] = ["Low", "Medium", "High"]
 ## Scenery fade distance factor per quality.
 const LOD_SCALE: Array[float] = [0.55, 0.85, 1.0]
+## Sun shadow reach (m) per quality (Low has no sun shadows).
+const SHADOW_DISTANCE: Array[float] = [80.0, 120.0, 170.0]
 const RESOLUTIONS: Array[Vector2i] = [
 	Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080), Vector2i(2560, 1440),
 ]
@@ -256,6 +258,11 @@ func apply_graphics(root: Node) -> void:
 		if not light.has_meta(&"shadow_default"):
 			light.set_meta(&"shadow_default", light.shadow_enabled)
 		light.shadow_enabled = bool(light.get_meta(&"shadow_default")) and quality != Quality.LOW
+		# Sun shadows: two cascades and a shorter reach on Medium, four on High.
+		if light.shadow_enabled:
+			light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if quality == Quality.HIGH \
+					else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+			light.directional_shadow_max_distance = SHADOW_DISTANCE[quality]
 	# Scenery fade distances (trees, bushes, flowers): shorter on Low.
 	for node in root.get_tree().get_nodes_in_group(&"scenery_lod") if root.is_inside_tree() else []:
 		var instance := node as GeometryInstance3D

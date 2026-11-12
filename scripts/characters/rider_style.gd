@@ -86,6 +86,13 @@ static func apply(rider: Rider, look: RiderLook) -> void:
 			gold.metallic = 0.6
 			gold.roughness = 0.3
 			_add(chest, "Bell", MeshKit.sphere(0.06, 10, 6), Transform3D(Basis(), Vector3(0.0, 0.06, -0.15)), gold)
+	var kit := {"Kit_HelmetStripe": look.helmet_stripe, "Kit_ShoulderStripe": look.shoulder_stripes, "Kit_ElbowPad": look.elbow_pads,
+			"Kit_KneePad": look.knee_pads, "Kit_ThighStripe": look.thigh_stripes, "Kit_ToeCap": look.toe_caps}
+	for node in rider.find_children("Kit_*", "MeshInstance3D", true, false):
+		for prefix: String in kit:
+			if node.name.begins_with(prefix):
+				(node as Node3D).visible = kit[prefix]
+	RiderDetail.set_eye_color(rider, look.eye_color)
 	head.scale = Vector3.ONE * look.head_scale
 	rider.set_base_face(look.face)
 

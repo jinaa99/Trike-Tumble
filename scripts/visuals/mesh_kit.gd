@@ -100,3 +100,38 @@ static func box(size: Vector3) -> BoxMesh:
 
 static func at(position: Vector3, rotation_deg := Vector3.ZERO, scale := Vector3.ONE) -> Transform3D:
 	return Transform3D(Basis.from_euler(rotation_deg * (PI / 180.0)) * Basis.from_scale(scale), position)
+
+
+## parts: Array of [Mesh, Transform3D]. One surface that keeps each part's
+## own (smooth) normals: for rounded bodywork and mechanical detail.
+static func merge(parts: Array) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for part: Array in parts:
+		st.append_from(part[0] as Mesh, 0, part[1] as Transform3D)
+	return st.commit()
+
+
+static func capsule(radius: float, height: float, segments := 10) -> CapsuleMesh:
+	var mesh := CapsuleMesh.new()
+	mesh.radius = radius
+	mesh.height = height
+	mesh.radial_segments = segments
+	mesh.rings = 4
+	return mesh
+
+
+static func torus(inner: float, outer: float, rings := 24, ring_segments := 8) -> TorusMesh:
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = inner
+	mesh.outer_radius = outer
+	mesh.rings = rings
+	mesh.ring_segments = ring_segments
+	return mesh
+
+
+static func rounded_box(size: Vector3, radius: float) -> RoundedBoxMesh:
+	var mesh := RoundedBoxMesh.new()
+	mesh.size = size
+	mesh.radius = radius
+	return mesh

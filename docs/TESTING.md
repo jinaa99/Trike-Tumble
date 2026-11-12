@@ -277,6 +277,32 @@ F6 (Run Current Scene), or set `ai_racer_count`/`ai_difficulty`/`auto_start`
 on the Main node; finish timeout and countdown timing are on the
 RaceController node.
 
+## 1b. Visual Overhaul V2 tests and tools (2026-11-12)
+
+- `-- --only=overhaul` (58 checks, part of the default run): texture sets and
+  shared materials, snow paint/exposure limits, sculpted scenery models and
+  their normals, recorded sound files and takes, trike and rider detail
+  (wheels still on the physics mounts, still two collision shapes, colours
+  follow the racer, IK still reaches), the four engine layers (crossfade
+  without volume jumps, pitch bands, overrun, rolling loop), music
+  (crossfade, loop, duck, limiter) and the bundled fonts.
+- Look-dev screenshots: `tests/tools/quick_shot.tscn` (needs a window):
+
+  ```sh
+  $GODOT --path . --fixed-fps 60 --always-on-top --resolution 1280x720 \
+    --scene res://tests/tools/quick_shot.tscn -- <out_dir> <test|forest|canyon|snow> [ai=N] \
+    chase:<name>:<distance>:<seconds>  cam:<name>:<distance>:<ex,ey,ez>:<lx,ly,lz>[:fov]  over:<name>
+  ```
+
+  Add `--rendering-method forward_plus` before `--scene` to compare
+  renderers from identical cameras (how the A/B in
+  `docs/VISUAL_OVERHAUL_PROGRESS.md` was made).
+- Headless runs now end with `ERROR: N resources still in use at exit`
+  when a recorded sound is still playing at quit (the dummy audio driver
+  never releases playbacks). It is a shutdown message, not a test failure.
+- Not automated: how anything sounds. See the listening checklist in
+  `docs/AUDIO_DESIGN.md`.
+
 ## 2. Visual capture (renders the real game)
 
 Needs a visible window (not headless). Captures inspection screenshots:

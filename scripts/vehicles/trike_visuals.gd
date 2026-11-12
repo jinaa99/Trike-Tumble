@@ -14,7 +14,7 @@ signal landed(airtime: float)
 ## Accent parts: seat trim, stripes, flag, hub caps (per-racer second color).
 const ACCENT_PARTS: Array[String] = ["SeatBackTrim", "TankStripe", "RearDeckStripe", "RearFenderStripeL",
 		"RearFenderStripeR", "FlagPivot/Flag", "RearWheelLeft/Spin/HubCap", "RearWheelRight/Spin/HubCap",
-		"FrontPivot/FrontWheel/Spin/Hub"]
+		"FrontPivot/FrontWheel/Spin/Hub", "DetailAccent", "FrontPivot/FrontWheel/Caliper", "Handlebar/BarPad"]
 
 const DRIFT_TIER_COLORS: Array[Color] = [
 	Color(0.85, 0.78, 0.65), Color(0.35, 0.75, 1.0), Color(1.0, 0.55, 0.15),
@@ -59,6 +59,7 @@ var effects: TrikeEffects
 
 func _ready() -> void:
 	_trike = get_parent() as Trike
+	TrikeDetail.build(self)
 	_apply_body_color()
 	_apply_accent_color()
 	_front_pivot.position = _trike.get_wheel_mount(Trike.Wheel.FRONT)

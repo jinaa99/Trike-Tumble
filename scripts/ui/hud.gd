@@ -180,7 +180,7 @@ func _build_state_chip() -> void:
 
 
 func _build_item_slot() -> void:
-	var panel := UiKit.panel(14)
+	var panel := UiKit.panel(10)
 	panel.name = "ItemPanel"
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
@@ -189,15 +189,15 @@ func _build_item_slot() -> void:
 	$Root.add_child(panel)
 	panel.anchor_top = 1.0
 	panel.anchor_bottom = 1.0
-	panel.offset_left = 30
-	panel.offset_bottom = -26
-	var box := UiKit.vbox(4)
+	panel.offset_left = 20
+	panel.offset_bottom = -18
+	var box := UiKit.vbox(0)
 	panel.add_child(box)
-	box.add_child(UiKit.label("ITEM", UiKit.SIZE_SMALL, UiKit.SUN))
-	item_label = UiKit.title("EMPTY", 26)
-	item_label.custom_minimum_size = Vector2(150, 0)
+	box.add_child(UiKit.label("ITEM", 12, UiKit.SUN))
+	item_label = UiKit.title("EMPTY", 22)
+	item_label.custom_minimum_size = Vector2(124, 0)
 	box.add_child(item_label)
-	item_hint = UiKit.label("", UiKit.SIZE_SMALL, UiKit.TEXT)
+	item_hint = UiKit.label("", 12, UiKit.TEXT)
 	box.add_child(item_hint)
 	set_item("")
 

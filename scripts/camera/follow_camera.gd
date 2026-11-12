@@ -76,6 +76,13 @@ extends Camera3D
 ## Looks this many m into the turn at full steering (more road visible).
 @export var turn_look_shift := 1.6
 
+## Camera roll (deg) into a drift, scaled by speed: sells the slide without
+## moving the framing.
+@export var drift_roll_deg := 2.2
+## Speed share above which thin wind streaks fly past the camera (boost
+## always shows them). 1.1 or more = never.
+@export_range(0.0, 1.2) var streak_speed_ratio := 0.82
+
 @export_group("Collision")
 @export_flags_3d_physics var collision_mask := 1
 @export var collision_radius := 0.3
@@ -94,11 +101,14 @@ var _dip := 0.0
 var _dip_velocity := 0.0
 var _shake_time := 0.0
 var _turn_shift := 0.0
+var _drift_roll := 0.0
+var _streaks: CPUParticles3D
 
 
 func _ready() -> void:
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_probe.radius = collision_radius
+	_build_streaks()
 	snap_to_target()
 
 
@@ -155,6 +165,17 @@ func _apply_feedback(delta: float) -> void:
 	_dip_velocity += (-_dip * dip_recovery * dip_recovery - 2.0 * dip_recovery * _dip_velocity) * delta
 	_dip += _dip_velocity * delta
 	global_position.y += _dip
+	# Drift roll and speed streaks (vehicle mode only).
+	var trike := target as Trike
+	var riding := trike != null and not is_character_mode()
+	var roll_target := 0.0
+	if riding and trike.is_drifting:
+		roll_target = -float(trike.drift_direction) * deg_to_rad(drift_roll_deg) * clampf(_speed_ratio * 1.4, 0.0, 1.0)
+	_drift_roll = lerpf(_drift_roll, roll_target, 1.0 - exp(-5.0 * delta))
+	if absf(_drift_roll) > 0.0005:
+		rotate_object_local(Vector3.FORWARD, _drift_roll)
+	if _streaks:
+		_streaks.emitting = riding and trike.has_rider and (_speed_ratio >= streak_speed_ratio or trike.boost_time > 0.0)
 	if trauma <= 0.0:
 		return
 	_shake_time += delta * shake_frequency
@@ -294,3 +315,32 @@ func _resolve_collision(from: Vector3, to: Vector3) -> Vector3:
 		var ground: Vector3 = hit["position"]
 		result.y = maxf(result.y, ground.y + ground_clearance)
 	return result
+
+
+## Thin, faint streaks that rush past at top speed: speed you can see
+## without any blur. A handful of unshaded slivers, no shadows.
+func _build_streaks() -> void:
+	var sliver := BoxMesh.new()
+	sliver.size = Vector3(0.012, 0.012, 1.6)
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color = Color(1, 1, 1, 0.22)
+	sliver.material = material
+	_streaks = CPUParticles3D.new()
+	_streaks.name = "SpeedStreaks"
+	_streaks.mesh = sliver
+	_streaks.amount = 18
+	_streaks.lifetime = 0.3
+	_streaks.local_coords = true
+	_streaks.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	_streaks.emission_box_extents = Vector3(3.2, 1.8, 1.0)
+	_streaks.position = Vector3(0.0, 0.2, -9.0)
+	_streaks.direction = Vector3(0, 0, 1)
+	_streaks.spread = 2.0
+	_streaks.gravity = Vector3.ZERO
+	_streaks.initial_velocity_min = 34.0
+	_streaks.initial_velocity_max = 46.0
+	_streaks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_streaks.emitting = false
+	add_child(_streaks)

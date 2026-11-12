@@ -79,6 +79,14 @@ clock keeps running.
   taken at that moment. Every player finishes once, and only their own trike
   can finish for them.
 
+## Visual and audio identity (Visual Overhaul V2, 2026-11-12)
+
+The look and sound are now defined by `ART_DIRECTION_BIBLE.md` (premium
+stylized cartoon: low-poly structure, smooth forms, PBR materials, tinted
+shadows, per-map palettes) and `AUDIO_DESIGN.md` (recorded small-engine
+layers, surface loops, playful voices, two music loops). The section below
+describes the earlier milestone-2 look the overhaul started from.
+
 ## Visual identity (milestone 2)
 
 - **Palette:** saturated but soft. Coral-orange trike body, sunny yellow

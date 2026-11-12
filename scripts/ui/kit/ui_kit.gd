@@ -6,6 +6,8 @@ extends RefCounted
 ## look and move the same. Visual base: res://resources/ui/trike_theme.tres.
 
 const THEME := preload("res://resources/ui/trike_theme.tres")
+const DISPLAY_FONT := preload("res://resources/ui/font_display.tres")
+const BODY_FONT := preload("res://resources/ui/font_body.tres")
 
 # Palette
 const INK := Color(0.14, 0.11, 0.3)          ## deep purple: panels, text on light
@@ -20,7 +22,7 @@ const TEXT := Color(0.95, 0.94, 1.0)
 const TEXT_DIM := Color(0.74, 0.72, 0.88)
 
 # Type scale (px at 1280×720; canvas_items stretch scales it up)
-const SIZE_HERO := 96
+const SIZE_HERO := 88
 const SIZE_TITLE := 52
 const SIZE_HEADING := 30
 const SIZE_BODY := 22
@@ -34,15 +36,12 @@ const SCREEN_FADE_TIME := 0.22
 static var _display_font: Font
 
 
-## Rounded heavy italic used for logos, titles and big numbers.
+## Lilita One (SIL OFL), slightly slanted: logos, titles and big numbers.
 static func display_font() -> Font:
 	if _display_font == null:
-		var base := SystemFont.new()
-		base.font_names = PackedStringArray(["Arial Rounded MT Bold", "Segoe UI Black", "Arial Black", "Arial"])
-		base.font_weight = 900
 		var font := FontVariation.new()
-		font.base_font = base
-		font.variation_transform = Transform2D(Vector2(1, 0), Vector2(0.22, 1), Vector2.ZERO)
+		font.base_font = DISPLAY_FONT
+		font.variation_transform = Transform2D(Vector2(1, 0), Vector2(0.12, 1), Vector2.ZERO)
 		_display_font = font
 	return _display_font
 
@@ -68,6 +67,7 @@ static func button(text: String, kind := "normal", min_width := 300.0) -> Button
 	b.text = text
 	b.custom_minimum_size = Vector2(min_width, 56)
 	b.focus_mode = Control.FOCUS_ALL
+	b.add_theme_font_override(&"font", DISPLAY_FONT)
 	if kind == "primary":
 		b.add_theme_stylebox_override(&"normal", _box(ORANGE, Color(0.82, 0.36, 0.08)))
 		b.add_theme_color_override(&"font_color", Color.WHITE)

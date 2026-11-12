@@ -35,7 +35,8 @@ var _timber_light := Color(0.66, 0.46, 0.29)
 var _rock := Color(0.56, 0.55, 0.58)
 var _water := Color(0.24, 0.58, 0.86)
 var _body: StaticBody3D
-var _material := MeshKit.vertex_color_material(0.8)
+## Timber, boards and stone of the set dressing: world-space wood grain.
+var _material: Material = MaterialLibrary.textured("wood/planks", 0.45, 1.0, 0.9, true)
 var _backdrop: Node
 
 
@@ -109,6 +110,8 @@ func _build_bridge(track: Track, zone: Array) -> void:
 		_add_mesh("Bridge_%d" % roundi(start), parts)
 	var middle := path.index_at_distance((start + end) * 0.5)
 	_build_stream(track, middle)
+	_build_waterfall(track, path.index_at_distance(start) - 1, 1)
+	_build_waterfall(track, path.index_at_distance(end) + 2, -1)
 
 
 ## A strip of water across the gorge under a bridge or gap, following the
@@ -138,17 +141,66 @@ func _build_stream(track: Track, index: int) -> void:
 					_rock_parts_into(batch, spot, _rng.randf_range(0.6, 1.6))
 		prev_l = l
 		prev_r = r
-	var water := StandardMaterial3D.new()
+	var water := MaterialLibrary.water(Color.WHITE, 1.0).duplicate() as StandardMaterial3D
 	water.vertex_color_use_as_albedo = true
 	water.vertex_color_is_srgb = true
-	water.roughness = 0.1
-	water.metallic_specular = 0.8
 	var stream := MeshInstance3D.new()
 	stream.name = "Stream_%d" % index
 	stream.mesh = batch.commit()
 	stream.material_override = water
 	stream.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(stream)
+
+
+## A waterfall (frozen on snow maps) spilling down the gorge cliff beside
+## the bridge end: a landmark that marks every bridge from far away.
+## Render only; it hangs on the cliff face below the slope edge.
+func _build_waterfall(track: Track, index: int, side: int) -> void:
+	var path := track.path
+	index = clampi(index, 1, path.size() - 2)
+	var frozen := track.theme.scenery_style == TrackTheme.SceneryStyle.SNOW
+	var top := track.builder.slope_point(path, index, side, 15.0)
+	var into_gorge := path.forwards[index] * (1.0 if side > 0 else -1.0)
+	into_gorge.y = 0.0
+	into_gorge = into_gorge.normalized()
+	var across := Vector3.UP.cross(into_gorge).normalized()
+	var drop := track.builder.cliff_depth - 2.0
+	var sculpt := Sculpt.new(index)
+	var rows := 10
+	var previous := []
+	for k in rows + 1:
+		var t := float(k) / rows
+		var width := lerpf(2.2, 3.6, t) * (1.0 + 0.15 * sin(t * 9.0 + index))
+		var center := top + into_gorge * (0.5 + 1.8 * t * t) - Vector3.UP * drop * t + Vector3.UP * 0.2
+		var row := []
+		for j in 5:
+			var u := j / 4.0 - 0.5
+			var bulge := into_gorge * (0.35 * (1.0 - 4.0 * u * u))
+			var streak := 0.82 + 0.18 * sin(j * 2.3 + k * 0.7 + index)
+			var color := Color(streak, streak, streak).lerp(_water.lightened(0.55), 0.35 if not frozen else 0.6)
+			row.append(sculpt.vertex(center + across * u * width + bulge, color))
+		if not previous.is_empty():
+			for j in 4:
+				sculpt.quad(previous[j], previous[j + 1], row[j + 1], row[j], into_gorge)
+		previous = row
+	# Foam (or an ice mound) where it lands.
+	var foot := top + into_gorge * 2.6 - Vector3.UP * drop
+	sculpt.blob(foot, Vector3(2.6, 1.0, 2.2), 1, 0.2, 1.0, Color(1, 1, 1), _water.lightened(0.5), 0.3)
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.vertex_color_is_srgb = true
+	material.roughness = 0.1 if frozen else 0.25
+	material.metallic_specular = 0.9
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	if not frozen:
+		material.emission_enabled = true
+		material.emission = Color(0.55, 0.7, 0.8)
+		material.emission_energy_multiplier = 0.25
+	var fall := MeshInstance3D.new()
+	fall.name = "Waterfall_%d" % index
+	fall.mesh = sculpt.commit(true, material)
+	fall.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(fall)
 
 
 func _rock_parts_into(batch: MeshBatch, spot: Vector3, size: float) -> void:

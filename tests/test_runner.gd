@@ -16,6 +16,7 @@ const NET_UNIT_TESTS := preload("res://tests/net_unit_tests.gd")
 const MAP_TESTS := preload("res://tests/map_tests.gd")
 const ITEM_TESTS := preload("res://tests/item_tests.gd")
 const POLISH_TESTS := preload("res://tests/polish_tests.gd")
+const OVERHAUL_TESTS := preload("res://tests/overhaul_tests.gd")
 const REQUIRED_ACTIONS: Array[StringName] = [
 	&"accelerate", &"brake", &"steer_left", &"steer_right", &"drift", &"reset", &"pause", &"interact", &"use_item",
 ]
@@ -34,7 +35,7 @@ func _ready() -> void:
 
 func _run_all() -> void:
 	print("\n=== TRIKE TUMBLE TESTS ===")
-	# `-- --only=core|racers|flow|ui|net|items|polish|map` runs one group (while working on it).
+	# `-- --only=core|racers|flow|ui|net|items|polish|overhaul|map` runs one group (while working on it).
 	var only := ""
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--only="):
@@ -53,9 +54,19 @@ func _run_all() -> void:
 		await ITEM_TESTS.new(self).run()
 	if only.is_empty() or only == "polish":
 		await POLISH_TESTS.new(self).run()
+	if only.is_empty() or only == "overhaul":
+		await OVERHAUL_TESTS.new(self).run()
 	if only.is_empty() or only == "map":
 		await MAP_TESTS.new(self).run()
 	print("\n=== RESULT: %d passed, %d failed ===" % [_passed, _failed])
+	# Let playing sounds stop before quitting, so the audio thread releases
+	# its streams (recorded audio files are resources; a hard quit while
+	# they play reports them as still in use).
+	if is_instance_valid(_arena):
+		_arena.queue_free()
+	MusicPlayer.stop()
+	for i in 20:
+		await get_tree().process_frame
 	get_tree().quit(1 if _failed > 0 or _passed == 0 else 0)
 
 

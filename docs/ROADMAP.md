@@ -199,3 +199,14 @@
 
 - 3 final maps (5–10 minute races), original character models, menus,
   settings, export presets for macOS and Windows.
+
+## Visual Overhaul V2 ✅ (2026-11-12)
+
+Textured PBR materials, sculpted scenery, per-map palettes and light, trike
+and rider detail passes, bundled fonts and a compact HUD, recorded CC0
+audio with a layered engine, and music. Results and what is left:
+`docs/VISUAL_OVERHAUL_PROGRESS.md`.
+
+Still open after it: a listening pass on the audio, new character models
+(needs Blender or imported CC0 models), redesigned menu screens with map
+previews and portraits, and the hardware tests listed in KNOWN_ISSUES.

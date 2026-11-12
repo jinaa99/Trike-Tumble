@@ -99,6 +99,7 @@ var _free_targets: Array[Marker3D] = []
 
 
 func _ready() -> void:
+	RiderDetail.build(self)
 	for target_name in ["FreeTargetHandL", "FreeTargetHandR", "FreeTargetFootL", "FreeTargetFootR"]:
 		var marker := Marker3D.new()
 		marker.name = target_name

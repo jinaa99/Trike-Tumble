@@ -1,8 +1,11 @@
 class_name SoundBank
 extends RefCounted
-## Every sound in the game by name, synthesized once on first use (see
-## SoundSynth; all original, no files). Components play these through their
-## own AudioStreamPlayer(3D)s on the SFX or UI bus.
+## Every sound in the game by name. Vehicle, surface, rider and item sounds
+## are recorded CC0 audio (res://assets/audio, see docs/ASSET_CREDITS.md and
+## docs/AUDIO_DESIGN.md); a name can have several takes, picked at random.
+## Race jingles and UI clicks are synthesized once on first use (SoundSynth).
+## Components play these through their own AudioStreamPlayer(3D)s on the SFX
+## or UI bus.
 ##
 ## `played` records every one-shot request (tests check audio triggers
 ## without listening; headless runs have no audio output).
@@ -10,7 +13,35 @@ extends RefCounted
 const SFX_BUS := &"SFX"
 const UI_BUS := &"UI"
 
+const AUDIO := "res://assets/audio/"
+## name -> recorded takes (paths under AUDIO, without ".wav").
+const FILES := {
+	# Engine layers (TrikeAudio crossfades them by RPM) and tyre/surface loops.
+	&"engine_idle": ["engine/engine_idle"], &"engine_low": ["engine/engine_low"], &"engine_mid": ["engine/engine_mid"],
+	&"engine_high": ["engine/engine_high"], &"engine_overrun": ["engine/engine_overrun"], &"engine_blip": ["engine/engine_blip"],
+	&"engine_loop": ["engine/engine_mid"],
+	&"skid_loop": ["vehicles/skid_loop"], &"wind_loop": ["environment/wind_loop"],
+	&"roll_dirt": ["vehicles/roll_dirt"], &"roll_mud": ["vehicles/roll_mud"], &"roll_wood": ["vehicles/roll_wood"],
+	&"roll_snow": ["vehicles/roll_snow"], &"roll_ice": ["vehicles/roll_ice"], &"roll_rattle": ["vehicles/roll_rattle"],
+	&"brake": ["vehicles/brake_skid"],
+	&"hit_soft": ["vehicles/hit_soft", "vehicles/hit_wood_1", "vehicles/hit_wood_2"],
+	&"hit_hard": ["vehicles/hit_hard"], &"landing": ["vehicles/landing"],
+	&"mud_splash": ["vehicles/mud_splash"],
+	# Rider.
+	&"eject": ["character/yelp_1", "character/yelp_2"], &"fall_thud": ["character/body_fall"],
+	&"oof": ["character/oof", "character/ouch"], &"get_up": ["character/dizzy"], &"mount": ["character/mount"],
+	&"step": ["character/step_dirt_1", "character/step_dirt_2", "character/step_dirt_3", "character/step_dirt_4"],
+	&"step_snow": ["character/step_snow_1", "character/step_snow_2", "character/step_snow_3", "character/step_snow_4"],
+	&"cheer": ["character/woohoo", "character/cheer"],
+	# Items.
+	&"item_pickup": ["items/item_pickup"], &"item_throw": ["items/item_throw"], &"item_splat": ["items/mud_bomb_splat"],
+	&"item_punch": ["items/spring_punch", "items/spring_bounce"], &"item_slip": ["items/banana_slip"],
+	&"item_turbo": ["items/turbo_boost"], &"item_denied": ["items/item_denied"],
+}
+
 static var _cache := {}
+static var _takes := {}
+static var _loops := {}
 ## Names of sounds requested so far (one-shots), oldest first.
 static var played: Array[StringName] = []
 
@@ -21,12 +52,35 @@ static func get_stream(sound: StringName) -> AudioStreamWAV:
 	return _cache[sound]
 
 
-## Notes the request (for tests) and returns the stream.
+## Notes the request (for tests) and returns the stream: a random take when
+## the sound has several.
 static func use(sound: StringName) -> AudioStreamWAV:
 	played.append(sound)
 	if played.size() > 2000:
 		played = played.slice(1000)
-	return get_stream(sound)
+	var stream := get_stream(sound)
+	var takes: Array = _takes.get(sound, [])
+	if takes.size() > 1:
+		return takes[randi() % takes.size()]
+	return stream
+
+
+## Seamlessly looping copy of a recorded sound (engine layers, tyre loops).
+static func get_loop(sound: StringName) -> AudioStreamWAV:
+	if not _loops.has(sound):
+		var loop := get_stream(sound).duplicate() as AudioStreamWAV
+		loop.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		loop.loop_begin = 0
+		loop.loop_end = int(loop.get_length() * loop.mix_rate)
+		_loops[sound] = loop
+	return _loops[sound]
+
+
+## Drops every cached stream (when the game quits).
+static func release() -> void:
+	_cache.clear()
+	_takes.clear()
+	_loops.clear()
 
 
 static func count(sound: StringName) -> int:
@@ -34,6 +88,16 @@ static func count(sound: StringName) -> int:
 
 
 static func _build(sound: StringName) -> AudioStreamWAV:
+	if FILES.has(sound):
+		var takes: Array = []
+		for file: String in FILES[sound]:
+			var stream := load("%s%s.wav" % [AUDIO, file]) as AudioStreamWAV
+			if stream:
+				takes.append(stream)
+		if not takes.is_empty():
+			_takes[sound] = takes
+			return takes[0]
+		push_warning("SoundBank: missing audio files for %s, using the synthesized fallback" % sound)
 	match sound:
 		# --- Vehicle -------------------------------------------------------
 		&"engine_loop":  # buzzy little motor; pitch follows speed

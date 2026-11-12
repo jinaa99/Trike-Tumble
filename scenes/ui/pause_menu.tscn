@@ -1,15 +1,16 @@
 [gd_scene format=3]
 
+[ext_resource type="FontVariation" path="res://resources/ui/font_display.tres" id="font_display_ext"]
+
 [ext_resource type="Script" path="res://scripts/ui/pause_menu.gd" id="1_pause"]
 [ext_resource type="Theme" path="res://resources/ui/trike_theme.tres" id="2_theme"]
 
-[sub_resource type="SystemFont" id="font_display_base"]
-font_names = PackedStringArray("Arial Rounded MT Bold", "Segoe UI Black", "Arial Black", "Arial")
-font_weight = 900
+[sub_resource type="FontVariation" id="font_display_base"]
+base_font = ExtResource("font_display_ext")
 
 [sub_resource type="FontVariation" id="font_display"]
 base_font = SubResource("font_display_base")
-variation_transform = Transform2D(1, 0, 0.22, 1, 0, 0)
+variation_transform = Transform2D(1, 0, 0.12, 1, 0, 0)
 
 [node name="PauseMenu" type="CanvasLayer"]
 process_mode = 3

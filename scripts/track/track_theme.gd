@@ -94,6 +94,12 @@ enum SceneryStyle {
 @export var sun_color := Color(1, 0.94, 0.82)
 @export var sun_energy := 1.45
 @export var saturation := 1.18
+## Shadow-side light: sky ambient strength and the cool fill light.
+@export var ambient_energy := 0.75
+@export var fill_color := Color(0.66, 0.78, 1.0)
+@export var fill_energy := 0.28
+## Tonemap exposure (snow needs less so whites keep their detail).
+@export var exposure := 1.05
 
 
 ## Copies the road, barrier, bridge and slope paint into the mesh builder.
@@ -122,7 +128,7 @@ func apply_to_builder(builder: TrackMeshBuilder) -> void:
 
 ## Sky, fog, ambient light and sun for the race scene (only when
 ## `apply_environment`). The environment is duplicated, never edited in place.
-func apply_to_world(world: WorldEnvironment, sun: DirectionalLight3D) -> void:
+func apply_to_world(world: WorldEnvironment, sun: DirectionalLight3D, fill: DirectionalLight3D = null) -> void:
 	if not apply_environment:
 		return
 	if world and world.environment:
@@ -137,7 +143,12 @@ func apply_to_world(world: WorldEnvironment, sun: DirectionalLight3D) -> void:
 		environment.fog_density = fog_density
 		environment.ambient_light_color = ambient_color
 		environment.adjustment_saturation = saturation
+		environment.ambient_light_energy = ambient_energy
+		environment.tonemap_exposure = exposure
 		world.environment = environment
 	if sun:
 		sun.light_color = sun_color
 		sun.light_energy = sun_energy
+	if fill:
+		fill.light_color = fill_color
+		fill.light_energy = fill_energy

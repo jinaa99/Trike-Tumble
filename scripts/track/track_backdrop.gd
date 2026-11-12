@@ -55,20 +55,21 @@ func build_for_track(track: Track) -> void:
 	_build_hills(center, radius + 90.0, floor_y)
 	_build_clouds(center, radius, bounds.end.y)
 	_build_valley(center, floor_y)
+	_build_horizon(center, radius, floor_y, bounds.size.y)
 
 
 func _build_peaks(node_name: String, count: int, center: Vector3, ring: float, spread: float, floor_y: float,
 		height_range: Vector2, color: Color, snow_line: float) -> void:
-	var peak := MeshKit.combine([
-		[MeshKit.cone(1.0, 1.0, 7), MeshKit.at(Vector3(0, 0.5, 0)), Color.WHITE],
-	])
-	var cap_height := 1.0 - snow_line
-	var cap := MeshKit.combine([
-		[MeshKit.cone(cap_height + 0.01, cap_height + 0.01, 7), MeshKit.at(Vector3(0, snow_line + cap_height * 0.5, 0)), Color.WHITE],
-	])
+	# Three sculpted mountains per range (mesas in the canyon), rock and snow
+	# tones baked in; instances only vary in brightness.
+	var mesa := _theme.scenery_style == TrackTheme.SceneryStyle.CANYON
 	var material := MeshKit.vertex_color_material(1.0)
-	peak.surface_set_material(0, material)
-	cap.surface_set_material(0, material)
+	var variants: Array[ArrayMesh] = []
+	for v in 3:
+		var mesh := SceneryKit.mountain(v + (10 if node_name.begins_with("Mid") else 0), color, _theme.snow_color, snow_line,
+				mesa and v != 1)
+		mesh.surface_set_material(0, material)
+		variants.append(mesh)
 	var transforms: Array[Transform3D] = []
 	var colors: Array[Color] = []
 	for i in count:
@@ -78,12 +79,17 @@ func _build_peaks(node_name: String, count: int, center: Vector3, ring: float, s
 		var width := height * _rng.randf_range(0.75, 1.05)
 		var spot := Vector3(center.x + cos(angle) * distance, floor_y - 5.0, center.z + sin(angle) * distance)
 		transforms.append(MeshKit.at(spot, Vector3(0, _rng.randf() * 360.0, 0), Vector3(width, height, width)))
-		colors.append(color.lerp(Color.WHITE, _rng.randf_range(0.0, 0.1)))
-	add_child(MeshKit.batch(node_name, peak, transforms, colors, false))
-	var cap_colors: Array[Color] = []
-	for i in count:
-		cap_colors.append(_theme.snow_color)
-	add_child(MeshKit.batch(node_name + "Snow", cap, transforms, cap_colors, false))
+		var bright := 0.9 + _rng.randf_range(0.0, 0.1) * 1.6
+		colors.append(Color(bright, bright, bright))
+	for v in variants.size():
+		var picked: Array[Transform3D] = []
+		var tints: Array[Color] = []
+		for i in count:
+			if i % variants.size() == v:
+				picked.append(transforms[i])
+				tints.append(colors[i])
+		if not picked.is_empty():
+			add_child(MeshKit.batch("%s_%d" % [node_name, v], variants[v], picked, tints, false))
 
 
 ## Heightfield that continues the grass slopes down to the valley floor.
@@ -133,7 +139,7 @@ func _build_terrain(track: Track, bounds: AABB, floor_y: float) -> void:
 				h = lerpf(floor_y - 0.6, h, smoothstep(0.0, 1.0, to_edge / terrain_edge_blend))
 			_heights[r * _cols + c] = maxf(h, floor_y - 0.6)
 	_nearest = nearest
-	var material := TrackMaterials.grass()
+	var material := TrackMaterials.grass(_theme.scenery_style)
 	for tile_r in range(0, _rows - 1, terrain_tile_cells):
 		for tile_c in range(0, _cols - 1, terrain_tile_cells):
 			var batch := MeshBatch.new()
@@ -257,22 +263,8 @@ func _flat_distance_sq(p: Vector3, r: int, c: int, warp: float) -> float:
 func _build_far_forest(track: Track, edge_out: float) -> void:
 	if far_forest_chance <= 0.0:
 		return
-	var pine := MeshKit.combine([
-		[MeshKit.cylinder(0.2, 0.3, 1.6, 5), MeshKit.at(Vector3(0, 0.8, 0)), Color(0.48, 0.32, 0.2)],
-		[MeshKit.cone(2.1, 2.6, 6), MeshKit.at(Vector3(0, 2.4, 0)), Color(0.86, 0.86, 0.86)],
-		[MeshKit.cone(1.6, 2.2, 6), MeshKit.at(Vector3(0, 3.8, 0), Vector3(0, 30, 0)), Color(0.94, 0.94, 0.94)],
-		[MeshKit.cone(1.1, 1.9, 6), MeshKit.at(Vector3(0, 5.1, 0), Vector3(0, 60, 0)), Color(1, 1, 1)],
-	])
-	if _theme.scenery_style == TrackTheme.SceneryStyle.SNOW:
-		# Frosted far pines: bright snowy tiers over dark ones. With the snow
-		# theme's pale pine tint they read as snow-covered from a distance.
-		pine = MeshKit.combine([
-			[MeshKit.cylinder(0.2, 0.3, 1.6, 5), MeshKit.at(Vector3(0, 0.8, 0)), Color(0.48, 0.32, 0.2)],
-			[MeshKit.cone(2.1, 2.6, 6), MeshKit.at(Vector3(0, 2.4, 0)), Color(0.5, 0.5, 0.5)],
-			[MeshKit.cone(1.6, 2.2, 6), MeshKit.at(Vector3(0, 3.8, 0), Vector3(0, 30, 0)), Color(1, 1, 1)],
-			[MeshKit.cone(1.1, 1.9, 6), MeshKit.at(Vector3(0, 5.1, 0), Vector3(0, 60, 0)), Color(1, 1, 1)],
-		])
-	pine.surface_set_material(0, MeshKit.vertex_color_material(0.9))
+	var pine := SceneryKit.pine_far(_theme.scenery_style == TrackTheme.SceneryStyle.SNOW)
+	pine.surface_set_material(0, MaterialLibrary.foliage())
 	var path := track.path
 	var groups := {}
 	var step := far_forest_spacing
@@ -335,9 +327,44 @@ func _overlook_side(track: Track, along: float, side: int) -> bool:
 	return false
 
 
+## Two far ranges that rise above the whole track, so every view (even from
+## the summit start) ends in layered, hazy ridgelines. Own random sequence.
+func _build_horizon(center: Vector3, radius: float, floor_y: float, track_height: float) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = random_seed + 909
+	var mesa := _theme.scenery_style == TrackTheme.SceneryStyle.CANYON
+	var material := MeshKit.vertex_color_material(1.0)
+	for layer in 2:
+		var color := _theme.mid_peak_color if layer == 0 else _theme.far_peak_color
+		var snow_line := _theme.mid_snow_line if layer == 0 else _theme.far_snow_line
+		var ring := radius + (1100.0 if layer == 0 else 2100.0)
+		var count := 22 if layer == 0 else 30
+		for v in 3:
+			var mesh := SceneryKit.mountain(20 + layer * 3 + v, color, _theme.snow_color, snow_line, mesa and v != 2)
+			mesh.surface_set_material(0, material)
+			var transforms: Array[Transform3D] = []
+			var tints: Array[Color] = []
+			for i in count:
+				if i % 3 != v:
+					continue
+				var angle := TAU * i / count + rng.randf_range(-0.08, 0.08)
+				var distance := ring + rng.randf_range(0.0, 500.0)
+				var height := track_height * rng.randf_range(0.75, 1.25) + (260.0 if layer == 0 else 520.0)
+				if mesa:
+					height *= 0.7
+				var width := height * rng.randf_range(1.3, 2.1) * (1.5 if mesa else 1.0)
+				var spot := Vector3(center.x + cos(angle) * distance, floor_y - 20.0, center.z + sin(angle) * distance)
+				transforms.append(MeshKit.at(spot, Vector3(0, rng.randf() * 360.0, 0), Vector3(width, height, width)))
+				var bright := rng.randf_range(0.88, 1.05)
+				tints.append(Color(bright, bright, bright))
+			add_child(MeshKit.batch("Horizon_%d_%d" % [layer, v], mesh, transforms, tints, false))
+
+
 func _build_hills(center: Vector3, ring: float, floor_y: float) -> void:
-	var hill := MeshKit.combine([[MeshKit.sphere(1.0, 9, 5), Transform3D.IDENTITY, Color.WHITE]])
-	hill.surface_set_material(0, MeshKit.vertex_color_material(1.0))
+	var sculpt := Sculpt.new(77)
+	sculpt.blob(Vector3.ZERO, Vector3.ONE, 2, 0.22, 1.1, Color(1, 1, 1), Color(0.7, 0.72, 0.7))
+	var hill := sculpt.commit(true)
+	hill.surface_set_material(0, MaterialLibrary.foliage(1.0))
 	var transforms: Array[Transform3D] = []
 	var colors: Array[Color] = []
 	for i in hills:
@@ -351,15 +378,11 @@ func _build_hills(center: Vector3, ring: float, floor_y: float) -> void:
 
 
 func _build_clouds(center: Vector3, radius: float, top_y: float) -> void:
-	var puff := MeshKit.combine([
-		[MeshKit.sphere(1.0, 9, 5), MeshKit.at(Vector3(0, 0, 0)), Color.WHITE],
-		[MeshKit.sphere(0.75, 9, 5), MeshKit.at(Vector3(0.9, -0.15, 0.2)), Color.WHITE],
-		[MeshKit.sphere(0.7, 9, 5), MeshKit.at(Vector3(-0.95, -0.2, -0.1)), Color.WHITE],
-		[MeshKit.sphere(0.6, 9, 5), MeshKit.at(Vector3(0.3, 0.45, -0.3)), Color.WHITE],
-	])
+	var puff := SceneryKit.cloud(0)
 	var material := MeshKit.vertex_color_material(1.0)
 	material.emission_enabled = true
 	material.emission = _theme.cloud_emission
+	material.emission_energy_multiplier = 0.55
 	puff.surface_set_material(0, material)
 	var transforms: Array[Transform3D] = []
 	for i in clouds:
@@ -397,11 +420,7 @@ func _build_valley(center: Vector3, floor_y: float) -> void:
 	var lake := MeshInstance3D.new()
 	lake.name = "Lake"
 	lake.mesh = lake_mesh
-	var water := StandardMaterial3D.new()
-	water.albedo_color = _theme.lake_color
-	water.roughness = 0.08
-	water.metallic_specular = 0.8
-	lake.material_override = water
+	lake.material_override = MaterialLibrary.water(_theme.lake_color, 1.0)
 	lake.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	lake.scale = Vector3(1.6, 1.0, 1.0)
 	lake.position = Vector3(center.x + 260.0, floor_y + 0.15, center.z + 120.0)

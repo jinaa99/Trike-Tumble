@@ -1,0 +1,49 @@
+[gd_resource type="Resource" script_class="TrackTheme" format=3]
+
+[ext_resource type="Script" path="res://scripts/track/track_theme.gd" id="1_theme"]
+
+[resource]
+script = ExtResource("1_theme")
+dirt_color = Color(0.63, 0.5, 0.37, 1)
+dirt_dark_color = Color(0.48, 0.37, 0.27, 1)
+rut_color = Color(0.54, 0.41, 0.29, 1)
+verge_color = Color(0.42, 0.5, 0.22, 1)
+curb_colors = Array[Color]([Color(0.886, 0.227, 0.227, 1), Color(0.96, 0.93, 0.86, 1)])
+mud_color = Color(0.37, 0.255, 0.153, 1)
+mud_wet_color = Color(0.26, 0.18, 0.12, 1)
+plank_colors = Array[Color]([Color(0.85, 0.765, 0.6, 1), Color(0.78, 0.69, 0.53, 1)])
+plank_gap_color = Color(0.42, 0.3, 0.2, 1)
+post_color = Color(0.42, 0.27, 0.16, 1)
+rail_color = Color(0.82, 0.2, 0.2, 1)
+deck_colors = Array[Color]([Color(0.6, 0.42, 0.26, 1), Color(0.54, 0.36, 0.21, 1), Color(0.66, 0.47, 0.3, 1)])
+deck_kerb_color = Color(0.36, 0.24, 0.15, 1)
+grass_colors = Array[Color]([Color(0.435, 0.69, 0.29, 1), Color(0.306, 0.58, 0.25, 1), Color(0.208, 0.44, 0.227, 1)])
+rock_slope_color = Color(0.45, 0.47, 0.46, 1)
+cliff_colors = Array[Color]([Color(0.52, 0.53, 0.55, 1), Color(0.42, 0.43, 0.46, 1)])
+pine_greens = Array[Color]([Color(0.12, 0.353, 0.247, 1), Color(0.173, 0.45, 0.314, 1), Color(0.09, 0.286, 0.24, 1)])
+leaf_greens = Array[Color]([Color(0.31, 0.6, 0.227, 1), Color(0.49, 0.71, 0.28, 1), Color(0.95, 0.61, 0.22, 1), Color(0.235, 0.5, 0.21, 1)])
+boulder_colors = Array[Color]([Color(0.52, 0.53, 0.56, 1), Color(0.62, 0.58, 0.52, 1)])
+terrain_low_color = Color(0.36, 0.6, 0.27, 1)
+terrain_high_color = Color(0.24, 0.47, 0.26, 1)
+terrain_steep_color = Color(0.45, 0.46, 0.45, 1)
+terrain_patch_color = Color(0.5, 0.66, 0.3, 1)
+far_peak_color = Color(0.46, 0.55, 0.75, 1)
+mid_peak_color = Color(0.27, 0.45, 0.47, 1)
+hill_colors = Array[Color]([Color(0.26, 0.5, 0.3, 1), Color(0.42, 0.62, 0.3, 1)])
+valley_color = Color(0.3, 0.52, 0.28, 1)
+lake_color = Color(0.2, 0.52, 0.7, 1)
+water_color = Color(0.22, 0.55, 0.72, 1)
+apply_environment = true
+sky_top_color = Color(0.2, 0.47, 0.9, 1)
+sky_horizon_color = Color(0.82, 0.88, 0.9, 1)
+ground_bottom_color = Color(0.25, 0.4, 0.32, 1)
+fog_color = Color(0.76, 0.85, 0.84, 1)
+fog_density = 0.0006
+ambient_color = Color(0.66, 0.82, 0.78, 1)
+sun_color = Color(1, 0.886, 0.66, 1)
+sun_energy = 1.65
+saturation = 1.1
+ambient_energy = 0.7
+fill_color = Color(0.55, 0.75, 0.8, 1)
+fill_energy = 0.25
+exposure = 1.0

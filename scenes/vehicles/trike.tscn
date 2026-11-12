@@ -1,5 +1,7 @@
 [gd_scene format=3]
 
+[ext_resource type="FontVariation" path="res://resources/ui/font_display.tres" id="font_display_ext"]
+
 [ext_resource type="Script" path="res://scripts/vehicles/trike_controller.gd" id="1_ctrl"]
 
 [ext_resource type="Resource" path="res://resources/vehicles/default_trike_config.tres" id="2_cfg"]
@@ -27,68 +29,71 @@ height = 1.1
 
 [sub_resource type="StandardMaterial3D" id="mat_body"]
 albedo_color = Color(1, 0.4, 0.2, 1)
-roughness = 0.28
+roughness = 0.3
 diffuse_mode = 2
 metallic_specular = 0.7
 rim_enabled = true
 rim = 0.2
 rim_tint = 0.5
 clearcoat_enabled = true
-clearcoat = 0.6
-clearcoat_roughness = 0.2
+clearcoat = 0.85
+clearcoat_roughness = 0.1
+metallic = 0.15
 
 [sub_resource type="StandardMaterial3D" id="mat_accent"]
 albedo_color = Color(1, 0.8, 0.16, 1)
-roughness = 0.35
+roughness = 0.32
 diffuse_mode = 2
 metallic_specular = 0.5
 rim_enabled = true
 rim = 0.25
 rim_tint = 0.5
 clearcoat_enabled = true
-clearcoat = 0.6
-clearcoat_roughness = 0.2
+clearcoat = 0.8
+clearcoat_roughness = 0.12
+metallic = 0.1
 
 [sub_resource type="StandardMaterial3D" id="mat_frame"]
 albedo_color = Color(0.16, 0.21, 0.42, 1)
-roughness = 0.3
+roughness = 0.52
 diffuse_mode = 2
 metallic_specular = 0.7
 rim_enabled = true
 rim = 0.25
 rim_tint = 0.5
+metallic = 0.35
 
 [sub_resource type="StandardMaterial3D" id="mat_chrome"]
-albedo_color = Color(0.78, 0.8, 0.85, 1)
-roughness = 0.18
+albedo_color = Color(0.86, 0.87, 0.9, 1)
+roughness = 0.14
 diffuse_mode = 2
 metallic_specular = 1
 rim_enabled = true
 rim = 0.3
 rim_tint = 0.5
-metallic = 0.75
+metallic = 1.0
 
 [sub_resource type="StandardMaterial3D" id="mat_tire"]
-albedo_color = Color(0.13, 0.13, 0.16, 1)
-roughness = 0.85
+albedo_color = Color(0.075, 0.075, 0.085, 1)
+roughness = 0.92
 diffuse_mode = 2
-metallic_specular = 0.5
+metallic_specular = 0.35
 rim_enabled = true
 rim = 0.1
 rim_tint = 0.5
 
 [sub_resource type="StandardMaterial3D" id="mat_sleeve"]
 albedo_color = Color(0.97, 0.95, 0.88, 1)
-roughness = 0.3
+roughness = 0.46
 diffuse_mode = 2
-metallic_specular = 0.6
+metallic_specular = 0.5
 rim_enabled = true
 rim = 0.25
 rim_tint = 0.5
 
 [sub_resource type="StandardMaterial3D" id="mat_seat"]
 albedo_color = Color(0.2, 0.16, 0.28, 1)
-roughness = 0.55
+roughness = 0.68
 diffuse_mode = 2
 metallic_specular = 0.5
 rim_enabled = true
@@ -96,10 +101,10 @@ rim = 0.15
 rim_tint = 0.5
 
 [sub_resource type="StandardMaterial3D" id="mat_rubber"]
-albedo_color = Color(0.1, 0.1, 0.12, 1)
-roughness = 0.8
+albedo_color = Color(0.08, 0.08, 0.09, 1)
+roughness = 0.9
 diffuse_mode = 2
-metallic_specular = 0.5
+metallic_specular = 0.3
 
 [sub_resource type="StandardMaterial3D" id="mat_white"]
 albedo_color = Color(0.98, 0.97, 0.94, 1)
@@ -151,9 +156,8 @@ size = Vector3(0.035, 0.035, 0.16)
 offsets = PackedFloat32Array(0, 0.25, 1)
 colors = PackedColorArray(1, 1, 1, 0.55, 1, 1, 1, 0.75, 1, 1, 1, 0)
 
-[sub_resource type="SystemFont" id="font_number"]
-font_names = PackedStringArray("Arial Rounded MT Bold", "Arial Black", "Segoe UI Black", "Arial")
-font_weight = 800
+[sub_resource type="FontVariation" id="font_number"]
+base_font = ExtResource("font_display_ext")
 
 [sub_resource type="SphereMesh" id="mesh_puff"]
 material = SubResource("mat_dust")

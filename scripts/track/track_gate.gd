@@ -72,9 +72,7 @@ func _ready() -> void:
 
 
 func _title_label(facing: float, depth: float) -> Label3D:
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(["Arial Rounded MT Bold", "Arial Black", "Segoe UI Black", "Arial"])
-	font.font_weight = 800
+	var font: Font = UiKit.DISPLAY_FONT
 	var label := Label3D.new()
 	label.text = title
 	label.font = font

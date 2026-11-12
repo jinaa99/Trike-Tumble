@@ -23,7 +23,16 @@ enum Face { CHEERFUL, DETERMINED, GRINNING, SLEEPY, CHEEKY }
 ## Head size (silhouette): 0.92 small .. 1.12 big.
 @export_range(0.85, 1.2) var head_scale := 1.0
 
+## Kit pieces this racer wears (Visual Overhaul V2 detail parts).
+@export var helmet_stripe := true
+@export var shoulder_stripes := true
+@export var elbow_pads := true
+@export var knee_pads := true
+@export var thigh_stripes := true
+@export var toe_caps := true
+
 @export_group("Colors")
+@export var eye_color := Color(0.25, 0.6, 0.7)
 @export var helmet_color := Color(0.97, 0.28, 0.48)
 @export var accent_color := Color(1, 0.82, 0.18)
 @export var jacket_color := Color(0.25, 0.75, 0.85)

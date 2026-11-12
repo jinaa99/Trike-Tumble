@@ -74,6 +74,7 @@ func build_for_track(track: Track) -> void:
 	_build_boulders(track)
 	_build_flowers(track)
 	_build_tufts(track)
+	_build_extras(track)
 
 
 ## True if no tree may grow at sample i on that side (clearings, overlooks).
@@ -122,29 +123,30 @@ func _build_blocked(track: Track) -> void:
 func _build_trees(track: Track) -> void:
 	var path := track.path
 	var builder := track.builder
-	var pine_tall := MeshKit.combine([
-		[MeshKit.cylinder(0.16, 0.24, 1.4, 6), MeshKit.at(Vector3(0, 0.7, 0)), Color(0.48, 0.32, 0.2)],
-		[MeshKit.cone(1.7, 2.0), MeshKit.at(Vector3(0, 2.0, 0)), Color(0.85, 0.85, 0.85)],
-		[MeshKit.cone(1.35, 1.7), MeshKit.at(Vector3(0, 3.1, 0), Vector3(0, 25, 0)), Color(0.93, 0.93, 0.93)],
-		[MeshKit.cone(0.95, 1.5), MeshKit.at(Vector3(0, 4.1, 0), Vector3(0, 50, 0)), Color(1, 1, 1)],
-	])
-	var pine_short := MeshKit.combine([
-		[MeshKit.cylinder(0.14, 0.2, 1.0, 6), MeshKit.at(Vector3(0, 0.5, 0)), Color(0.48, 0.32, 0.2)],
-		[MeshKit.cone(1.4, 1.8), MeshKit.at(Vector3(0, 1.6, 0)), Color(0.88, 0.88, 0.88)],
-		[MeshKit.cone(1.0, 1.5), MeshKit.at(Vector3(0, 2.5, 0), Vector3(0, 30, 0)), Color(1, 1, 1)],
-	])
-	var round_tree := MeshKit.combine([
-		[MeshKit.cylinder(0.14, 0.22, 2.0, 6), MeshKit.at(Vector3(0, 1.0, 0)), Color(0.5, 0.34, 0.22)],
-		[MeshKit.sphere(1.25), MeshKit.at(Vector3(0, 2.7, 0)), Color(1, 1, 1)],
-		[MeshKit.sphere(0.85), MeshKit.at(Vector3(0.75, 2.3, 0.35)), Color(0.9, 0.9, 0.9)],
-		[MeshKit.sphere(0.8), MeshKit.at(Vector3(-0.6, 3.2, -0.3)), Color(0.95, 0.95, 0.95)],
-	])
-	var meshes := {"pine_tall": pine_tall, "pine_short": pine_short, "round": round_tree}
 	var style := _theme.scenery_style
+	var foliage := MaterialLibrary.foliage()
+	var bark := MaterialLibrary.textured("wood/bark", 0.55, 1.0, 1.0)
+	var snow := MaterialLibrary.snow()
+	var meshes := {}
 	if style == TrackTheme.SceneryStyle.CANYON:
-		meshes = {"spire": _spire_mesh(), "dry": _dry_tree_mesh()}
-	elif style == TrackTheme.SceneryStyle.SNOW:
-		meshes.merge(_snow_cap_meshes())
+		var sandstone := MaterialLibrary.textured("stone/sandstone", 0.2, 1.0, 1.2)
+		for v in 3:
+			meshes["spire%d" % v] = _with_material(SceneryKit.hoodoo(v), sandstone)
+		for v in 2:
+			var dry := SceneryKit.dry_tree(v)
+			meshes["dry%d" % v] = _with_material(dry["foliage"], foliage)
+			meshes["trunk_dry%d" % v] = _with_material(dry["trunk"], bark)
+	else:
+		for v in 3:
+			var pine := SceneryKit.pine(v)
+			var pine_kind: String = ["pine_tall0", "pine_tall1", "pine_short"][v]
+			meshes[pine_kind] = _with_material(pine["foliage"], foliage)
+			meshes["trunk_" + pine_kind] = _with_material(pine["trunk"], bark)
+			meshes["snow_" + pine_kind] = _with_material(pine["snow"], snow)
+			var leaf := SceneryKit.broadleaf(v)
+			meshes["round%d" % v] = _with_material(leaf["foliage"], foliage)
+			meshes["trunk_round%d" % v] = _with_material(leaf["trunk"], bark)
+			meshes["snow_round%d" % v] = _with_material(leaf["snow"], snow)
 	var groups := {}
 	_group_samples = _batch_samples
 	for i in range(0, path.size(), tree_spacing_samples):
@@ -157,33 +159,36 @@ func _build_trees(track: Track) -> void:
 			if _near_road(track, spot, track.half_width_at(i) + 3.0):
 				continue
 			var roll := _rng.randf()
-			var kind := "round" if roll >= pine_share else ("pine_tall" if roll < pine_share * 0.7 else "pine_short")
-			var palette := _theme.leaf_greens if kind == "round" else _theme.pine_greens
+			# Which sculpt of the kind: from the position, not the random
+			# sequence, so the layout never shifts when variants are added.
+			var variant := posmod(i * 7 + side * 3, 6)
+			var kind := "round%d" % (variant % 3) if roll >= pine_share else \
+					("pine_tall%d" % (variant % 2) if roll < pine_share * 0.7 else "pine_short")
+			var palette := _theme.leaf_greens if kind.begins_with("round") else _theme.pine_greens
 			if style == TrackTheme.SceneryStyle.CANYON:
-				kind = "spire" if roll < pine_share else "dry"
-				palette = _theme.boulder_colors if kind == "spire" else _theme.leaf_greens
+				kind = "spire%d" % (variant % 3) if roll < pine_share else "dry%d" % (variant % 2)
+				palette = _theme.boulder_colors if kind.begins_with("spire") else _theme.leaf_greens
 			var xf := MeshKit.at(spot - Vector3.UP * 0.15, Vector3(0, _rng.randf() * 360.0, 0), Vector3.ONE * s)
 			_add(groups, kind, i, xf, palette[_rng.randi() % palette.size()].lightened(_rng.randf_range(0.0, 0.12)))
-			if kind == "spire":
+			if kind.begins_with("spire"):
 				_add_cylinder_collider(i, spot + Vector3.UP * 3.0 * s, 1.1 * s, 6.0 * s)
 			else:
+				_add(groups, "trunk_" + kind, i, xf, Color.WHITE)
 				_add_cylinder_collider(i, spot + Vector3.UP * 1.0 * s, 0.3 * s, 2.0 * s)
 			if style == TrackTheme.SceneryStyle.SNOW:
 				_add(groups, "snow_" + kind, i, xf, _theme.snow_color)
-	var material := MeshKit.vertex_color_material(0.9)
-	for kind: String in meshes:
-		(meshes[kind] as ArrayMesh).surface_set_material(0, material)
 	_emit_batches("Trees_", meshes, groups, tree_view_distance)
+
+
+static func _with_material(mesh: ArrayMesh, material: Material) -> ArrayMesh:
+	mesh.surface_set_material(0, material)
+	return mesh
 
 
 func _build_bushes(track: Track) -> void:
 	var path := track.path
-	var bush := MeshKit.combine([
-		[MeshKit.sphere(0.7, 7, 4), MeshKit.at(Vector3(0, 0.35, 0), Vector3.ZERO, Vector3(1, 0.8, 1)), Color(1, 1, 1)],
-		[MeshKit.sphere(0.55, 7, 4), MeshKit.at(Vector3(0.6, 0.3, 0.2), Vector3.ZERO, Vector3(1, 0.8, 1)), Color(0.9, 0.9, 0.9)],
-		[MeshKit.sphere(0.5, 7, 4), MeshKit.at(Vector3(-0.5, 0.28, -0.25), Vector3.ZERO, Vector3(1, 0.8, 1)), Color(0.95, 0.95, 0.95)],
-	])
-	bush.surface_set_material(0, MeshKit.vertex_color_material(0.9))
+	var snowy := _theme.scenery_style == TrackTheme.SceneryStyle.SNOW
+	var bush := _with_material(SceneryKit.bush(1), MaterialLibrary.snow() if snowy else MaterialLibrary.foliage())
 	var groups := {}
 	_group_samples = _small_batch_samples
 	for i in range(0, path.size(), bush_spacing_samples):
@@ -210,8 +215,8 @@ func _bush_color() -> Color:
 func _build_boulders(track: Track) -> void:
 	var path := track.path
 	var rock_shape_mesh := MeshKit.sphere(1.0, 7, 4)
-	var rock := MeshKit.combine([[rock_shape_mesh, Transform3D.IDENTITY, Color(1, 1, 1)]])
-	rock.surface_set_material(0, MeshKit.vertex_color_material(1.0))
+	var rock_set := "stone/sandstone" if _theme.scenery_style == TrackTheme.SceneryStyle.CANYON else "stone/boulder"
+	var rock := _with_material(SceneryKit.rock(0), MaterialLibrary.textured(rock_set, 0.35, 1.0, 1.3))
 	var rock_points: PackedVector3Array = rock_shape_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	var groups := {}
 	_group_samples = _batch_samples
@@ -236,9 +241,7 @@ func _build_boulders(track: Track) -> void:
 			collider.shape = shape
 			collider.position = xf.origin
 			_body_for(i).add_child(collider)
-	var snow_cap := MeshKit.combine([[MeshKit.sphere(1.0, 7, 4), MeshKit.at(Vector3(0, 0.35, 0), Vector3.ZERO,
-			Vector3(0.92, 0.7, 0.92)), Color(1, 1, 1)]])
-	snow_cap.surface_set_material(0, MeshKit.vertex_color_material(0.6))
+	var snow_cap := _with_material(SceneryKit.rock_snow(), MaterialLibrary.snow())
 	_emit_batches("", {"Boulders": rock, "BoulderSnow": snow_cap}, groups, boulder_view_distance)
 
 
@@ -298,50 +301,139 @@ func _build_tufts(track: Track) -> void:
 	_emit_batches("", {"Tufts": tuft}, groups, tuft_view_distance, false)
 
 
-# --- Theme meshes (white/gray vertex colors, tinted per instance) ---------------
-
-## Canyon hoodoo: stacked, tapering rock drums with light and dark layers.
-func _spire_mesh() -> ArrayMesh:
-	var parts := []
-	var y := 0.0
-	var radius := 1.25
-	for k in 5:
-		var height := 1.9 - k * 0.15
-		var top := radius * 0.82
-		parts.append([MeshKit.cylinder(top, radius, height, 7), MeshKit.at(Vector3(0, y + height * 0.5, 0), Vector3(0, k * 23.0, 0)),
-				Color(1, 1, 1) if k % 2 == 0 else Color(0.8, 0.78, 0.76)])
-		y += height
-		radius = top
-	parts.append([MeshKit.box(Vector3(1.5, 0.35, 1.3)), MeshKit.at(Vector3(0.1, y + 0.15, 0), Vector3(0, 15, 6)), Color(0.88, 0.86, 0.84)])
-	return MeshKit.combine(parts)
-
-
-## Canyon dry tree: thin crooked trunk with a few small leaf clumps.
-func _dry_tree_mesh() -> ArrayMesh:
-	return MeshKit.combine([
-		[MeshKit.cylinder(0.1, 0.18, 2.2, 5), MeshKit.at(Vector3(0, 1.1, 0), Vector3(0, 0, 8)), Color(0.55, 0.42, 0.32)],
-		[MeshKit.cylinder(0.06, 0.09, 1.2, 4), MeshKit.at(Vector3(0.45, 2.1, 0), Vector3(0, 0, -40)), Color(0.55, 0.42, 0.32)],
-		[MeshKit.sphere(0.75, 6, 4), MeshKit.at(Vector3(0.1, 2.5, 0), Vector3.ZERO, Vector3(1.2, 0.6, 1.0)), Color(1, 1, 1)],
-		[MeshKit.sphere(0.55, 6, 4), MeshKit.at(Vector3(0.9, 2.55, 0.2), Vector3.ZERO, Vector3(1.1, 0.6, 1.0)), Color(0.9, 0.9, 0.9)],
-	])
-
-
-## White snow layers that sit on the forest tree meshes (same transforms).
-func _snow_cap_meshes() -> Dictionary:
-	return {
-		"snow_pine_tall": MeshKit.combine([
-			[MeshKit.cone(1.45, 0.75), MeshKit.at(Vector3(0, 2.62, 0)), Color(1, 1, 1)],
-			[MeshKit.cone(1.12, 0.65), MeshKit.at(Vector3(0, 3.62, 0), Vector3(0, 25, 0)), Color(1, 1, 1)],
-			[MeshKit.cone(0.75, 0.65), MeshKit.at(Vector3(0, 4.55, 0), Vector3(0, 50, 0)), Color(1, 1, 1)],
-		]),
-		"snow_pine_short": MeshKit.combine([
-			[MeshKit.cone(1.18, 0.7), MeshKit.at(Vector3(0, 2.1, 0)), Color(1, 1, 1)],
-			[MeshKit.cone(0.8, 0.65), MeshKit.at(Vector3(0, 2.95, 0), Vector3(0, 30, 0)), Color(1, 1, 1)],
-		]),
-		"snow_round": MeshKit.combine([
-			[MeshKit.sphere(1.0), MeshKit.at(Vector3(0, 3.55, 0), Vector3.ZERO, Vector3(1.05, 0.5, 1.05)), Color(1, 1, 1)],
-		]),
+## Small set dressing with its own random sequence (never disturbs the
+## trees): forest ferns, stumps, mushrooms and pebbles; canyon cacti and
+## pebbles; snow ice shards. Clustered by a noise field, so some stretches
+## are lush and others open. Stumps get colliders; cacti are soft (see below).
+func _build_extras(track: Track) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = random_seed + 101
+	var patches := FastNoiseLite.new()
+	patches.seed = random_seed + 5
+	patches.frequency = 0.02
+	var style := _theme.scenery_style
+	var rock_material := MaterialLibrary.textured("stone/sandstone" if style == TrackTheme.SceneryStyle.CANYON else "stone/boulder",
+			0.6, 1.0, 1.0)
+	var meshes := {"Pebbles": _with_material(SceneryKit.pebbles(), rock_material)}
+	# kind -> [chance per sample, min outward, max outward, scale min, scale max, collider radius (0 = soft)]
+	var kinds := {"Pebbles": [0.5, 0.2, 5.0, 0.7, 1.6, 0.0]}
+	match style:
+		TrackTheme.SceneryStyle.FOREST:
+			meshes["Ferns"] = _with_material(SceneryKit.fern(), MaterialLibrary.foliage())
+			meshes["Stumps"] = _with_material(SceneryKit.stump(), MaterialLibrary.textured("wood/bark", 0.9, 1.0, 1.0))
+			meshes["Mushrooms"] = _with_material(SceneryKit.mushrooms(), MeshKit.vertex_color_material(0.5))
+			kinds["Ferns"] = [0.9, 0.6, 14.0, 0.8, 1.7, 0.0]
+			kinds["Stumps"] = [0.07, 7.0, 18.0, 0.8, 1.5, 0.4]
+			kinds["Mushrooms"] = [0.1, 1.0, 10.0, 0.8, 1.6, 0.0]
+		TrackTheme.SceneryStyle.CANYON:
+			for v in 2:
+				meshes["Cactus%d" % v] = _with_material(SceneryKit.cactus(v), MaterialLibrary.foliage(0.7))
+				kinds["Cactus%d" % v] = [0.05, 7.0, 19.0, 0.8, 1.5, 0.4]
+		TrackTheme.SceneryStyle.SNOW:
+			var ice := StandardMaterial3D.new()
+			ice.vertex_color_use_as_albedo = true
+			ice.vertex_color_is_srgb = true
+			ice.roughness = 0.12
+			ice.metallic_specular = 0.9
+			meshes["IceShards"] = _with_material(SceneryKit.ice_shards(), ice)
+			kinds["IceShards"] = [0.05, 2.5, 16.0, 0.8, 1.8, 0.0]
+	var tints := {
+		"Pebbles": _theme.boulder_colors, "Ferns": _theme.leaf_greens, "Stumps": [Color.WHITE] as Array[Color],
+		"Mushrooms": [Color.WHITE] as Array[Color], "Cactus0": [Color(0.36, 0.56, 0.36), Color(0.42, 0.6, 0.34)] as Array[Color],
+		"Cactus1": [Color(0.36, 0.56, 0.36), Color(0.42, 0.6, 0.34)] as Array[Color],
+		"IceShards": [Color(0.6, 0.86, 0.95), Color(0.5, 0.78, 0.92)] as Array[Color],
 	}
+	var groups := {}
+	_group_samples = _small_batch_samples
+	var path := track.path
+	for i in path.size():
+		if has_no_ground(i):
+			continue
+		var lush := clampf(0.55 + patches.get_noise_1d(i * path.spacing) * 1.4, 0.05, 1.3)
+		for kind: String in kinds:
+			var spec: Array = kinds[kind]
+			if rng.randf() > float(spec[0]) * lush:
+				continue
+			var side := -1 if rng.randf() < 0.5 else 1
+			var outward := rng.randf_range(spec[1], spec[2])
+			var turn := rng.randf() * 360.0
+			var size := rng.randf_range(spec[3], spec[4])
+			if on_cliff(i, side):
+				continue
+			var spot := track.builder.slope_point(path, i, side, outward)
+			var solid: float = spec[5]
+			if solid > 0.0 and (is_blocked(i, side) or _near_road(track, spot, track.half_width_at(i) + 3.0)):
+				continue
+			var palette: Array[Color] = tints[kind]
+			_add(groups, kind, i, MeshKit.at(spot - Vector3.UP * 0.05, Vector3(0, turn, 0), Vector3.ONE * size),
+					palette[rng.randi() % palette.size()])
+			# Stumps are solid. Cacti are not: a thin cactus collider on the
+			# canyon slopes trapped an AI trike in the timed races (the only
+			# gameplay regression of the overhaul), so cacti are soft set
+			# dressing like bushes.
+			if solid > 0.0 and not kind.begins_with("Cactus"):
+				_add_cylinder_collider(i, spot + Vector3.UP * 0.3 * size, solid * size, 0.6 * size)
+	_build_cliff_detail(track, rng, meshes, groups, rock_material)
+	for kind: String in ["Ledges", "Arches"]:
+		if meshes.has(kind):
+			kinds[kind] = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+	for kind: String in kinds:
+		var far: float = 320.0 if float(kinds[kind][5]) > 0.0 else 120.0
+		if kind == "Ledges" or kind == "Arches":
+			far = 700.0
+		var only := {}
+		for key: Vector2i in groups:
+			if groups[key]["kind"] == kind:
+				only[key] = groups[key]
+		_emit_batches("", meshes, only, far, float(kinds[kind][5]) > 0.0)
+
+
+## Rock ledges that jut from cliff walls (strata you can read from the
+## road), and in the canyon a natural arch every few hundred metres out on
+## the slopes. Ledges are embedded in the cliff collision; arches get
+## colliders on both legs.
+func _build_cliff_detail(track: Track, rng: RandomNumberGenerator, meshes: Dictionary, groups: Dictionary, rock_material: Material) -> void:
+	var path := track.path
+	var canyon := _theme.scenery_style == TrackTheme.SceneryStyle.CANYON
+	var tones: Array[Color] = _theme.cliff_band_colors if not _theme.cliff_band_colors.is_empty() else _theme.cliff_colors
+	meshes["Ledges"] = _with_material(SceneryKit.ledge(0), MaterialLibrary.textured("stone/sandstone" if canyon else "stone/rock_face",
+			0.3, 1.0, 1.3))
+	_group_samples = _batch_samples
+	for i in range(2, path.size() - 2, 2):
+		for side: int in [-1, 1]:
+			if track.builder.cliff_weight(i, side) < 0.9 or has_no_ground(i):
+				continue
+			for n in 2:
+				if rng.randf() > 0.55:
+					continue
+				var outward := rng.randf_range(1.2, 5.6)
+				var spot := track.builder.slope_point(path, i, side, outward)
+				var yaw := atan2(path.forwards[i].x, path.forwards[i].z) + PI * 0.5
+				var size := Vector3(rng.randf_range(2.2, 5.0), rng.randf_range(0.8, 1.8), rng.randf_range(1.2, 2.0))
+				_add(groups, "Ledges", i, Transform3D(Basis(Vector3.UP, yaw) * Basis.from_scale(size),
+						spot - path.rights[i] * float(side) * 0.3), tones[rng.randi() % tones.size()].lightened(rng.randf_range(0.0, 0.15)))
+	if not canyon:
+		return
+	meshes["Arches"] = _with_material(SceneryKit.rock_arch(0), rock_material)
+	var next_arch := 180.0
+	for i in path.size():
+		if i * path.spacing < next_arch:
+			continue
+		for side: int in [1, -1]:
+			if is_blocked(i, side) or has_no_ground(i) or on_cliff(i, side):
+				continue
+			var size := rng.randf_range(13.0, 19.0)
+			var spot := track.builder.slope_point(path, i, side, 21.0)
+			if _near_road(track, spot, track.half_width_at(i) + size * 0.55 + 3.0):
+				continue
+			var yaw := atan2(path.forwards[i].x, path.forwards[i].z) + rng.randf_range(-0.5, 0.5)
+			var basis := Basis(Vector3.UP, yaw)
+			_add(groups, "Arches", i, Transform3D(basis * Basis.from_scale(Vector3.ONE * size), spot - Vector3.UP * 1.0),
+					_theme.boulder_colors[rng.randi() % _theme.boulder_colors.size()])
+			for leg: float in [-0.43, 0.43]:
+				_add_cylinder_collider(i, spot + basis * Vector3(leg * size, size * 0.2, 0.0), size * 0.17, size * 0.5)
+			next_arch = i * path.spacing + rng.randf_range(380.0, 620.0)
+			break
 
 
 # --- Batching ----------------------------------------------------------------

@@ -6,6 +6,20 @@ Mobile renderer, Jolt physics. Every number below was measured during this
 milestone unless marked otherwise. Nothing was tested on a second computer
 or on Windows.
 
+> **Update 2026-11-12/13 — Visual Overhaul V2.** The look and sound of the
+> game changed after this report was written: textured PBR materials,
+> sculpted scenery, per-map palettes and light, trike and rider detail,
+> bundled fonts, a smaller HUD, recorded CC0 audio with a layered engine,
+> and music. Gameplay code is unchanged. Results, renderer A/B,
+> performance, tests and limits: `docs/VISUAL_OVERHAUL_PROGRESS.md`.
+> Numbers that changed: main suite **740 passed** (682 + 58 new), timed AI
+> races 42/42 after one fix, network suite 50/50, all maps still at the
+> 120 fps display cap on the M4 with about 2.5–3× the triangles; builds are
+> now 88 MB (Mac zip) and 142 MB (Windows exe). The statements below about
+> "all sounds synthesized", "no music" and "no external assets" describe
+> the state before the overhaul. Still true: nothing was tested on a
+> second computer or on Windows, and the new audio has not been listened to.
+
 ## 1. Verdict
 
 The five core experiences work end to end **in automated tests and in a

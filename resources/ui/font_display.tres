@@ -1,0 +1,11 @@
+[gd_resource type="FontVariation" format=3]
+
+[ext_resource type="FontFile" path="res://assets/fonts/lilita_one/LilitaOne-Regular.ttf" id="1_lilita"]
+[ext_resource type="FontFile" path="res://assets/fonts/nunito/Nunito-Variable.ttf" id="2_nunito"]
+
+[resource]
+base_font = ExtResource("1_lilita")
+fallbacks = Array[Font]([ExtResource("2_nunito")])
+spacing_glyph = 1
+spacing_top = -5
+spacing_bottom = -7

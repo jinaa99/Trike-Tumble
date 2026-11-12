@@ -6,8 +6,11 @@
 [ext_resource type="Script" path="res://scripts/track/track_landmarks.gd" id="4_landmarks"]
 [ext_resource type="Script" path="res://scripts/track/track_backdrop.gd" id="5_backdrop"]
 
+[ext_resource type="Resource" path="res://resources/maps/themes/forest_rush_theme.tres" id="9_theme"]
+
 [node name="TestTrack" type="Node3D"]
 script = ExtResource("1_track")
+theme = ExtResource("9_theme")
 control_points = PackedVector3Array(0, 120, 0, 0, 118, -40, 20, 112, -110, 70, 105, -160, 90, 98, -230, 60, 90, -300, 0, 82, -340, -60, 74, -370, -100, 66, -430, -90, 58, -500, -40, 50, -550, 20, 42, -580, 70, 34, -630, 80, 26, -700, 50, 18, -770, 0, 12, -820, -20, 8, -880, -20, 6, -950)
 
 [node name="Props" type="Node3D" parent="."]

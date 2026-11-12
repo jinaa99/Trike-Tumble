@@ -19,3 +19,7 @@ glove_color = Color(0.3, 0.72, 0.32, 1)
 boot_color = Color(0.45, 0.3, 0.2, 1)
 skin_color = Color(0.72, 0.5, 0.36, 1)
 lens_color = Color(0.4, 0.85, 1, 1)
+eye_color = Color(0.62, 0.45, 0.16, 1)
+shoulder_stripes = false
+knee_pads = false
+thigh_stripes = true

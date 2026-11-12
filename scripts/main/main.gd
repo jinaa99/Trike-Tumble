@@ -140,7 +140,7 @@ func _load_track() -> void:
 	move_child(track, 0)
 	# The map's sky, fog and sun (themes that ask for it; forest keeps the scene's).
 	track.theme.apply_to_world(get_node_or_null(^"WorldEnvironment") as WorldEnvironment,
-			get_node_or_null(^"Sun") as DirectionalLight3D)
+			get_node_or_null(^"Sun") as DirectionalLight3D, get_node_or_null(^"FillLight") as DirectionalLight3D)
 
 
 func _physics_process(_delta: float) -> void:

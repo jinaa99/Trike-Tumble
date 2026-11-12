@@ -19,6 +19,7 @@ func setup(race_session: RaceSession) -> void:
 	session.race.countdown_step.connect(_on_countdown_step)
 	session.racers.racer_finished.connect(_on_racer_finished)
 	session.race.state_changed.connect(_on_state_changed)
+	_update_music(session.race.get_state())
 
 
 func _on_countdown_step(text: String) -> void:
@@ -32,10 +33,20 @@ func _on_racer_finished(racer: Racer) -> void:
 	if racer != session.get_local_racer():
 		return
 	SoundPlayer.play_flat(self, &"finish", -2.0)
+	if racer.finish_position <= 3:
+		SoundPlayer.play_flat(self, &"cheer", -5.0)
 	fire_confetti(session.track.get_node_or_null(^"FinishGate") as Node3D)
 
 
+## Menu theme in the lobby, race track from the countdown on, ducked under
+## the results screen.
+func _update_music(state: RaceStateMachine.State) -> void:
+	MusicPlayer.play(&"menu" if state == RaceStateMachine.State.LOBBY else &"race")
+	MusicPlayer.duck(state == RaceStateMachine.State.RESULTS)
+
+
 func _on_state_changed(_old: RaceStateMachine.State, new_state: RaceStateMachine.State) -> void:
+	_update_music(new_state)
 	if new_state != RaceStateMachine.State.RESULTS:
 		return
 	var me := session.get_local_racer()

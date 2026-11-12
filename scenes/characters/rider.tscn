@@ -49,8 +49,8 @@ diffuse_mode = 2
 metallic_specular = 0.5
 
 [sub_resource type="StandardMaterial3D" id="mat_eye_white"]
-albedo_color = Color(1, 1, 1, 1)
-roughness = 0.25
+albedo_color = Color(0.97, 0.97, 1, 1)
+roughness = 0.2
 diffuse_mode = 2
 metallic_specular = 0.5
 

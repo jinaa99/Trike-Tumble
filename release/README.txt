@@ -104,11 +104,14 @@ Items: drive through the floating "?" boxes. You hold one item at a time.
     the Gatekeeper "Open Anyway" steps above are what macOS normally asks
     for an app that isn't notarized, but were not clicked through on a
     freshly downloaded copy.
-  - No music yet (sound effects only).
+  - The new recorded sounds and the music have not had a proper listening
+    pass yet; tell us if something is too loud or annoying.
   - Full list: docs/KNOWN_ISSUES.md in the project.
 
 7. Licenses
 -----------
   Made with the Godot Engine (MIT license, see GODOT_LICENSE.txt).
-  All game art, models and sounds are original and made in code; no
-  third-party assets.
+  Models are original (built in code). Music, recorded sound effects,
+  textures and fonts are free-licensed (CC0 / SIL OFL): see CREDITS.txt.
+
+Credits and licenses for the music, sounds, textures and fonts: CREDITS.txt

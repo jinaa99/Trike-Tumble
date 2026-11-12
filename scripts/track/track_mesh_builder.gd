@@ -242,6 +242,13 @@ func _collision_quad(faces: PackedVector3Array, a: Vector3, b: Vector3, c: Vecto
 
 # --- Render: road -----------------------------------------------------------
 
+## Vertex colour alpha tells road.gdshader which surface a quad is (render
+## only; 1.0 = plain ground).
+const CURB_ALPHA := 0.9
+const MUD_ALPHA := 0.75
+const WOOD_ALPHA := 0.5
+const ICE_ALPHA := 0.25
+
 ## Lateral bands across the road (0 = left edge, 1 = right edge).
 const ROAD_BANDS: Array[float] = [0.0, 0.04, 0.09, 0.2, 0.26, 0.31, 0.5, 0.69, 0.74, 0.8, 0.91, 0.96, 1.0]
 ## Bridge deck: plank kerbs at the edges.
@@ -281,7 +288,8 @@ func _build_road(path: TrackPath, first: int, last: int, out: MeshBatch) -> void
 			var in_mud := mud.y > mud.x and u0 >= mud.x - 0.001 and u1 <= mud.y + 0.001
 			var colors: Array[Color]
 			if is_curb and not in_mud:
-				colors = [curb, curb, curb, curb]
+				var paint := Color(curb, CURB_ALPHA)
+				colors = [paint, paint, paint, paint]
 			elif in_mud and band_kinds[i] == TrackSurface.Kind.ICE:
 				colors = [_ice_color(a), _ice_color(b), _ice_color(c), _ice_color(d)]
 			elif in_mud:
@@ -303,7 +311,8 @@ func _road_row_cached(path: TrackPath, i: int, curb: Color, out: MeshBatch) -> v
 		var c := _band_points[(i + 1) * n + j + 1]
 		var d := _band_points[(i + 1) * n + j]
 		if j == 0 or j == n - 2:
-			out.quad(a + lift, b + lift, c + lift, d + lift, path.ups[i], [curb, curb, curb, curb])
+			var paint := Color(curb, CURB_ALPHA)
+			out.quad(a + lift, b + lift, c + lift, d + lift, path.ups[i], [paint, paint, paint, paint])
 		else:
 			out.quad(a, b, c, d, path.ups[i], [_band_colors[i * n + j], _band_colors[i * n + j + 1],
 					_band_colors[(i + 1) * n + j + 1], _band_colors[(i + 1) * n + j]])
@@ -317,7 +326,7 @@ func _build_deck(path: TrackPath, i: int, out: MeshBatch) -> void:
 		for j in DECK_BANDS.size() - 1:
 			var u0 := DECK_BANDS[j]
 			var u1 := DECK_BANDS[j + 1]
-			var color := deck_kerb_color if j == 0 or j == DECK_BANDS.size() - 2 else tone
+			var color := Color(deck_kerb_color if j == 0 or j == DECK_BANDS.size() - 2 else tone, WOOD_ALPHA)
 			var a := _road_point(path, i, u0).lerp(_road_point(path, i + 1, u0), t0)
 			var b := _road_point(path, i, u1).lerp(_road_point(path, i + 1, u1), t0)
 			var c := _road_point(path, i, u1).lerp(_road_point(path, i + 1, u1), t1)
@@ -329,7 +338,7 @@ func _build_deck(path: TrackPath, i: int, out: MeshBatch) -> void:
 	var r0 := _road_point(path, i, 1.0)
 	var l1 := _road_point(path, i + 1, 0.0)
 	var r1 := _road_point(path, i + 1, 1.0)
-	out.flat_quad(l0 + depth, r0 + depth, r1 + depth, l1 + depth, -path.ups[i], deck_kerb_color.darkened(0.3))
+	out.flat_quad(l0 + depth, r0 + depth, r1 + depth, l1 + depth, -path.ups[i], Color(deck_kerb_color.darkened(0.3), WOOD_ALPHA))
 
 
 func _road_color(p: Vector3, u: float) -> Color:
@@ -345,13 +354,13 @@ func _road_color(p: Vector3, u: float) -> Color:
 
 func _mud_color(p: Vector3) -> Color:
 	var n := clampf(0.5 + _noise.get_noise_3dv(p * 0.7) * 1.4, 0.0, 1.0)
-	return mud_color.lerp(mud_wet_color, n)
+	return Color(mud_color.lerp(mud_wet_color, n), MUD_ALPHA)
 
 
 ## Glassy ice: smooth base with polished diagonal streaks.
 func _ice_color(p: Vector3) -> Color:
 	var streak := clampf(sin((p.x + p.z) * 0.9 + _noise.get_noise_3dv(p * 0.4) * 3.0) * 1.6 - 0.6, 0.0, 1.0)
-	return ice_color.lerp(ice_shine_color, streak)
+	return Color(ice_color.lerp(ice_shine_color, streak), ICE_ALPHA)
 
 
 # --- Render: barriers -------------------------------------------------------

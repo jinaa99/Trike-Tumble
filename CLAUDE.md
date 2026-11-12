@@ -34,11 +34,12 @@ drift trikes. Funny physics, collisions, falling off, items. See
   complete without testing it.
 - **Export templates:** official Godot 4.7.2 stable **standard** templates
   are approved. Never the .NET templates.
-- **External assets:** only SIL OFL fonts, CC0 sound effects and original
-  procedural assets. No paid assets, plugins or services; no copyrighted
-  commercial music. Download only when the milestone needs them, verify the
-  license at the source, and record every external asset in
-  `docs/ASSET_CREDITS.md` before use.
+- **External assets:** only SIL OFL fonts, CC0 sound effects and music, CC0
+  textures/models (allowed since Visual Overhaul V2, 2026-11-12) and
+  original procedural assets. No paid assets, plugins or services; no
+  copyrighted commercial music. Download only when the milestone needs
+  them, verify the license at the source, and record every external asset
+  in `docs/ASSET_CREDITS.md` before use.
 - **Collision design:** a strong rear-end hit **can** eject a stationary
   rider. Small bumps never eject. High-speed impacts can. Judge impacts by
   relative impact speed and collision impulse. Weak impacts give only a small
@@ -61,7 +62,8 @@ $GODOT --path . res://scenes/main/race_five.tscn           # you + 4 AI (or: -- 
 $GODOT --path . res://scenes/main/forest_rush.tscn          # Forest Rush, you + 4 AI
 $GODOT --path . res://scenes/main/rocky_canyon.tscn         # Rocky Canyon, you + 4 AI
 $GODOT --path . res://scenes/main/snow_slide.tscn           # Snow Slide, you + 4 AI
-$GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn -- --only=map   # one test group (core|racers|flow|ui|net|items|polish|map)
+$GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn -- --only=map   # one test group (core|racers|flow|ui|net|items|polish|overhaul|map)
+$GODOT --path . --fixed-fps 60 --always-on-top --resolution 1280x720 --scene res://tests/tools/quick_shot.tscn -- <out_dir> forest chase:name:300:3   # look-dev screenshots (see the script header)
 $GODOT --headless --path . --fixed-fps 60 --scene res://tests/map_test_runner.tscn             # timed Forest Rush races (~80 s)
 ```
 
@@ -70,13 +72,17 @@ Details, the visual capture tool and the manual checklist: `docs/TESTING.md`.
 ## Project layout
 
 ```
+assets/   textures/ (CC0 PBR sets) materials/ (terrain + road shaders) audio/ (CC0 recordings, music) fonts/ (OFL)
 scenes/   menu/ main/ vehicles/ characters/ camera/ ui/ tracks/ (test_track, forest_rush) props/
-scripts/  core/ menu/ net/ maps/ main/ vehicles/ characters/ camera/ ui/ track/ race/ props/ visuals/ rider/ ai/ items/
+scripts/  core/ menu/ net/ maps/ main/ vehicles/ characters/ camera/ ui/ track/ race/ props/ visuals/ rider/ ai/ items/ audio/
+tools/    asset_pipeline/ (texture + audio build scripts; .gdignore, not part of the game)
 resources/vehicles/default_trike_config.tres   # all handling values
 resources/rider/default_rider_config.tres      # ejection / fall / on-foot / mount values
 resources/ai/ai_easy|medium|hard.tres           # AI difficulty presets (AIDriverConfig)
 resources/items/default_item_config.tres        # every item value (ItemConfig)
 resources/ui/trike_theme.tres                  # shared UI theme (fonts, buttons, panels)
+resources/ui/font_display.tres, font_body.tres # Lilita One / Nunito (bundled OFL fonts)
+resources/maps/themes/*.tres                    # per-map palette, sky, light, exposure (forest too since V2)
 tests/    test_runner (automated) + racer/race_flow/ui/net_unit/item/map tests, map_test_runner (timed races), net/ (multi-process), visual_capture (screenshots/perf), track_autopilot
 docs/     design, roadmap, architecture, testing, screenshots/
 ```
@@ -120,8 +126,8 @@ docs/     design, roadmap, architecture, testing, screenshots/
     - the Props `layout`
     - `theme` (`TrackTheme`: paint, scenery style, sky), `road_surface`,
       `bridge_surface`
-  - Theme defaults are the forest look: never change a `TrackTheme` default
-    (it would repaint Forest Rush); give the new map a theme value instead.
+  - Never change a `TrackTheme` default (a track without a theme falls back
+    to them); give the map's theme a value instead.
   - Check a new route's layout (clearances, radius, grade) before building:
     `--only=map` checks it, and the decorator RNG order must stay as is or
     Forest Rush's scenery reshuffles.
@@ -256,11 +262,47 @@ docs/     design, roadmap, architecture, testing, screenshots/
     items with `grant_item()`.
   - Item state resets on `RaceController.race_reset`.
   - New item RPCs or event fields: bump `Net.PROTOCOL_VERSION`.
-- **Audio** is synthesized in code (`SoundBank` names → `SoundSynth`); never
-  add audio files without the owner's OK and an ASSET_CREDITS entry. Play
-  one-shots through `SoundPlayer` (timer-freed; headless never emits
-  `finished`). Trike/rider audio and `TrikeEffects` read synced state only,
-  so proxies get them for free; keep it that way.
+- **Audio** (read `docs/AUDIO_DESIGN.md` first): vehicle, surface, rider and
+  item sounds are CC0 recordings in `assets/audio` (`SoundBank.FILES`, random
+  take per play); race jingles and UI clicks are still synthesized
+  (`SoundSynth`). Never add an audio file without an ASSET_CREDITS entry.
+  Play one-shots through `SoundPlayer` (timer-freed; headless never emits
+  `finished`). `TrikeAudio` crossfades four engine recordings by simulated
+  revs; `visuals.audio.engine` is the mid layer (tests read its pitch).
+  Trike/rider audio and `TrikeEffects` read synced state only, so proxies
+  get them for free; keep it that way. Music goes through the
+  `MusicPlayer` autoload (`play(&"menu"|&"race")`, `duck()`).
+- **Visual Overhaul V2** (read `docs/ART_DIRECTION_BIBLE.md` and
+  `docs/VISUAL_OVERHAUL_PROGRESS.md` first):
+  - Textured materials come from `MaterialLibrary` (cached, shared). Road
+    and slopes use `assets/materials/road.gdshader` / `terrain.gdshader`:
+    world-space CC0 texture sets tinted by vertex colour. On the road mesh
+    the vertex colour **alpha** picks the surface look (1 ground, 0.9 curb,
+    0.75 mud, 0.5 planks, 0.25 ice; `TrackMeshBuilder.*_ALPHA`). Render
+    only: never use it for gameplay.
+  - Texture albedos are stored near-neutral at ~0.8 brightness; the palette
+    comes from the theme. New texture: process it with
+    `tools/asset_pipeline/proc_tex.py` and give its `.import` mipmaps +
+    VRAM compression (normal maps: `compress/normal_map=1`).
+  - Scenery models are sculpted in code (`Sculpt`, `SceneryKit`). The
+    decorator picks a tree variant from the sample index, never from
+    `_rng`, and `_build_extras` has its own RNG, so the tree layout (and
+    its colliders) is unchanged. Keep both rules.
+  - New scenery colliders can trap AI: a cactus collider did (found only by
+    `map_test_runner`), so cacti are soft. After adding any collider near
+    the road, run the timed races, not just the main suite.
+  - `TrikeDetail.build()` and `RiderDetail.build()` only **add** child
+    meshes under existing nodes. Never rename or move the scene's own
+    nodes; new body-coloured parts go in `body_paint`, new accent parts in
+    `TrikeVisuals.ACCENT_PARTS`; rider parts named `Kit_*` are switched per
+    look (`RiderLook` flags).
+  - Renderer stays **Mobile** (A/B against Forward+ recorded in
+    VISUAL_OVERHAUL_PROGRESS). Don't add SSAO/SSR/volumetric settings to
+    the environment: Mobile warns about them on every load.
+  - Snow paint must stay at or below ~0.86 and Snow Slide's exposure
+    below 1 (a test checks it), or the map blows out again.
+  - Every map now has a theme with `apply_environment = true`
+    (`forest_rush_theme.tres` is also used by the test track).
 - **Rider looks:** `RiderStyle.apply(model, look)` (per-rider material
   copies, `Look_*` nodes). Never edit the rig or IK targets for a look.
   `Rider.celebrate()` frees the arms from the grips temporarily; IK tests

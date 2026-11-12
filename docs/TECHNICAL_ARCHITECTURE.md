@@ -918,6 +918,47 @@ from the same mesh as the visual), signs, hay bales, cabin and logs (boxes).
 Foliage, bushes, flowers, bunting and backdrop have none. The terrain starts
 below the out-of-bounds depth, so a falling trike respawns before reaching it.
 
+## Visual Overhaul V2 architecture (2026-11-12)
+
+Art direction: `ART_DIRECTION_BIBLE.md`. Results: `VISUAL_OVERHAUL_PROGRESS.md`.
+
+**Rule kept throughout: visuals never drive physics, and existing node
+paths never change.** New look comes from new materials on the same
+meshes, new render-only meshes, and child nodes added at runtime.
+
+| Layer | Files | What it does |
+|---|---|---|
+| Textures | `assets/textures/<group>/<set>_{albedo,normal,rough}.jpg` | CC0 PBR sets, albedo near-neutral (palette comes from vertex colour). Imported with mipmaps + VRAM compression |
+| Shaders | `assets/materials/terrain.gdshader`, `road.gdshader` | World-space ground. Terrain blends a flat and a steep texture set by slope; road picks dirt / curb / mud / planks / ice from vertex colour alpha |
+| Material cache | `scripts/visuals/material_library.gd` | `terrain()`, `road()`, `textured()`, `foliage()`, `snow()`, `water()`: built once, shared; `release()` at quit |
+| Per-map wiring | `scripts/track/track_materials.gd` | `road(style)`, `barrier(style)`, `grass(style)` choose texture sets and shader values per `TrackTheme.SceneryStyle` |
+| Sculpting | `scripts/visuals/sculpt.gd` | Mesh builder: `lathe`, `blob`, `limb`, `box`, `disc`; `commit(smooth)`; seeded |
+| Models | `scripts/visuals/scenery_kit.gd` | Trees, rocks, hoodoos, mountains, mesas, arches, ledges, clouds, ground cover |
+| Trike detail | `scripts/vehicles/trike_detail.gd` | `build(visuals)` from `TrikeVisuals._ready`: merged detail meshes per material, cached across trikes |
+| Rider detail | `scripts/characters/rider_detail.gd` | `build(rider)` from `Rider._ready`; `Kit_*` parts and iris colour set per look by `RiderStyle` |
+| Light per map | `scripts/track/track_theme.gd` | Themes now also carry `ambient_energy`, `fill_color`, `fill_energy`, `exposure`; applied by `apply_to_world(world, sun, fill)` |
+| Quality | `scripts/core/game_settings.gd` | Low: no MSAA, 0.75 scale, no sun shadows, 55 % scenery range. Medium: MSAA 2×, 2 cascades to 120 m, 85 %. High: MSAA 4×, 4 cascades to 170 m |
+| Audio | see `AUDIO_DESIGN.md` | `SoundBank.FILES`, layered `TrikeAudio`, `MusicPlayer` autoload |
+
+Road vertex colour alpha (render pass of `TrackMeshBuilder` only):
+`1.0` ground, `CURB_ALPHA 0.9`, `MUD_ALPHA 0.75`, `WOOD_ALPHA 0.5`,
+`ICE_ALPHA 0.25`. Quads never share vertices, so the value is constant per
+quad. Collision faces are built by `_build_collision`, which was not
+changed.
+
+Decorator determinism: tree placement still consumes `_rng` in the original
+order; the tree **variant** is derived from the sample index, and all new
+ground cover uses a separate generator (`random_seed + 101`). Tree and
+boulder colliders are therefore where they were. New colliders: forest stumps
+(cylinders, at least 7 m outside the barrier) and the two legs of each
+canyon arch. Cacti have **no** collider: with one, a Medium AI got trapped
+in the Rocky Canyon timed race (found by `map_test_runner`), so they are
+soft like bushes.
+
+Draw-call cost: each tree kind is three MultiMesh batches (foliage, trunk,
+snow on Snow Slide) per 300 m; ground cover batches per 60 m and fades out
+at 120 m.
+
 ## File map
 
 | Path | Purpose |

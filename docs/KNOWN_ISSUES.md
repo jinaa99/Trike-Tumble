@@ -15,6 +15,35 @@ nobody has tried it, not that it is broken.
 | **Human playtests** | No human has timed or judged the three maps, the items balance, the sounds or the controls on a real keyboard/gamepad. |
 | **Weaker GPUs** | Only measured on an Apple M4 (120 fps). Snow Slide draws ~1 M primitives. |
 
+## Visual Overhaul V2 (2026-11-12): what is unverified or unfinished
+
+- **Audio has not been listened to.** The recorded engine, surface, rider
+  and item sounds and both music tracks were chosen and mixed by
+  measurement and tests only. Levels, takes and engine crossover points
+  need a human pass (checklist in `docs/AUDIO_DESIGN.md`).
+- **Characters and trike are detail passes, not new models.** Blender is
+  not installed on the build machine; no models were imported. The rider
+  is still a procedural primitive rig.
+- **UI redesign is partial:** new fonts, colours and a smaller HUD; menu
+  layouts, map cards, portraits and icons are as before.
+- **Renderer:** Mobile kept after an A/B (no SSAO, no contact-hardening
+  shadows). See `docs/VISUAL_OVERHAUL_PROGRESS.md`.
+- **Heavier scenes:** the new scenery roughly triples the triangle count
+  (see the performance table in VISUAL_OVERHAUL_PROGRESS). Fine on the M4;
+  unmeasured on integrated GPUs and Windows. Low quality shortens scenery
+  range and turns sun shadows off.
+- **Shutdown message:** quitting while a recorded sound plays can print
+  "resources still in use at exit" (seen in headless test runs and when
+  the capture tools quit). Harmless.
+- **Cacti have no collision** (Rocky Canyon): with colliders one trapped an
+  AI trike in the timed races, so they are soft like bushes. A trike can
+  pass through one.
+- The network suite passed (50/50) before the last two small scenery
+  changes and was not re-run after them; the five-player end-to-end race
+  and strict mode were not run in this milestone.
+- Waterfalls are static; small ground cover fades out at 120 m; bridges
+  have wood textures but no new rope/metal fittings; no tyre-track decals.
+
 ## Known problems
 
 - **One isolated 0.4–0.6 s frame hitch per session (unresolved).** In the
@@ -36,8 +65,9 @@ nobody has tried it, not that it is broken.
 - **Items vs AI:** AI racers don't steer around banana peels or mud
   puddles. Item hits are rare in AI races because the field spreads out.
 - **Rider model** is procedural (no skinned character); no item-throw or
-  hit-flinch animation.
-- **No music** yet (sound effects only; all synthesized in code).
+  hit-flinch animation (unchanged by Visual Overhaul V2).
+- Music: two CC0 loops since Visual Overhaul V2 (menu, race); no per-map
+  tracks.
 - **macOS Gatekeeper:** the app is not notarized (no paid Apple developer
   account), so friends must allow it once (README.txt explains how).
 - **Windows SmartScreen:** the exe is not code-signed ("More info → Run

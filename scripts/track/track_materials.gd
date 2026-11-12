@@ -31,25 +31,42 @@ static func detail_texture(min_value := 0.8, frequency := 0.06) -> NoiseTexture2
 	return texture
 
 
-static func road() -> StandardMaterial3D:
-	var material := _vertex_colored(0.95)
-	material.albedo_texture = detail_texture(0.72, 0.09)
-	material.uv1_scale = Vector3.ONE * 0.22
-	return material
+## The driving surface (road.gdshader): dirt, planks, mud, ice and curbs by
+## vertex colour and alpha. `style` is the map's TrackTheme.SceneryStyle.
+static func road(style := TrackTheme.SceneryStyle.FOREST) -> Material:
+	match style:
+		TrackTheme.SceneryStyle.CANYON:
+			return MaterialLibrary.road("canyon", "terrain/dirt", {&"damp_amount": 0.1, &"puddle_amount": 0.0,
+					&"gravel_amount": 0.75, &"ground_scale": 0.12, &"damp_darkness": 0.2})
+		TrackTheme.SceneryStyle.SNOW:
+			return MaterialLibrary.road("snow", "snow/snow_packed", {&"damp_amount": 0.22, &"puddle_amount": 0.0,
+					&"gravel_amount": 0.0, &"ground_scale": 0.2, &"damp_darkness": 0.1, &"ground_roughness": 1.0,
+					&"sparkle": 1.0, &"normal_strength": 1.3})
+	return MaterialLibrary.road("forest", "terrain/dirt", {})
 
 
-static func barrier() -> StandardMaterial3D:
-	var material := _vertex_colored(0.7)
-	material.albedo_texture = detail_texture(0.88, 0.2)
-	material.uv1_scale = Vector3.ONE * 0.5
-	return material
+## Plank barriers and parapets: wood grain running along the boards.
+static func barrier(_style := TrackTheme.SceneryStyle.FOREST) -> Material:
+	return MaterialLibrary.terrain("barrier", "wood/planks", "wood/planks", {&"steep_swap": true, &"flat_scale": 0.45,
+			&"steep_scale": 0.42, &"macro_strength": 0.1, &"normal_strength": 0.9, &"texture_strength": 0.85})
 
 
-static func grass() -> StandardMaterial3D:
-	var material := _vertex_colored(1.0)
-	material.albedo_texture = detail_texture(0.78, 0.05)
-	material.uv1_scale = Vector3.ONE * 0.12
-	return material
+## Slopes, cliffs and the backdrop terrain: grass / dust / snow on the flat,
+## rock on steep faces.
+static func grass(style := TrackTheme.SceneryStyle.FOREST) -> Material:
+	match style:
+		TrackTheme.SceneryStyle.CANYON:
+			return MaterialLibrary.terrain("canyon", "terrain/dirt", "stone/sandstone", {&"flat_scale": 0.1,
+					&"steep_scale": 0.045, &"steep_stretch": 2.2, &"steep_low": 0.5, &"steep_high": 0.82,
+					&"normal_strength": 1.4, &"macro_strength": 0.2})
+		TrackTheme.SceneryStyle.SNOW:
+			return MaterialLibrary.terrain("snow", "snow/snow_packed", "stone/rock_face", {&"flat_scale": 0.11,
+					&"steep_scale": 0.05, &"steep_low": 0.42, &"steep_high": 0.7, &"steep_color": Color(0.27, 0.31, 0.38),
+					&"steep_color_mix": 0.85, &"normal_strength": 1.3, &"sparkle": 0.9, &"macro_strength": 0.14,
+					&"flat_roughness": 0.95})
+	return MaterialLibrary.terrain("forest", "terrain/grass", "stone/rock_face", {&"flat_scale": 0.13,
+			&"steep_scale": 0.05, &"steep_low": 0.5, &"steep_high": 0.74, &"steep_color": Color(0.42, 0.43, 0.42),
+			&"steep_color_mix": 0.8, &"normal_strength": 1.2, &"macro_strength": 0.26})
 
 
 static func _vertex_colored(roughness: float) -> StandardMaterial3D:

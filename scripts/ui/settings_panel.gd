@@ -109,7 +109,7 @@ func _build_audio(page: Control) -> void:
 		holder.add_child(value)
 		_row(page, entry[1], holder)
 		volume_sliders[bus] = {"slider": slider, "value": value}
-	page.add_child(UiKit.label("All sounds are made by the game itself. Music: none yet.",
+	page.add_child(UiKit.label("Engine, surface, rider and item sounds are CC0 recordings. Music: two CC0 loops (credits in the README).",
 			UiKit.SIZE_SMALL, UiKit.TEXT_DIM))
 
 

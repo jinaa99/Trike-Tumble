@@ -24,9 +24,10 @@ func _on_state_changed(_old: RiderController.State, new_state: RiderController.S
 	var at := rider.get_rider_position()
 	match new_state:
 		RiderController.State.EJECTED:
-			SoundPlayer.play_at(rider, &"eject", at, 0.0, randf_range(0.92, 1.12))
+			SoundPlayer.play_at(rider, &"eject", at, -2.0, randf_range(1.1, 1.35))
 		RiderController.State.RAGDOLL:
 			SoundPlayer.play_at(rider, &"fall_thud", at, -2.0)
+			SoundPlayer.play_at(rider, &"oof", at, -6.0, randf_range(1.05, 1.3))
 		RiderController.State.GETTING_UP:
 			SoundPlayer.play_at(rider, &"get_up", at, -4.0)
 		RiderController.State.MOUNTING:

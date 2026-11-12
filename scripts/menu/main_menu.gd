@@ -20,6 +20,8 @@ var history: Array[StringName] = []
 
 func _ready() -> void:
 	GameSettings.apply_graphics(self)
+	MusicPlayer.duck(false)
+	MusicPlayer.play(&"menu")
 	_add_screen(&"title", TitleScreen.new())
 	_add_screen(&"maps", MapSelectScreen.new())
 	_add_screen(&"host", HostScreen.new())

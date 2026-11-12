@@ -356,9 +356,9 @@ func _add_chunks() -> void:
 		TrackSurface.tag(bodies["road"], road_surface)
 	bodies["wall"] = bodies["road"]
 	bodies["cliff"] = bodies["road"]
-	var road_material := TrackMaterials.road()
-	var wall_material := TrackMaterials.barrier()
-	var grass_material := TrackMaterials.grass()
+	var road_material := TrackMaterials.road(theme.scenery_style)
+	var wall_material := TrackMaterials.barrier(theme.scenery_style)
+	var grass_material := TrackMaterials.grass(theme.scenery_style)
 	for c in builder.chunks.size():
 		var chunk: Dictionary = builder.chunks[c]
 		var suffix := "" if builder.chunks.size() == 1 else "_%02d" % c

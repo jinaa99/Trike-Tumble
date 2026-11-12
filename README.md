@@ -64,7 +64,7 @@ See [Testing](docs/TESTING.md).
 [Known issues](docs/KNOWN_ISSUES.md) · [Game design](docs/GAME_DESIGN.md) ·
 [Roadmap](docs/ROADMAP.md) · [Architecture](docs/TECHNICAL_ARCHITECTURE.md) ·
 [Networking](docs/NETWORKING.md) · [Testing](docs/TESTING.md) ·
-[Asset credits](docs/ASSET_CREDITS.md)
+[Asset credits](docs/ASSET_CREDITS.md) · [Art direction](docs/ART_DIRECTION_BIBLE.md) · [Audio design](docs/AUDIO_DESIGN.md) · [Visual overhaul results](docs/VISUAL_OVERHAUL_PROGRESS.md)
 
 Screenshots: `docs/screenshots/` (milestone folders; the latest are
-`milestone_10/`).
+`visual_overhaul_v2/` with `before/`, `after/` and a comparison sheet).
