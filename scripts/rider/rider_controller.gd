@@ -57,6 +57,8 @@ var _ignoring_trike := false
 ## Network proxy: the owner simulates this rider; state and body transforms
 ## arrive through apply_network_state(). No local input, physics or ejection.
 var network_proxy := false
+## Rider sounds (see RiderAudio).
+var audio: RiderAudio
 
 @onready var ragdoll: RiderRagdoll = $Ragdoll
 @onready var on_foot: RiderOnFoot = $OnFoot
@@ -69,6 +71,10 @@ func _ready() -> void:
 	_rng.seed = config.fling_seed
 	_stars.visible = false
 	on_foot.add_collision_exception_with(ragdoll)
+	audio = RiderAudio.new()
+	audio.name = "Audio"
+	add_child(audio)
+	audio.setup(self)
 	# A trike set before we were ready (scene export or an early attach_to)
 	# is bound now, once the child bodies exist.
 	if trike:

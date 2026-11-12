@@ -53,14 +53,28 @@ var post_spacing_samples := 5
 var grass_colors: Array[Color] = [Color(0.5, 0.8, 0.33), Color(0.38, 0.7, 0.32), Color(0.29, 0.58, 0.33)]
 var rock_slope_color := Color(0.5, 0.52, 0.5)
 
-## Per sample: SampleKind, and the mud band across the road (u from, u to;
-## equal = no mud). Set by Track before build(); empty = all NORMAL, no mud.
+## Rising rock wall used instead of `slope_profile` where a "cliff" zone
+## puts the road on a cliff ledge: same outward stations, negative drop =
+## above the road. A sheer face, a ridge, then back down to the terrain.
+var cliff_profile := PackedVector2Array([Vector2(0.0, 0.0), Vector2(6.0, -20.0), Vector2(14.0, -16.0), Vector2(24.0, 22.0)])
+var ice_color := Color(0.62, 0.86, 0.98)
+var ice_shine_color := Color(0.88, 0.97, 1.0)
+## Horizontal rock layers on cliff walls (empty = plain cliff colors).
+var cliff_band_colors: Array[Color] = []
+
+## Per sample: SampleKind, and the surface band across the road (u from, u
+## to; equal = none) with its kind (TrackSurface.Kind: MUD or ICE). Set by
+## Track before build(); empty = all NORMAL, no bands.
 var sample_kinds := PackedByteArray()
 var mud_bands := PackedVector2Array()
+var band_kinds := PackedByteArray()
+## Per side (0 left, 1 right) and sample: 0 = normal slope, 1 = cliff wall
+## (`cliff_profile`); blended in between. Empty = no cliffs.
+var cliff_weights: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array()]
 
 ## One entry per chunk: {"first", "last" (sample indices), "road", "walls",
 ## "slopes" (ArrayMesh or null), "faces": {category: PackedVector3Array}}.
-## Face categories: road, mud, wood, wall, slope, cliff.
+## Face categories: road, mud, ice, wood, wall, slope, cliff.
 var chunks: Array[Dictionary] = []
 
 var _noise := FastNoiseLite.new()
@@ -86,6 +100,13 @@ func build(path: TrackPath) -> void:
 	if mud_bands.size() != path.size():
 		mud_bands.resize(path.size())
 		mud_bands.fill(Vector2.ZERO)
+	if band_kinds.size() != path.size():
+		band_kinds.resize(path.size())
+		band_kinds.fill(TrackSurface.Kind.MUD)
+	for slot in 2:
+		if cliff_weights[slot].size() != path.size():
+			cliff_weights[slot].resize(path.size())
+			cliff_weights[slot].fill(0.0)
 	_fill_caches(path)
 	chunks.clear()
 	var last_quad := path.size() - 2
@@ -113,20 +134,33 @@ func wall_foot(path: TrackPath, index: int, side: int) -> Vector3:
 	return path.points[index] + outward * (half_width(path, index) + wall_thickness) - Vector3.UP * 0.4
 
 
-## World position of a point on the slope `outward` meters past the wall.
+## World position of a point on the slope `outward` meters past the wall
+## (on a cliff side: on the rock wall).
 func slope_point(path: TrackPath, index: int, side: int, outward: float) -> Vector3:
-	var drop := 0.0
-	for k in range(1, slope_profile.size()):
-		var a := slope_profile[k - 1]
-		var b := slope_profile[k]
-		if outward <= b.x or k == slope_profile.size() - 1:
-			drop = lerpf(a.y, b.y, clampf((outward - a.x) / (b.x - a.x), 0.0, 1.0))
-			break
+	var drop := _profile_drop(slope_profile, outward)
+	var cliff := cliff_weight(index, side)
+	if cliff > 0.0:
+		drop = lerpf(drop, _profile_drop(cliff_profile, outward), cliff)
 	return wall_foot(path, index, side) + path.rights[index] * float(side) * outward - Vector3.UP * drop
 
 
+## 0 = normal slope, 1 = full cliff wall on that side at sample `index`.
+func cliff_weight(index: int, side: int) -> float:
+	var weights := cliff_weights[_side_slot(side)]
+	return weights[index] if index < weights.size() else 0.0
+
+
+static func _profile_drop(profile: PackedVector2Array, outward: float) -> float:
+	for k in range(1, profile.size()):
+		var a := profile[k - 1]
+		var b := profile[k]
+		if outward <= b.x or k == profile.size() - 1:
+			return lerpf(a.y, b.y, clampf((outward - a.x) / (b.x - a.x), 0.0, 1.0))
+	return 0.0
+
+
 func _build_chunk(path: TrackPath, first: int, last: int) -> Dictionary:
-	var faces := {"road": PackedVector3Array(), "mud": PackedVector3Array(), "wood": PackedVector3Array(),
+	var faces := {"road": PackedVector3Array(), "mud": PackedVector3Array(), "ice": PackedVector3Array(), "wood": PackedVector3Array(),
 			"wall": PackedVector3Array(), "slope": PackedVector3Array(), "cliff": PackedVector3Array()}
 	_build_collision(path, first, last, faces)
 	var road := MeshBatch.new()
@@ -149,6 +183,7 @@ func _build_collision(path: TrackPath, first: int, last: int, faces: Dictionary)
 			continue
 		var cuts := _road_cuts(i, road_subdivisions)
 		var mud := mud_bands[i]
+		var band_faces := "ice" if band_kinds[i] == TrackSurface.Kind.ICE else "mud"
 		for j in cuts.size() - 1:
 			var u0 := cuts[j]
 			var u1 := cuts[j + 1]
@@ -156,7 +191,7 @@ func _build_collision(path: TrackPath, first: int, last: int, faces: Dictionary)
 			if kind == SampleKind.BRIDGE:
 				target = faces["wood"]
 			elif mud.y > mud.x and u0 >= mud.x - 0.001 and u1 <= mud.y + 0.001:
-				target = faces["mud"]
+				target = faces[band_faces]
 			_collision_quad(target, _road_point(path, i, u0), _road_point(path, i, u1),
 					_road_point(path, i + 1, u1), _road_point(path, i + 1, u0))
 	for side: int in [-1, 1]:
@@ -247,6 +282,8 @@ func _build_road(path: TrackPath, first: int, last: int, out: MeshBatch) -> void
 			var colors: Array[Color]
 			if is_curb and not in_mud:
 				colors = [curb, curb, curb, curb]
+			elif in_mud and band_kinds[i] == TrackSurface.Kind.ICE:
+				colors = [_ice_color(a), _ice_color(b), _ice_color(c), _ice_color(d)]
 			elif in_mud:
 				colors = [_mud_color(a), _mud_color(b), _mud_color(c), _mud_color(d)]
 			else:
@@ -311,6 +348,12 @@ func _mud_color(p: Vector3) -> Color:
 	return mud_color.lerp(mud_wet_color, n)
 
 
+## Glassy ice: smooth base with polished diagonal streaks.
+func _ice_color(p: Vector3) -> Color:
+	var streak := clampf(sin((p.x + p.z) * 0.9 + _noise.get_noise_3dv(p * 0.4) * 3.0) * 1.6 - 0.6, 0.0, 1.0)
+	return ice_color.lerp(ice_shine_color, streak)
+
+
 # --- Render: barriers -------------------------------------------------------
 
 func _build_walls(path: TrackPath, first: int, last: int, out: MeshBatch) -> void:
@@ -366,6 +409,18 @@ func _build_slopes(path: TrackPath, first: int, last: int, out: MeshBatch) -> vo
 			for k in count - 1:
 				out.quad(points[row0 + k], points[row0 + k + 1], points[row1 + k + 1], points[row1 + k], Vector3.UP,
 						[colors[row0 + k], colors[row0 + k + 1], colors[row1 + k + 1], colors[row1 + k]], true)
+
+
+## Grass, or rock (with layer bands) on a cliff wall.
+func _slope_color(p: Vector3, depth: float, cliff: float) -> Color:
+	var color := _grass_color(p, depth)
+	if cliff <= 0.0:
+		return color
+	var rock := cliff_colors[0].lerp(cliff_colors[1 % cliff_colors.size()], clampf(0.5 + _noise.get_noise_3dv(p * 0.5), 0.0, 1.0))
+	if not cliff_band_colors.is_empty():
+		var layer := posmod(floori(p.y / 2.6), cliff_band_colors.size())
+		rock = rock.lerp(cliff_band_colors[layer], 0.55)
+	return color.lerp(rock, clampf(cliff * 1.5, 0.0, 1.0))
 
 
 func _grass_color(p: Vector3, depth: float) -> Color:
@@ -440,7 +495,7 @@ func _fill_caches(path: TrackPath) -> void:
 			for k in _stations.size():
 				var p := slope_point(path, i, side, _stations[k])
 				points[i * _stations.size() + k] = p
-				colors[i * _stations.size() + k] = _grass_color(p, _stations[k] / far)
+				colors[i * _stations.size() + k] = _slope_color(p, _stations[k] / far, cliff_weight(i, side))
 		_slope_points[_side_slot(side)] = points
 		_slope_colors[_side_slot(side)] = colors
 		_wall_rings[_side_slot(side)] = rings

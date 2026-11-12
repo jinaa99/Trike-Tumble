@@ -6,6 +6,8 @@ extends Node3D
 ## - overlooks: a wooden viewing deck beyond the barrier with a fence,
 ##   benches, a coin telescope and a flag
 ## - "rocks" zones: rock pillars right behind both barriers (narrow passage)
+## - "wind" zones: windsocks pointing downwind beside the road and blowing
+##   snow streaks across it, so the crosswind can be seen coming
 ## - the finish area: spectator stands on both sides
 ## Everything sits outside the road corridor. Solid parts get box colliders.
 ## Build after the Backdrop node: legs and streams follow its terrain.
@@ -18,22 +20,31 @@ extends Node3D
 ## Stands at the finish: distance before the finish line (m) and length.
 @export var stands_offset := 40.0
 @export var stands_length := 30.0
+## Windsock spacing along a wind zone (m) and blowing-snow emitters per 100 m.
+@export var windsock_spacing := 110.0
+@export var wind_streak_spacing := 45.0
 @export_flags_3d_physics var collision_layer := 1
 
-const TIMBER := Color(0.5, 0.33, 0.2)
-const TIMBER_LIGHT := Color(0.66, 0.46, 0.29)
-const ROCK := Color(0.56, 0.55, 0.58)
-const WATER := Color(0.24, 0.58, 0.86)
 const CROWD: Array[Color] = [Color(0.95, 0.3, 0.3), Color(0.25, 0.6, 0.95), Color(1.0, 0.8, 0.2),
 		Color(0.4, 0.8, 0.4), Color(0.95, 0.55, 0.85), Color(1, 1, 1)]
 
 var _rng := RandomNumberGenerator.new()
+# Theme colors (TrackTheme), set in build_for_track.
+var _timber := Color(0.5, 0.33, 0.2)
+var _timber_light := Color(0.66, 0.46, 0.29)
+var _rock := Color(0.56, 0.55, 0.58)
+var _water := Color(0.24, 0.58, 0.86)
 var _body: StaticBody3D
 var _material := MeshKit.vertex_color_material(0.8)
 var _backdrop: Node
 
 
 func build_for_track(track: Track) -> void:
+	var theme := track.theme if track.theme else TrackTheme.new()
+	_timber = theme.timber_color
+	_timber_light = theme.timber_light_color
+	_rock = theme.structure_rock_color
+	_water = theme.water_color
 	_rng.seed = random_seed
 	_backdrop = track.get_node_or_null(^"Backdrop")
 	_body = StaticBody3D.new()
@@ -49,6 +60,8 @@ func build_for_track(track: Track) -> void:
 		_build_overlook(track, zone)
 	for zone: Array in track.get_zones("rocks"):
 		_build_rock_gate(track, zone)
+	for zone: Array in track.get_zones("wind"):
+		_build_wind(track, zone)
 	if stands_length > 0.0:
 		_build_stands(track)
 
@@ -79,7 +92,7 @@ func _build_bridge(track: Track, zone: Array) -> void:
 			for side: float in [-1.0, 1.0]:
 				var foot := deck_bottom + frame.basis.x * side * (half - 0.3)
 				var center := Vector3(foot.x, (deck_bottom.y + ground) * 0.5, foot.z)
-				parts.append([MeshKit.box(Vector3(0.55, leg_height, 0.55)), Transform3D(_yaw(frame), center), TIMBER])
+				parts.append([MeshKit.box(Vector3(0.55, leg_height, 0.55)), Transform3D(_yaw(frame), center), _timber])
 				_add_box(center, _yaw(frame), Vector3(0.55, leg_height, 0.55))
 			# Cross braces between the two legs, every 6 m down.
 			var y := deck_bottom.y - 1.0
@@ -88,8 +101,8 @@ func _build_bridge(track: Track, zone: Array) -> void:
 				var mid := Vector3(frame.origin.x, y, frame.origin.z)
 				for tilt: float in [1.0, -1.0]:
 					var brace := _yaw(frame) * Basis(Vector3(0, 0, 1), tilt * atan2(4.0, span))
-					parts.append([MeshKit.box(Vector3(sqrt(span * span + 16.0), 0.22, 0.2)), Transform3D(brace, mid - Vector3.UP * 2.0), TIMBER_LIGHT])
-				parts.append([MeshKit.box(Vector3(span, 0.3, 0.3)), Transform3D(_yaw(frame), mid), TIMBER_LIGHT])
+					parts.append([MeshKit.box(Vector3(sqrt(span * span + 16.0), 0.22, 0.2)), Transform3D(brace, mid - Vector3.UP * 2.0), _timber_light])
+				parts.append([MeshKit.box(Vector3(span, 0.3, 0.3)), Transform3D(_yaw(frame), mid), _timber_light])
 				y -= 6.0
 		distance += trestle_spacing
 	if not parts.is_empty():
@@ -118,7 +131,7 @@ func _build_stream(track: Track, index: int) -> void:
 		var l := Vector3(center.x, y, center.z) - along * stream_width * 0.5
 		var r := Vector3(center.x, y, center.z) + along * stream_width * 0.5
 		if k > 0:
-			batch.flat_quad(prev_l, prev_r, r, l, Vector3.UP, WATER.lightened(0.08 * (k % 2)))
+			batch.flat_quad(prev_l, prev_r, r, l, Vector3.UP, _water.lightened(0.08 * (k % 2)))
 			if k % 3 == 0:
 				for side: float in [-1.0, 1.0]:
 					var spot := Vector3(center.x, y, center.z) + along * side * (stream_width * 0.5 + _rng.randf_range(0.3, 1.5))
@@ -148,7 +161,7 @@ func _rock_parts_into(batch: MeshBatch, spot: Vector3, size: float) -> void:
 	for k in 5:
 		var a := corners[k]
 		var b := corners[(k + 1) % 5]
-		var shade := ROCK.darkened(_rng.randf_range(0.0, 0.25))
+		var shade := _rock.darkened(_rng.randf_range(0.0, 0.25))
 		batch.quad(a, b, top, top, (a + b) * 0.5 - spot + Vector3.UP * 0.3, [shade, shade, shade, shade], true)
 
 
@@ -184,7 +197,7 @@ func _warning_board(xf: Transform3D) -> Array:
 	var yellow := Color(1.0, 0.82, 0.15)
 	var dark := Color(0.12, 0.1, 0.12)
 	return [
-		[MeshKit.box(Vector3(0.14, 2.6, 0.14)), xf * MeshKit.at(Vector3(0, 1.3, -0.1)), TIMBER],
+		[MeshKit.box(Vector3(0.14, 2.6, 0.14)), xf * MeshKit.at(Vector3(0, 1.3, -0.1)), _timber],
 		[MeshKit.box(Vector3(1.8, 1.4, 0.08)), xf * MeshKit.at(Vector3(0, 2.2, 0)), dark],
 		[MeshKit.box(Vector3(1.65, 1.25, 0.1)), xf * MeshKit.at(Vector3(0, 2.2, 0.01)), yellow],
 		[MeshKit.box(Vector3(0.22, 0.7, 0.12)), xf * MeshKit.at(Vector3(0, 2.05, 0.03)), dark],
@@ -206,7 +219,7 @@ func _build_overlook(track: Track, zone: Array) -> void:
 	base.y = frame.origin.y - 0.2
 	var deck := Vector3(9.0, 0.3, 6.0)
 	var parts: Array = [
-		[MeshKit.box(deck), Transform3D(yaw, base), TIMBER_LIGHT],
+		[MeshKit.box(deck), Transform3D(yaw, base), _timber_light],
 	]
 	_add_box(base, yaw, deck)
 	# Legs down to the slope.
@@ -215,21 +228,21 @@ func _build_overlook(track: Track, zone: Array) -> void:
 			var top := base + yaw * Vector3(x, 0, z)
 			var ground := minf(_ground_y(top, top.y - 6.0), top.y - 1.0)
 			var height := maxf(top.y - ground, 1.0) + 2.0
-			parts.append([MeshKit.box(Vector3(0.3, height, 0.3)), Transform3D(yaw, top - Vector3.UP * height * 0.5), TIMBER])
+			parts.append([MeshKit.box(Vector3(0.3, height, 0.3)), Transform3D(yaw, top - Vector3.UP * height * 0.5), _timber])
 	# Fence on the three open sides.
 	for rail_y: float in [0.55, 1.05]:
-		parts.append([MeshKit.box(Vector3(9.0, 0.12, 0.12)), Transform3D(yaw, base + yaw * Vector3(0, rail_y, -2.95)), TIMBER])
+		parts.append([MeshKit.box(Vector3(9.0, 0.12, 0.12)), Transform3D(yaw, base + yaw * Vector3(0, rail_y, -2.95)), _timber])
 		for x: float in [-4.45, 4.45]:
-			parts.append([MeshKit.box(Vector3(0.12, 0.12, 6.0)), Transform3D(yaw, base + yaw * Vector3(x, rail_y, 0)), TIMBER])
+			parts.append([MeshKit.box(Vector3(0.12, 0.12, 6.0)), Transform3D(yaw, base + yaw * Vector3(x, rail_y, 0)), _timber])
 	for k in 7:
-		parts.append([MeshKit.box(Vector3(0.14, 1.2, 0.14)), Transform3D(yaw, base + yaw * Vector3(-4.4 + k * 1.47, 0.6, -2.95)), TIMBER])
+		parts.append([MeshKit.box(Vector3(0.14, 1.2, 0.14)), Transform3D(yaw, base + yaw * Vector3(-4.4 + k * 1.47, 0.6, -2.95)), _timber])
 	_add_box(base + yaw * Vector3(0, 0.7, -2.95), yaw, Vector3(9.0, 1.2, 0.2))
 	# Benches, a coin telescope and a flag.
 	for x: float in [-2.2, 1.6]:
-		parts.append([MeshKit.box(Vector3(1.8, 0.1, 0.5)), Transform3D(yaw, base + yaw * Vector3(x, 0.6, 0.8)), TIMBER])
-		parts.append([MeshKit.box(Vector3(1.8, 0.5, 0.08)), Transform3D(yaw, base + yaw * Vector3(x, 0.9, 1.05)), TIMBER])
+		parts.append([MeshKit.box(Vector3(1.8, 0.1, 0.5)), Transform3D(yaw, base + yaw * Vector3(x, 0.6, 0.8)), _timber])
+		parts.append([MeshKit.box(Vector3(1.8, 0.5, 0.08)), Transform3D(yaw, base + yaw * Vector3(x, 0.9, 1.05)), _timber])
 		for leg: float in [-0.75, 0.75]:
-			parts.append([MeshKit.box(Vector3(0.1, 0.45, 0.4)), Transform3D(yaw, base + yaw * Vector3(x + leg, 0.38, 0.8)), TIMBER])
+			parts.append([MeshKit.box(Vector3(0.1, 0.45, 0.4)), Transform3D(yaw, base + yaw * Vector3(x + leg, 0.38, 0.8)), _timber])
 	var scope := base + yaw * Vector3(0.0, 0.15, -1.9)
 	parts.append([MeshKit.cylinder(0.08, 0.1, 1.2, 8), Transform3D(yaw, scope + Vector3.UP * 0.6), Color(0.3, 0.32, 0.36)])
 	parts.append([MeshKit.cylinder(0.16, 0.2, 0.7, 10), Transform3D(yaw * Basis(Vector3.RIGHT, deg_to_rad(80)), scope + Vector3.UP * 1.3), Color(0.2, 0.55, 0.85)])
@@ -259,7 +272,7 @@ func _build_rock_gate(track: Track, zone: Array) -> void:
 			var xf := MeshKit.at(spot, Vector3(_rng.randf_range(-6, 6), _rng.randf() * 360.0, _rng.randf_range(-6, 6)),
 					Vector3(width, height, width * _rng.randf_range(0.8, 1.2)))
 			transforms.append(xf)
-			colors.append(ROCK.lerp(Color(0.66, 0.6, 0.52), _rng.randf()))
+			colors.append(_rock.lerp(Color(0.66, 0.6, 0.52), _rng.randf()))
 			_add_box(spot + Vector3.UP * height * 0.4, xf.basis.orthonormalized(), Vector3(width * 1.4, height * 0.8, width * 1.4))
 		distance += _rng.randf_range(6.0, 9.0)
 	var pillar := MeshKit.combine([[MeshKit.cylinder(0.55, 0.85, 1.0, 7), MeshKit.at(Vector3(0, 0.5, 0)), Color.WHITE]])
@@ -293,7 +306,7 @@ func _build_stands(track: Track) -> void:
 			var tier_height := 0.35 + row * 0.7 + drop
 			parts.append([MeshKit.box(Vector3(stands_length, tier_height, 1.1)),
 					Transform3D(yaw, Vector3(step.x, base.y + 0.35 + row * 0.7 - tier_height * 0.5, step.z)),
-					TIMBER_LIGHT.darkened(0.08 * row)])
+					_timber_light.darkened(0.08 * row)])
 			# Spectators: colored blocks with heads.
 			var count := int(stands_length / 1.3)
 			for k in count:
@@ -318,6 +331,75 @@ func _build_stands(track: Track) -> void:
 
 
 # --- Helpers ----------------------------------------------------------------
+
+# --- Wind -----------------------------------------------------------------------
+
+## Windsocks on both sides (outside the barriers, on poles) and drifting
+## snow streaks across the road. Cosmetic: the push comes from Track.wind_at().
+func _build_wind(track: Track, zone: Array) -> void:
+	var path := track.path
+	var downwind := signf(float(zone[3]))
+	var parts := []
+	var distance := float(zone[0]) + 20.0
+	var k := 0
+	while distance < float(zone[1]) - 10.0:
+		var index := path.index_at_distance(distance)
+		var side := 1 if k % 2 == 0 else -1
+		var foot := track.builder.slope_point(path, index, side, 1.6)
+		var right := path.rights[index]
+		var pole := foot + Vector3.UP * 2.6
+		parts.append([MeshKit.cylinder(0.06, 0.08, 5.2, 6), MeshKit.at(foot + Vector3.UP * 2.0), Color(0.95, 0.95, 0.97)])
+		# Striped sock: a tapering cone lying along the wind, wide end at the pole.
+		var along := Basis.looking_at(right * downwind, Vector3.UP)
+		for stripe in 4:
+			var r0 := 0.42 - stripe * 0.07
+			var color := Color(1.0, 0.45, 0.12) if stripe % 2 == 0 else Color(0.98, 0.97, 0.94)
+			var center := pole + right * downwind * (0.35 + stripe * 0.62) + Vector3.DOWN * stripe * 0.06
+			parts.append([MeshKit.cylinder(r0 - 0.07, r0, 0.62, 8), Transform3D(along * Basis(Vector3.RIGHT, PI * 0.5), center), color])
+		_add_box(foot + Vector3.UP * 2.0, Basis.IDENTITY, Vector3(0.2, 4.0, 0.2))
+		distance += windsock_spacing
+		k += 1
+	_add_mesh("Windsocks_%d" % roundi(float(zone[0])), parts)
+	distance = float(zone[0])
+	while distance < float(zone[1]):
+		_add_snow_streak(track, path.index_at_distance(distance), downwind)
+		distance += wind_streak_spacing
+
+
+func _add_snow_streak(track: Track, index: int, downwind: float) -> void:
+	var path := track.path
+	var particles := CPUParticles3D.new()
+	particles.name = "WindSnow"
+	particles.amount = 26
+	particles.lifetime = 2.2
+	particles.preprocess = 2.0
+	particles.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	particles.emission_box_extents = Vector3(0.5, 0.9, 9.0)
+	particles.direction = Vector3(1, 0.05, 0)
+	particles.spread = 6.0
+	particles.gravity = Vector3.ZERO
+	particles.initial_velocity_min = 9.0
+	particles.initial_velocity_max = 14.0
+	particles.scale_amount_min = 0.6
+	particles.scale_amount_max = 1.3
+	var flake := QuadMesh.new()
+	flake.size = Vector2(0.32, 0.05)
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color = Color(1, 1, 1, 0.55)
+	material.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	flake.material = material
+	particles.mesh = flake
+	particles.visibility_range_end = 160.0
+	# Particles start on the upwind side and blow across the road.
+	var right := path.rights[index] * downwind
+	var start := path.points[index] - right * (track.half_width_at(index) + 6.0) + Vector3.UP * 1.4
+	# Local +X (the particles' direction) points downwind; the box spans the road.
+	var x := Vector3(right.x, 0.0, right.z).normalized()
+	particles.transform = Transform3D(Basis(x, Vector3.UP, x.cross(Vector3.UP)), start)
+	add_child(particles)
+
 
 func _yaw(frame: Transform3D) -> Basis:
 	var forward := -frame.basis.z

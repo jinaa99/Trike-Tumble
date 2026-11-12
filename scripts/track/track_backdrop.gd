@@ -30,9 +30,8 @@ extends Node3D
 @export var far_forest_depth := 70.0
 @export var far_forest_view_distance := 900.0
 
-const PINE_GREENS: Array[Color] = [Color(0.16, 0.52, 0.38), Color(0.2, 0.6, 0.4), Color(0.13, 0.45, 0.4)]
-
 var _rng := RandomNumberGenerator.new()
+var _theme: TrackTheme
 var _origin := Vector2.ZERO
 var _cols := 0
 var _rows := 0
@@ -43,14 +42,15 @@ var _warp := FastNoiseLite.new()
 
 func build_for_track(track: Track) -> void:
 	_rng.seed = random_seed
+	_theme = track.theme if track.theme else TrackTheme.new()
 	var bounds := _bounds(track)
 	var center := bounds.get_center()
 	var radius := maxf(bounds.size.x, bounds.size.z) * 0.5
 	var floor_y := bounds.position.y - valley_depth
 	_build_peaks("FarPeaks", far_peaks, center, radius + 520.0, 220.0, floor_y, Vector2(260, 420),
-			Color(0.56, 0.6, 0.86), 0.62)
+			_theme.far_peak_color, _theme.far_snow_line)
 	_build_peaks("MidPeaks", mid_peaks, center, radius + 260.0, 140.0, floor_y, Vector2(170, 250),
-			Color(0.38, 0.6, 0.66), 0.7)
+			_theme.mid_peak_color, _theme.mid_snow_line)
 	_build_terrain(track, bounds, floor_y)
 	_build_hills(center, radius + 90.0, floor_y)
 	_build_clouds(center, radius, bounds.end.y)
@@ -82,7 +82,7 @@ func _build_peaks(node_name: String, count: int, center: Vector3, ring: float, s
 	add_child(MeshKit.batch(node_name, peak, transforms, colors, false))
 	var cap_colors: Array[Color] = []
 	for i in count:
-		cap_colors.append(Color(0.97, 0.98, 1.0))
+		cap_colors.append(_theme.snow_color)
 	add_child(MeshKit.batch(node_name + "Snow", cap, transforms, cap_colors, false))
 
 
@@ -161,9 +161,9 @@ func _terrain_cell(batch: MeshBatch, r: int, c: int, floor_y: float, noise: Fast
 		var steep := 1.0 - normal.y
 		var center := (tri[0] + tri[1] + tri[2]) / 3.0
 		var height_t := clampf((center.y - floor_y) / 140.0, 0.0, 1.0)
-		var color := Color(0.46, 0.7, 0.33).lerp(Color(0.32, 0.58, 0.36), height_t)
-		color = color.lerp(Color(0.58, 0.57, 0.54), clampf(steep * 2.5 - 0.5, 0.0, 0.7))
-		color = color.lerp(Color(0.58, 0.76, 0.36), clampf(noise.get_noise_2d(center.z * 0.3, center.x * 0.3) * 0.6, 0.0, 0.3))
+		var color := _theme.terrain_low_color.lerp(_theme.terrain_high_color, height_t)
+		color = color.lerp(_theme.terrain_steep_color, clampf(steep * 2.5 - 0.5, 0.0, 0.7))
+		color = color.lerp(_theme.terrain_patch_color, clampf(noise.get_noise_2d(center.z * 0.3, center.x * 0.3) * 0.6, 0.0, 0.3))
 		batch.colors.append_array(PackedColorArray([color, color, color]))
 		batch.normals.append_array(PackedVector3Array([normal, normal, normal]))
 		# Clockwise front faces: order so the winding cross opposes the normal.
@@ -263,6 +263,15 @@ func _build_far_forest(track: Track, edge_out: float) -> void:
 		[MeshKit.cone(1.6, 2.2, 6), MeshKit.at(Vector3(0, 3.8, 0), Vector3(0, 30, 0)), Color(0.94, 0.94, 0.94)],
 		[MeshKit.cone(1.1, 1.9, 6), MeshKit.at(Vector3(0, 5.1, 0), Vector3(0, 60, 0)), Color(1, 1, 1)],
 	])
+	if _theme.scenery_style == TrackTheme.SceneryStyle.SNOW:
+		# Frosted far pines: bright snowy tiers over dark ones. With the snow
+		# theme's pale pine tint they read as snow-covered from a distance.
+		pine = MeshKit.combine([
+			[MeshKit.cylinder(0.2, 0.3, 1.6, 5), MeshKit.at(Vector3(0, 0.8, 0)), Color(0.48, 0.32, 0.2)],
+			[MeshKit.cone(2.1, 2.6, 6), MeshKit.at(Vector3(0, 2.4, 0)), Color(0.5, 0.5, 0.5)],
+			[MeshKit.cone(1.6, 2.2, 6), MeshKit.at(Vector3(0, 3.8, 0), Vector3(0, 30, 0)), Color(1, 1, 1)],
+			[MeshKit.cone(1.1, 1.9, 6), MeshKit.at(Vector3(0, 5.1, 0), Vector3(0, 60, 0)), Color(1, 1, 1)],
+		])
 	pine.surface_set_material(0, MeshKit.vertex_color_material(0.9))
 	var path := track.path
 	var groups := {}
@@ -298,7 +307,7 @@ func _build_far_forest(track: Track, edge_out: float) -> void:
 			(groups[key]["transforms"] as Array[Transform3D]).append(
 					MeshKit.at(Vector3(px, y - 0.3, pz), Vector3(0, _rng.randf() * 360.0, 0), Vector3.ONE * s))
 			(groups[key]["colors"] as Array[Color]).append(
-					PINE_GREENS[_rng.randi() % PINE_GREENS.size()].darkened(_rng.randf_range(0.0, 0.15)))
+					_theme.pine_greens[_rng.randi() % _theme.pine_greens.size()].darkened(_rng.randf_range(0.0, 0.15)))
 		x += step
 	for key: int in groups:
 		var transforms: Array[Transform3D] = groups[key]["transforms"]
@@ -337,7 +346,7 @@ func _build_hills(center: Vector3, ring: float, floor_y: float) -> void:
 		var r := _rng.randf_range(60.0, 120.0)
 		var spot := Vector3(center.x + cos(angle) * distance, floor_y, center.z + sin(angle) * distance)
 		transforms.append(MeshKit.at(spot, Vector3(0, _rng.randf() * 360.0, 0), Vector3(r, r * _rng.randf_range(0.35, 0.6), r)))
-		colors.append(Color(0.36, 0.64, 0.36).lerp(Color(0.55, 0.75, 0.35), _rng.randf()))
+		colors.append(_theme.hill_colors[0].lerp(_theme.hill_colors[-1], _rng.randf()))
 	add_child(MeshKit.batch("Hills", hill, transforms, colors, false))
 
 
@@ -350,7 +359,7 @@ func _build_clouds(center: Vector3, radius: float, top_y: float) -> void:
 	])
 	var material := MeshKit.vertex_color_material(1.0)
 	material.emission_enabled = true
-	material.emission = Color(0.55, 0.6, 0.7)
+	material.emission = _theme.cloud_emission
 	puff.surface_set_material(0, material)
 	var transforms: Array[Transform3D] = []
 	for i in clouds:
@@ -369,7 +378,7 @@ func _build_valley(center: Vector3, floor_y: float) -> void:
 	valley.name = "Valley"
 	valley.mesh = plane
 	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.42, 0.66, 0.34)
+	material.albedo_color = _theme.valley_color
 	material.albedo_texture = TrackMaterials.detail_texture(0.75)
 	material.uv1_triplanar = true
 	material.uv1_world_triplanar = true
@@ -389,7 +398,7 @@ func _build_valley(center: Vector3, floor_y: float) -> void:
 	lake.name = "Lake"
 	lake.mesh = lake_mesh
 	var water := StandardMaterial3D.new()
-	water.albedo_color = Color(0.25, 0.6, 0.85)
+	water.albedo_color = _theme.lake_color
 	water.roughness = 0.08
 	water.metallic_specular = 0.8
 	lake.material_override = water

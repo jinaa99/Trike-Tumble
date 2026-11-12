@@ -32,6 +32,17 @@ const RIDER_SCENE := preload("res://scenes/characters/rider_character.tscn")
 	Color(1.0, 0.4, 0.2), Color(0.2, 0.55, 1.0), Color(0.3, 0.78, 0.32),
 	Color(0.68, 0.4, 0.95), Color(1.0, 0.42, 0.68),
 ]
+## Second livery color per racer (seat trim, stripes, flag, hubs).
+@export var racer_accents: Array[Color] = [
+	Color(1.0, 0.85, 0.2), Color(1.0, 0.55, 0.15), Color(0.98, 0.42, 0.68),
+	Color(0.3, 0.9, 0.85), Color(0.95, 0.95, 0.95),
+]
+## Rider look per racer, in the order racers are added (everyone looks different).
+@export var rider_looks: Array[RiderLook] = [
+	preload("res://resources/characters/looks/zip.tres"), preload("res://resources/characters/looks/pip.tres"),
+	preload("res://resources/characters/looks/bramble.tres"), preload("res://resources/characters/looks/nutmeg.tres"),
+	preload("res://resources/characters/looks/rusty.tres"),
+]
 ## Number decal per racer, in the order racers are added.
 @export var racer_numbers: Array[int] = [7, 2, 4, 5, 9]
 ## Driving lane (m from the centerline, + = right) per grid slot.
@@ -41,7 +52,7 @@ const RIDER_SCENE := preload("res://scenes/characters/rider_character.tscn")
 @export var position_swap_margin := 1.0
 ## Clearance (m) from props for AI avoidance, per prop kind.
 @export var obstacle_radii := {"crate": 0.75, "cone": 0.35, "rock": 1.1, "boulder": 2.0, "road_tree": 0.6,
-		"falling_log": 2.4}
+		"falling_log": 2.4, "falling_rock": 1.6, "rolling_rock": 2.2, "snowman": 0.7}
 
 var track: Track
 var finish_tracker: FinishTracker
@@ -72,6 +83,12 @@ func setup(for_track: Track) -> void:
 			racer_pending.emit(racer))
 	track.finish_crossed.connect(_on_finish_crossed)
 	_collect_obstacles()
+	# Every finisher celebrates on its trike (also proxies: clients get
+	# racer_finished from the host's status).
+	racer_finished.connect(func(racer: Racer) -> void:
+		var model := racer.trike.get_node_or_null(^"Visuals/Rider") as Rider if is_instance_valid(racer.trike) else null
+		if model and racer.rider and racer.rider.is_riding():
+			model.celebrate())
 
 
 func _physics_process(delta: float) -> void:
@@ -88,6 +105,8 @@ func _physics_process(delta: float) -> void:
 		if racer.is_proxy and not authoritative:
 			continue
 		racer.progress.update(racer.trike)
+		if not racer.is_proxy:
+			racer.trike.wind = track.wind_at(racer.progress.current_index) if is_race_started else Vector3.ZERO
 		if authoritative:
 			racer.checkpoints.update(racer.progress.current_index, racer.trike.global_position)
 		# Off the road and unreachable: put the trike back (the rider keeps
@@ -416,6 +435,11 @@ func _apply_livery(racer: Racer, order: int) -> void:
 	var visuals := racer.trike.get_node_or_null(^"Visuals") as TrikeVisuals
 	if visuals:
 		visuals.body_color = racer.color
+		if not racer_accents.is_empty():
+			visuals.accent_color = racer_accents[order % racer_accents.size()]
+	var model := racer.trike.get_node_or_null(^"Visuals/Rider") as Rider
+	if model and not rider_looks.is_empty():
+		RiderStyle.apply(model, rider_looks[order % rider_looks.size()])
 	if racer_numbers.is_empty():
 		return
 	var number := str(racer_numbers[order % racer_numbers.size()])

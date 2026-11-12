@@ -1,23 +1,38 @@
 extends RefCounted
-## Forest Rush map tests (final-demo milestone 06): build and profile, route
-## layout, spawns, checkpoints, item box points, recovery points, collision
-## coverage, road boundaries, surfaces and off-road handling, the big jump,
-## bridges, falling logs, scenery clearance and one AI driving the whole
-## route. Run as part of tests/test_runner.gd. Full five-racer races at every
-## difficulty and timings: tests/map_test_runner.tscn.
+## Map tests for every playable map (Forest Rush since milestone 06, Rocky
+## Canyon and Snow Slide since milestone 08): build and profile, route layout,
+## spawns, checkpoints, item box points, recovery points, collision coverage
+## and surfaces, road boundaries, scenery clearance, jumps, bridges, timed
+## hazards, the map's sky, one hard AI driving the whole route, plus each
+## map's own features (Forest mud and off-road; Canyon cliffs and rocks; Snow
+## ice, snow grip and wind). Run as part of tests/test_runner.gd
+## (`-- --only=map`; `-- --only=map --map=snow_slide` for one map). Full
+## five-racer races at every difficulty and timings: tests/map_test_runner.tscn.
 
-const RACE_SCENE := preload("res://scenes/main/forest_rush.tscn")
-const TRACK_SCENE := preload("res://scenes/tracks/forest_rush.tscn")
-const MAP_INFO := preload("res://resources/maps/forest_rush.tres")
 const AI_CONFIGS: Array[AIDriverConfig] = [
 	preload("res://resources/ai/ai_easy.tres"),
 	preload("res://resources/ai/ai_medium.tres"),
 	preload("res://resources/ai/ai_hard.tres"),
 ]
+## Every playable map and what its data must contain.
+const MAPS: Array[Dictionary] = [
+	{"id": "forest_rush", "name": "Forest Rush", "node": "ForestRush", "length": Vector2(6500, 8000),
+		"race": preload("res://scenes/main/forest_rush.tscn"), "track": preload("res://scenes/tracks/forest_rush.tscn"),
+		"bridges": 2, "gaps": 1, "offroad_at": 1400.0},
+	{"id": "rocky_canyon", "name": "Rocky Canyon", "node": "RockyCanyon", "length": Vector2(6500, 8000),
+		"race": preload("res://scenes/main/rocky_canyon.tscn"), "track": preload("res://scenes/tracks/rocky_canyon.tscn"),
+		"bridges": 2, "gaps": 2, "offroad_at": 1280.0},
+	{"id": "snow_slide", "name": "Snow Slide", "node": "SnowSlide", "length": Vector2(6500, 8000),
+		"race": preload("res://scenes/main/snow_slide.tscn"), "track": preload("res://scenes/tracks/snow_slide.tscn"),
+		"bridges": 2, "gaps": 1, "offroad_at": 1290.0},
+]
 ## Road collision bodies (drivable surfaces).
-const ROAD_BODIES: Array[String] = ["TrackBody", "MudBody", "BridgeBody"]
+const ROAD_BODIES: Array[String] = ["TrackBody", "MudBody", "IceBody", "BridgeBody"]
 
 var runner: Node
+## The map being tested (one of MAPS) and its name for the output.
+var spec: Dictionary
+var label := ""
 
 
 func _init(test_runner: Node) -> void:
@@ -25,24 +40,53 @@ func _init(test_runner: Node) -> void:
 
 
 func run() -> void:
+	var only := ""
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--map="):
+			only = arg.trim_prefix("--map=")
+	for map_spec in MAPS:
+		if only.is_empty() or only == map_spec["id"]:
+			await _run_map(map_spec)
+
+
+func _run_map(map_spec: Dictionary) -> void:
+	spec = map_spec
+	label = spec["name"]
 	var main := await _load_race()
 	await _test_build_and_profile(main)
 	_test_route_layout(main.track)
-	_test_sections(main.track)
+	match spec["id"]:
+		"forest_rush":
+			_test_forest_sections(main.track)
+		"rocky_canyon":
+			_test_canyon_sections(main.track)
+		"snow_slide":
+			_test_snow_sections(main.track)
+	_test_sky(main)
 	await _test_spawns(main)
 	await _test_checkpoints(main.track)
 	await _test_item_boxes(main.track)
+	_test_item_boxes_in_race(main)
 	await _test_recovery_points(main.track)
 	await _test_collision_coverage(main.track)
 	await _test_road_boundaries(main.track)
 	_test_scenery_clearance(main.track)
 	main.race.start_immediately()
-	await _test_mud(main)
+	match spec["id"]:
+		"forest_rush":
+			await _test_mud(main)
+		"rocky_canyon":
+			await _test_cliff_walls(main)
+		"snow_slide":
+			await _test_ice(main)
+			await _test_snow_road(main)
+			await _test_wind(main)
 	await _test_offroad(main)
-	await _test_big_jump(main)
+	await _test_big_jumps(main)
 	await _test_jump_too_slow(main)
 	await _test_bridges(main)
-	await _test_falling_logs(main)
+	await _test_hazards(main)
+	await _test_finish_runoff(main)
 	await _free(main)
 	await _test_ai_full_route()
 
@@ -66,13 +110,13 @@ func _free(node: Node) -> void:
 	await _tree().process_frame
 
 
-## Forest Rush race scene: the local racer plus 4 AI, waiting in the lobby.
+## The map's race scene: the local racer plus 4 AI, waiting in the lobby.
 func _load_race() -> RaceSession:
 	if runner._arena:
 		runner._arena.queue_free()
 		runner._arena = null
 		await _tree().process_frame
-	var main: RaceSession = RACE_SCENE.instantiate()
+	var main: RaceSession = (spec["race"] as PackedScene).instantiate()
 	main.auto_start = false
 	runner.add_child(main)
 	main.trike.input_source = null
@@ -108,7 +152,7 @@ func _solid_props(track: Track) -> Array[Node3D]:
 	var found: Array[Node3D] = []
 	for child in track.get_node("Props").get_children():
 		# Props a racer must not be put down next to.
-		if child is RoadBoulder or child is RoadTree or child is FallingLog or child is Ramp:
+		if child is RoadBoulder or child is RoadTree or child is FallingLog or child is RollingRock or child is Ramp:
 			found.append(child)
 	return found
 
@@ -165,16 +209,19 @@ static func _speed_between(speeds: Array, from: float, to: float, highest: bool)
 # --- Build, layout, sections -------------------------------------------------
 
 func _test_build_and_profile(main: RaceSession) -> void:
-	print("\n[Forest Rush: build and profile]")
+	print("\n[%s: build and profile]" % label)
 	var track := main.track
 	var timings := track.build_timings
 	var stages := ""
 	for stage: String in timings:
 		if stage != "total":
 			stages += "%s %.0f, " % [stage, timings[stage]]
-	_check(track.name == "ForestRush" and MAP_INFO.race_scene == RACE_SCENE.resource_path and MAP_INFO.is_playable(),
-			"Forest Rush is the playable map in the catalog", "(%s, %s)" % [MAP_INFO.get_status_text(), MAP_INFO.race_scene])
-	_check(track.path.length > 6500.0 and track.path.length < 8000.0, "the route is a long downhill run",
+	var info := MapCatalog.get_map(spec["id"])
+	var length_range: Vector2 = spec["length"]
+	_check(track.name == spec["node"] and info and info.race_scene == (spec["race"] as PackedScene).resource_path and info.is_playable()
+			and info.status == MapInfo.Status.READY, "%s is a READY map in the catalog" % label,
+			"(%s, %s)" % [info.get_status_text() if info else "missing", info.race_scene if info else ""])
+	_check(track.path.length > length_range.x and track.path.length < length_range.y, "the route is a long downhill run",
 			"(%.0f m, %.0f m drop)" % [track.path.length, track.path.points[0].y - track.path.points[-1].y])
 	_check(timings["total"] < 3000.0, "the whole map builds in under 3 s (headless)",
 			"(%.0f ms: %s)" % [timings["total"], stages.trim_suffix(", ")])
@@ -202,7 +249,7 @@ func _test_build_and_profile(main: RaceSession) -> void:
 
 
 func _test_route_layout(track: Track) -> void:
-	print("\n[Forest Rush: route layout]")
+	print("\n[%s: route layout]" % label)
 	var radius := TrackRoute.min_radius(track.route_segments)
 	_check(radius >= 18.0, "no impossible corners: tightest corner radius >= 18 m", "(%.1f m)" % radius)
 	# Measured on the built path too (heading change over 10 m windows).
@@ -244,20 +291,36 @@ func _test_route_layout(track: Track) -> void:
 	_check(closest_near >= 40.0, "hairpin legs stay apart", "(closest %.0f m between parts 120-250 m apart)" % closest_near)
 
 
-func _test_sections(track: Track) -> void:
+## Props by type: script class name, else scene name; big kickers apart.
+func _prop_counts(track: Track) -> Dictionary:
+	var counts := {}
+	for child in track.get_node("Props").get_children():
+		var key: String = String((child as Node).get_script().get_global_name()) if child.get_script() \
+				else child.scene_file_path.get_file().get_basename()
+		if child is Ramp and (child as Ramp).width > 8.0:
+			key = "BigRamp"
+		elif child is RollingRock:
+			key = "FallingRock" if (child as RollingRock).mode == RollingRock.Mode.FALL else "RollingRock"
+		counts[key] = int(counts.get(key, 0)) + 1
+	return counts
+
+
+func _decor_count(track: Track, prefix: String) -> int:
+	var total := 0
+	for node_name: String in ["Decor", "Backdrop"]:
+		for child in track.get_node(node_name).get_children():
+			if child is MultiMeshInstance3D and child.name.begins_with(prefix):
+				total += (child as MultiMeshInstance3D).multimesh.instance_count
+	return total
+
+
+func _test_forest_sections(track: Track) -> void:
 	print("\n[Forest Rush: sections and features]")
 	var bridges := track.get_zones("bridge")
 	var gaps := track.get_zones("gap")
 	var muds := track.get_zones("mud")
 	var overlooks := track.get_zones("overlook")
-	var props := track.get_node("Props")
-	var counts := {}
-	for child in props.get_children():
-		var key: String = String((child as Node).get_script().get_global_name()) if child.get_script() \
-				else child.scene_file_path.get_file().get_basename()
-		if child is Ramp and (child as Ramp).width > 8.0:
-			key = "BigRamp"
-		counts[key] = int(counts.get(key, 0)) + 1
+	var counts := _prop_counts(track)
 	_check(bridges.size() >= 2 and track.get_node_or_null("BridgeBody") != null, "wooden bridge section", "(%d bridges)" % bridges.size())
 	_check(muds.size() >= 4 and track.get_node_or_null("MudBody") != null, "mud section", "(%d mud stretches)" % muds.size())
 	_check(counts.get("RoadBoulder", 0) >= 3 and counts.get("RoadTree", 0) >= 2 and counts.get("FallingLog", 0) >= 2,
@@ -270,20 +333,14 @@ func _test_sections(track: Track) -> void:
 	_check(narrow <= 10.0 and track.get_zones("rocks").size() >= 1, "narrow passages", "(narrowest %.1f m)" % narrow)
 	_check(overlooks.size() >= 3 and track.get_node("Structures").get_children().any(
 			func(n: Node) -> bool: return n.name.begins_with("Overlook")), "mountain overlooks", "(%d)" % overlooks.size())
-	var trees := 0
-	for child in track.get_node("Decor").get_children():
-		if child is MultiMeshInstance3D and child.name.begins_with("Trees_pine"):
-			trees += (child as MultiMeshInstance3D).multimesh.instance_count
-	for child in track.get_node("Backdrop").get_children():
-		if child is MultiMeshInstance3D and child.name.begins_with("FarForest"):
-			trees += (child as MultiMeshInstance3D).multimesh.instance_count
+	var trees := _decor_count(track, "Trees_pine") + _decor_count(track, "FarForest")
 	_check(trees > 3000, "pine forests", "(%d pines)" % trees)
 
 
 # --- Spawns, checkpoints, item boxes, recovery --------------------------------
 
 func _test_spawns(main: RaceSession) -> void:
-	print("\n[Forest Rush: five spawn positions]")
+	print("\n[%s: five spawn positions]" % label)
 	var track := main.track
 	var points: Array[Vector3] = []
 	var on_road := true
@@ -312,7 +369,7 @@ func _test_spawns(main: RaceSession) -> void:
 
 
 func _test_checkpoints(track: Track) -> void:
-	print("\n[Forest Rush: checkpoints]")
+	print("\n[%s: checkpoints]" % label)
 	var checkpoints := track.get_checkpoints()
 	var ordered := true
 	var widest := 0.0
@@ -331,7 +388,7 @@ func _test_checkpoints(track: Track) -> void:
 
 
 func _test_item_boxes(track: Track) -> void:
-	print("\n[Forest Rush: item box spawn points]")
+	print("\n[%s: item box spawn points]" % label)
 	var boxes := track.get_item_box_transforms()
 	var props := _solid_props(track)
 	var bad := 0
@@ -352,8 +409,24 @@ func _test_item_boxes(track: Track) -> void:
 	_check(first < 600.0 and last > track.path.length - 1200.0, "item boxes spread over the whole route", "(%.0f m to %.0f m)" % [first, last])
 
 
+## The race scene turns the map's spawn points into real boxes, all clear
+## of the grid (a box never appears inside a racer at the start).
+func _test_item_boxes_in_race(main: RaceSession) -> void:
+	var points := main.track.get_item_box_transforms()
+	var boxes := main.items.boxes
+	var placed := boxes.size() == points.size()
+	for i in mini(boxes.size(), points.size()):
+		placed = placed and boxes[i].global_position.is_equal_approx(points[i].origin) and boxes[i].active
+	var closest := INF
+	for racer in main.racers.get_racers():
+		for box in boxes:
+			closest = minf(closest, racer.trike.global_position.distance_to(box.global_position))
+	_check(placed and closest > 20.0, "%s race places an active item box on every spawn point" % label,
+			"(%d boxes, nearest to a racer %.0f m)" % [boxes.size(), closest])
+
+
 func _test_recovery_points(track: Track) -> void:
-	print("\n[Forest Rush: safe recovery points]")
+	print("\n[%s: safe recovery points]" % label)
 	var props := _solid_props(track)
 	var checked := 0
 	var bad := 0
@@ -374,7 +447,8 @@ func _test_recovery_points(track: Track) -> void:
 			if hit.is_empty() or not _is_road_body(hit["collider"]) or blocked:
 				bad += 1
 				detail = "(bad recovery point at %.0f m, lateral %.1f)" % [i * track.path.spacing, lateral]
-	_check(checked > 2000 and bad == 0, "every recovery point is on solid road with no obstacle there",
+	var expected := (track.get_finish_index() - track.get_start_index()) / 5 * 3 * 0.6
+	_check(checked > expected and bad == 0, "every recovery point is on solid road with no obstacle there",
 			detail if bad > 0 else "(%d points checked)" % checked)
 	var gap: Array = track.get_zones("gap")[0]
 	var in_gap := track.path.index_at_distance((float(gap[0]) + float(gap[1])) * 0.5)
@@ -386,7 +460,7 @@ func _test_recovery_points(track: Track) -> void:
 # --- Collision geometry -------------------------------------------------------
 
 func _test_collision_coverage(track: Track) -> void:
-	print("\n[Forest Rush: collision geometry]")
+	print("\n[%s: collision geometry]" % label)
 	var path := track.path
 	var holes := 0
 	var wrong_surface := 0
@@ -408,17 +482,23 @@ func _test_collision_coverage(track: Track) -> void:
 				holes += 1
 				detail = "(hole at %.0f m, lateral %.1f)" % [i * path.spacing, lateral]
 				continue
+			# A probe right on the edge of a mud/ice band could land on either side.
+			var band := track.builder.mud_bands[i]
+			var u := 0.5 + lateral / (track.half_width_at(i) * 2.0)
+			var edge := minf(absf(u - band.x), absf(u - band.y)) * track.half_width_at(i) * 2.0
+			if band.y > band.x and edge < 0.1:
+				continue
 			if TrackSurface.of(hit["collider"]) != track.surface_at(i, lateral):
 				wrong_surface += 1
 				detail = "(%s instead of %s at %.0f m, lateral %.1f)" % [TrackSurface.name_of(TrackSurface.of(hit["collider"])),
 						TrackSurface.name_of(track.surface_at(i, lateral)), i * path.spacing, lateral]
 	_check(holes == 0, "no holes in the road collision", detail if holes > 0 else "(%d probes)" % samples)
-	_check(wrong_surface == 0, "road collision surface matches the map (dirt, mud, bridge planks)",
+	_check(wrong_surface == 0, "road collision surface matches the map (road, mud, ice, bridge decks)",
 			"(%d mismatches %s)" % [wrong_surface, detail if wrong_surface > 0 else ""])
 
 
 func _test_road_boundaries(track: Track) -> void:
-	print("\n[Forest Rush: road boundaries]")
+	print("\n[%s: road boundaries]" % label)
 	var path := track.path
 	var missing := 0
 	var detail := ""
@@ -443,7 +523,7 @@ func _test_road_boundaries(track: Track) -> void:
 
 
 func _test_scenery_clearance(track: Track) -> void:
-	print("\n[Forest Rush: scenery stays off the road]")
+	print("\n[%s: scenery stays off the road]" % label)
 	var shapes: Array[CollisionShape3D] = runner.scenery_colliders(track)
 	var intrusions: int = runner.count_road_intrusions(track, shapes)
 	_check(shapes.size() > 1000 and intrusions == 0, "no scenery, landmark or structure collider inside the road corridor",
@@ -471,11 +551,11 @@ func _test_mud(main: RaceSession) -> void:
 
 
 func _test_offroad(main: RaceSession) -> void:
-	print("\n[Forest Rush: off-road]")
+	print("\n[%s: off-road]" % label)
 	var track := main.track
 	# A straight stretch of the fast descent: put the trike on the grass
 	# beside the barrier, facing downhill.
-	var index := track.path.index_at_distance(1400.0)
+	var index := track.path.index_at_distance(float(spec["offroad_at"]))
 	var frame := track.path.get_frame(index)
 	var spot := track.builder.slope_point(track.path, index, 1, 2.0)
 	main.trike.teleport(Transform3D(frame.basis, spot + Vector3.UP * 0.8))
@@ -502,23 +582,24 @@ func _test_offroad(main: RaceSession) -> void:
 			"falling off the mountain respawns on the road", "(last safe %.0f m, now %.0f m)" % [safe * 2.0, now * 2.0])
 
 
-func _test_big_jump(main: RaceSession) -> void:
-	print("\n[Forest Rush: big jump]")
-	var gap: Array = main.track.get_zones("gap")[0]
-	var start := float(gap[0])
-	var end := float(gap[1])
-	await _place(main, start - 120.0)
-	var ejects := main.rider.eject_count
-	var run := await _drive(main, end + 40.0, 15.0)
-	var takeoff := _speed_between(run["speeds"], start - 12.0, start, true)
-	_check(run["arrived"] and run["respawns"] == 0, "a full-speed trike clears the ravine jump",
-			"(take-off %.1f m/s, %.1f s)" % [takeoff, run["time"]])
-	_check(main.rider.eject_count == ejects and main.rider.is_riding(), "the landing doesn't throw the rider off",
-			"(hardest hit %.1f, eject at %.0f)" % [run["max_impact"], main.rider.config.eject_impact_strength])
+func _test_big_jumps(main: RaceSession) -> void:
+	print("\n[%s: big jumps]" % label)
+	var gaps: Array = main.track.get_zones("gap")
+	for gap: Array in gaps:
+		var start := float(gap[0])
+		var end := float(gap[1])
+		await _place(main, start - 120.0)
+		var ejects := main.rider.eject_count
+		var run := await _drive(main, end + 40.0, 15.0)
+		var takeoff := _speed_between(run["speeds"], start - 12.0, start, true)
+		_check(run["arrived"] and run["respawns"] == 0, "a full-speed trike clears the jump at %.0f m" % start,
+				"(take-off %.1f m/s, %.1f s)" % [takeoff, run["time"]])
+		_check(main.rider.eject_count == ejects and main.rider.is_riding(), "the landing at %.0f m doesn't throw the rider off" % end,
+				"(hardest hit %.1f, eject at %.0f)" % [run["max_impact"], main.rider.config.eject_impact_strength])
 
 
 func _test_jump_too_slow(main: RaceSession) -> void:
-	print("\n[Forest Rush: falling into the ravine]")
+	print("\n[%s: falling into the gap]" % label)
 	var gap: Array = main.track.get_zones("gap")[0]
 	var start := float(gap[0])
 	await _place(main, start - 14.0)
@@ -535,79 +616,322 @@ func _test_jump_too_slow(main: RaceSession) -> void:
 	main.trike.input.clear()
 	await _wait(1.0)
 	var at := main.get_progress().current_index * main.track.path.spacing
-	_check(main.get_local_racer().respawn_count > respawns, "rolling off the lip too slowly drops into the ravine and respawns")
+	_check(main.get_local_racer().respawn_count > respawns, "rolling off the lip too slowly drops into the gap and respawns")
 	_check(at <= start - main.track.gap_unsafe_before + 2.0 and main.track.is_on_road(main.trike.global_position, main.get_progress().current_index),
 			"the respawn is on the road before the run-up", "(at %.0f m, lip at %.0f m)" % [at, start])
 	main.rider.force_mount()
 
 
 func _test_bridges(main: RaceSession) -> void:
-	print("\n[Forest Rush: wooden bridges]")
-	for bridge: Array in main.track.get_zones("bridge"):
+	var deck := TrackSurface.name_of(main.track.bridge_surface)
+	print("\n[%s: bridges (%s decks)]" % [label, deck])
+	var bridges: Array = main.track.get_zones("bridge")
+	_check(bridges.size() == int(spec["bridges"]), "%d bridges" % int(spec["bridges"]))
+	for bridge: Array in bridges:
 		var start := float(bridge[0])
 		var end := float(bridge[1])
 		await _place(main, start - 90.0)
 		var run := await _drive(main, end + 30.0, 20.0)
 		var surfaces: Dictionary = run["surfaces"]
-		_check(run["arrived"] and run["respawns"] == 0 and surfaces.get("wood", 0) > 20,
-				"crossing the %.0f m bridge at %.0f m on its planks" % [end - start, start],
+		_check(run["arrived"] and run["respawns"] == 0 and surfaces.get(deck, 0) > 20,
+				"crossing the %.0f m bridge at %.0f m on its %s deck" % [end - start, start, deck],
 				"(%s ticks, %.1f s)" % [str(surfaces), run["time"]])
 		_check(run["max_impact"] < 4.0, "smooth joins on and off the %.0f m bridge" % (end - start),
 				"(hardest bump %.1f)" % run["max_impact"])
 
 
-func _test_falling_logs(main: RaceSession) -> void:
-	print("\n[Forest Rush: falling logs]")
+## Every kind of timed hazard on the map (falling logs, falling and rolling
+## rocks): waits off the road, crosses it, moves with race time only, and
+## hits a trike parked in its way.
+func _test_hazards(main: RaceSession) -> void:
 	var track := main.track
-	var logs: Array[FallingLog] = []
+	var kinds := {}
 	for child in track.get_node("Props").get_children():
-		if child is FallingLog:
-			logs.append(child)
-	var log := logs[0]
-	var index := track.path.find_nearest(log.global_position)
-	var roll_time := log.half_width * 2.0 / log.roll_speed
-	# Waiting: off the road. Mid-roll: on the road, across the centerline.
-	track.hazard_time = log.period * 3.0 - log.phase - 0.5
-	await _tree().physics_frame
-	await _tree().physics_frame
-	var waiting_off := not log.is_active() and not track.is_on_road(log.global_position, index)
-	track.hazard_time = log.period * 3.0 - log.phase + log.drop_time + roll_time * 0.5
-	await _tree().physics_frame
-	await _tree().physics_frame
-	var lateral := (log.global_position - track.path.points[index]).dot(track.path.rights[index])
-	_check(waiting_off and log.is_active() and absf(lateral) < 2.0 and track.is_on_road(log.global_position, index),
-			"a falling log waits off the road, then rolls across it", "(mid-roll %.1f m from the center)" % lateral)
-	# Same race time, same log: online peers need nothing synced.
-	var a := log.global_transform
-	track.hazard_time -= 1.0 / Engine.physics_ticks_per_second
-	await _tree().physics_frame
-	_check(log.global_transform.origin.distance_to(a.origin) < 0.05, "log motion is a function of race time only")
-	# Park a ridden trike in its path just before it arrives.
-	var frame := track.path.get_frame(index)
-	main.trike.teleport(frame.translated_local(Vector3(0.0, 0.8, 0.0)))
-	main.get_progress().reset(index)
-	await _wait(0.6)
-	var before := main.trike.global_position
+		if child.has_method(&"mid_crossing_time"):
+			var key := (child as Node).scene_file_path.get_file().get_basename()
+			if not kinds.has(key):
+				kinds[key] = child
+	if kinds.is_empty():
+		return
+	for key: String in kinds:
+		print("\n[%s: %s hazard]" % [label, key])
+		var hazard: Node3D = kinds[key]
+		var period: float = hazard.get(&"period")
+		var phase: float = hazard.get(&"phase")
+		var index := track.path.find_nearest(hazard.global_position)
+		var mid: float = hazard.call(&"mid_crossing_time")
+		track.hazard_time = period * 3.0 - phase - 0.3
+		await _tree().physics_frame
+		await _tree().physics_frame
+		var waiting_off: bool = not hazard.call(&"is_active") and not track.is_on_road(hazard.global_position, index)
+		track.hazard_time = period * 3.0 - phase + mid
+		await _tree().physics_frame
+		await _tree().physics_frame
+		var now := track.path.find_nearest(hazard.global_position, index)
+		var lateral := (hazard.global_position - track.path.points[now]).dot(track.path.rights[now])
+		_check(waiting_off and hazard.call(&"is_active") and absf(lateral) < 2.5 and track.is_on_road(hazard.global_position, now),
+				"a %s waits off the road, then crosses it" % key.replace("_", " "), "(mid-crossing %.1f m from the center)" % lateral)
+		var a := hazard.global_transform
+		track.hazard_time -= 1.0 / Engine.physics_ticks_per_second
+		await _tree().physics_frame
+		_check(hazard.global_transform.origin.distance_to(a.origin) < 0.15, "%s motion is a function of race time only" % key.replace("_", " "))
+		# Park a ridden trike where it crosses the centerline, just before.
+		main.trike.teleport(track.path.get_frame(now).translated_local(Vector3(0.0, 0.8, 0.0)))
+		main.get_progress().reset(now)
+		await _wait(0.6)
+		var before := main.trike.global_position
+		var ejects := main.rider.eject_count
+		var hardest := 0.0
+		track.hazard_time = period * 5.0 - phase + mid - 1.0
+		for k in runner._ticks(2.5):
+			await _tree().physics_frame
+			hardest = maxf(hardest, main.trike.last_impact_strength)
+		var pushed := main.trike.global_position.distance_to(before)
+		_check(hardest > 3.0 or pushed > 1.5 or main.rider.eject_count > ejects, "a %s hits a trike in its way" % key.replace("_", " "),
+				"(impact %.1f, pushed %.1f m, %s)" % [hardest, pushed, "rider thrown off" if main.rider.eject_count > ejects else "rider held on"])
+		main.rider.force_mount()
+
+
+## Crossing the line at full speed and letting go: the finished trike brakes
+## to a stop on the run-off, before the wall at the end of the road, and the
+## rider stays on (celebrating).
+func _test_finish_runoff(main: RaceSession) -> void:
+	print("\n[%s: finish run-off]" % label)
+	var track := main.track
+	var finish := track.get_finish_index() * track.path.spacing
+	var index := await _place(main, finish - 150.0)
+	var racer := main.get_local_racer()
+	racer.checkpoints.force_passed_through(index)
 	var ejects := main.rider.eject_count
+	var pilot := TrackAutopilot.new(track, main.trike)
+	pilot.target_speed = 40.0
+	var crossing_speed := 0.0
+	var t := 0.0
+	while not racer.finished and t < 15.0:
+		pilot.drive()
+		await _tree().physics_frame
+		t += 1.0 / Engine.physics_ticks_per_second
+		crossing_speed = main.trike.forward_speed
 	var hardest := 0.0
-	track.hazard_time = log.period * 5.0 - log.phase + log.drop_time + roll_time * 0.2
-	for k in runner._ticks(2.0):
+	for k in runner._ticks(8.0):
+		main.trike.input.clear()  # a player who just lets go
 		await _tree().physics_frame
 		hardest = maxf(hardest, main.trike.last_impact_strength)
-	var pushed := main.trike.global_position.distance_to(before)
-	_check(hardest > 3.0 or pushed > 1.5 or main.rider.eject_count > ejects, "a log hits a trike in its way",
-			"(impact %.1f, pushed %.1f m, %s)" % [hardest, pushed, "rider thrown off" if main.rider.eject_count > ejects else "rider held on"])
+	var left := (track.path.size() - 1 - main.get_progress().current_index) * track.path.spacing
+	_check(racer.finished and crossing_speed > 18.0, "finishing at full speed", "(%.1f m/s over the line)" % crossing_speed)
+	_check(main.trike.linear_velocity.length() < 0.5 and main.rider.eject_count == ejects and main.rider.is_riding() and hardest < 4.0,
+			"the finished trike brakes to a stop before the end of the road, rider aboard",
+			"(%.0f m of road left, hardest bump %.1f)" % [left, hardest])
+
+
+# --- Map-specific features -----------------------------------------------------
+
+func _test_canyon_sections(track: Track) -> void:
+	print("\n[Rocky Canyon: sections and features]")
+	var counts := _prop_counts(track)
+	var cliffs := track.get_zones("cliff")
+	var cliff_samples := 0
+	for i in track.path.size():
+		if track.builder.cliff_weight(i, -1) > 0.99 or track.builder.cliff_weight(i, 1) > 0.99:
+			cliff_samples += 1
+	_check(cliffs.size() >= 4 and cliff_samples * track.path.spacing > 1500.0, "high cliff roads (rock wall on one side)",
+			"(%d cliff stretches, %.0f m)" % [cliffs.size(), cliff_samples * track.path.spacing])
+	_check(counts.get("FallingRock", 0) >= 8 and counts.get("RollingRock", 0) >= 3, "falling boulders and rolling rock hazards",
+			"(%s)" % str(counts))
+	_check(track.get_zones("gap").size() == 2 and counts.get("BigRamp", 0) == 2 and counts.get("Ramp", 0) >= 5,
+			"two large jumps and wooden ramps", "(%d ramps)" % counts.get("Ramp", 0))
+	var narrow := INF
+	for w in track.path.widths:
+		narrow = minf(narrow, w)
+	_check(narrow <= 10.0 and track.get_zones("rocks").size() >= 1, "narrow rock passage", "(narrowest %.1f m)" % narrow)
+	var radius := TrackRoute.min_radius(track.route_segments)
+	var hairpins := 0
+	for segment in track.route_segments:
+		if absf(segment.y) >= 110.0:
+			hairpins += 1
+	_check(hairpins >= 14 and radius < 21.0, "more technical than Forest Rush: three switchback descents",
+			"(%d hairpins, tightest %.1f m)" % [hairpins, radius])
+	_check(_decor_count(track, "Trees_spire") > 300 and _decor_count(track, "Trees_pine") == 0,
+			"canyon scenery: rock spires instead of pines", "(%d spires)" % _decor_count(track, "Trees_spire"))
+
+
+func _test_snow_sections(track: Track) -> void:
+	print("\n[Snow Slide: sections and features]")
+	var counts := _prop_counts(track)
+	var ice_length := 0.0
+	for zone: Array in track.get_zones("ice"):
+		ice_length += float(zone[1]) - float(zone[0])
+		_check(float(zone[4]) - float(zone[3]) <= 0.6, "ice at %.0f m covers part of the road (a grippy line stays)" % float(zone[0]),
+				"(%.0f %% of the width)" % ((float(zone[4]) - float(zone[3])) * 100.0))
+	var bridge_length := 0.0
+	for zone: Array in track.get_zones("bridge"):
+		bridge_length += float(zone[1]) - float(zone[0])
+	var share := (ice_length * 0.5 + bridge_length) / track.path.length
+	_check(track.get_zones("ice").size() >= 4 and share < 0.08, "ice sections, but most of the map has grip",
+			"(%.0f m of ice bands + %.0f m frozen bridges ≈ %.1f %% of the route)" % [ice_length, bridge_length, share * 100.0])
+	_check(track.road_surface == TrackSurface.Kind.SNOW and track.bridge_surface == TrackSurface.Kind.ICE
+			and track.get_node_or_null("IceBody") != null, "snow roads, ice patches and frozen bridges")
+	_check(track.get_zones("wind").size() >= 2, "windy mountain turns", "(%d wind stretches)" % track.get_zones("wind").size())
+	_check(counts.get("snowman", 0) >= 15 and counts.get("RoadBoulder", 0) >= 4, "snow obstacles: snowmen and snowbanks",
+			"(%s)" % str(counts))
+	var big := 0
+	for child in track.get_node("Props").get_children():
+		if child is Ramp and (child as Ramp).width < 8.0 and (child as Ramp).height >= 1.6:
+			big += 1
+	_check(big >= 6 and counts.get("BigRamp", 0) == 1, "large ramps and a big jump", "(%d large ramps)" % big)
+	_check(_decor_count(track, "Trees_snow_pine") > 3000, "snow-covered pine forests",
+			"(%d snowy pines)" % _decor_count(track, "Trees_snow_pine"))
+
+
+## The map's own sky and sun are applied (forest keeps the scene's).
+func _test_sky(main: RaceSession) -> void:
+	var theme := main.track.theme
+	var environment := (main.get_node("WorldEnvironment") as WorldEnvironment).environment
+	var sky := environment.sky.sky_material as ProceduralSkyMaterial
+	var sun := main.get_node("Sun") as DirectionalLight3D
+	if theme.apply_environment:
+		_check(sky.sky_top_color.is_equal_approx(theme.sky_top_color) and sun.light_color.is_equal_approx(theme.sun_color)
+				and is_equal_approx(environment.fog_density, theme.fog_density), "%s has its own sky, fog and sun" % label)
+	else:
+		_check(sky.sky_top_color.is_equal_approx(Color(0.26, 0.53, 0.95)), "%s keeps the race scene's sky" % label)
+
+
+## Rocky Canyon: the cliff side of a cliff road is a rock wall above the
+## barrier (no falling off that side), the other side drops away.
+func _test_cliff_walls(main: RaceSession) -> void:
+	print("\n[Rocky Canyon: cliff walls]")
+	var track := main.track
+	var zone: Array = track.get_zones("cliff")[0]
+	var side := int(zone[3])
+	var index := track.path.index_at_distance((float(zone[0]) + float(zone[1])) * 0.5)
+	var wall := track.builder.slope_point(track.path, index, side, 6.0)
+	var drop := track.builder.slope_point(track.path, index, -side, 6.0)
+	var road_y := track.path.points[index].y
+	_check(wall.y > road_y + 15.0 and drop.y < road_y, "rock wall rises on the cliff side, the slope drops on the other",
+			"(wall top %.0f m above the road, far side %.0f m below)" % [wall.y - road_y, road_y - drop.y])
+	# Level with a flying trike's rider (3 m up), from the road center out.
+	var center := track.path.points[index] + Vector3.UP * 3.0
+	var outward := track.path.rights[index] * float(side)
+	var hit := _ray(track, center, center + outward * (track.half_width_at(index) + 12.0))
+	var face := INF if hit.is_empty() else ((hit["position"] as Vector3) - center).dot(outward) - track.half_width_at(index)
+	_check(not hit.is_empty() and face < 3.0, "the cliff wall is solid right behind the barrier (collision matches the rock face)",
+			"(rock face %.1f m past the barrier)" % face)
+	await _place(main, float(zone[0]) - 60.0)
+	var run := await _drive(main, float(zone[1]) + 20.0, 60.0)
+	_check(run["arrived"] and run["respawns"] == 0 and main.rider.is_riding(), "a whole cliff road can be driven cleanly",
+			"(%.0f m in %.1f s)" % [float(zone[1]) - float(zone[0]) + 80.0, run["time"]])
+
+
+## Snow Slide: ice has much less sideways grip than the snow road, so the
+## same steering at the same speed slides wider; the trike stays upright.
+func _test_ice(main: RaceSession) -> void:
+	print("\n[Snow Slide: ice]")
+	var track := main.track
+	var zone: Array = track.get_zones("ice")[0]
+	var u := (float(zone[3]) + float(zone[4])) * 0.5
+	var ice_index := track.path.index_at_distance(float(zone[0]) + 20.0)
+	var ice_lateral := (u - 0.5) * track.half_width_at(ice_index) * 2.0
+	var ice_slip := await _slide_test(main, ice_index, ice_lateral)
+	# Reference: a clear, windless snow straight.
+	var snow_index := track.path.index_at_distance(1300.0)
+	var snow_slip := await _slide_test(main, snow_index, 0.0)
+	_check(track.surface_at(ice_index, ice_lateral) == TrackSurface.Kind.ICE and ice_slip["surface"] == "ice",
+			"wheels report ice on the ice band", "(%s)" % ice_slip["surface"])
+	_check(ice_slip["turned"] < snow_slip["turned"] * 0.6, "on ice the trike slides on instead of turning (much less grip than snow)",
+			"(direction of travel turned %.0f° on ice vs %.0f° on snow in 1.2 s)" % [ice_slip["turned"], snow_slip["turned"]])
+	_check(ice_slip["upright"] and ice_slip["riding"], "sliding on ice doesn't flip the trike or throw the rider off")
+
+
+## 15 m/s, then hard left for 1.2 s: how far the direction of travel turned.
+func _slide_test(main: RaceSession, index: int, lateral: float) -> Dictionary:
+	var track := main.track
+	if not main.rider.is_riding():
+		main.rider.force_mount()
+	main.trike.teleport(track.path.get_frame(index).translated_local(Vector3(lateral, 0.8, 0.0)))
+	main.get_progress().reset(index)
+	await _wait(0.3)
+	# Launched like an item hit: not a crash, so the rider stays aboard.
+	main.trike.apply_item_hit(-main.trike.global_basis.z * 15.0)
+	await _tree().physics_frame
+	await _tree().physics_frame
+	var heading := Vector2(main.trike.linear_velocity.x, main.trike.linear_velocity.z)
+	var surface := ""
+	for k in runner._ticks(1.2):
+		main.trike.input.steer = -1.0
+		main.trike.input.throttle = 0.5
+		await _tree().physics_frame
+		if k == 5:
+			surface = TrackSurface.name_of(main.trike.surface)
+	var travel := Vector2(main.trike.linear_velocity.x, main.trike.linear_velocity.z)
+	main.trike.input.clear()
+	var result := {"turned": rad_to_deg(absf(heading.angle_to(travel))), "surface": surface, "upright": main.trike.global_basis.y.y > 0.6, "riding": main.rider.is_riding()}
 	main.rider.force_mount()
+	return result
+
+
+## Snow Slide: the snow road has a little less grip than dirt but stays
+## controllable: top speed close to dirt, corners at race speed without
+## sliding off.
+func _test_snow_road(main: RaceSession) -> void:
+	print("\n[Snow Slide: snow road]")
+	var config := main.trike.config
+	_check(config.snow_grip_factor >= 0.7 and config.snow_speed_factor >= 0.9 and config.ice_grip_factor < config.snow_grip_factor * 0.5,
+			"snow: a little less grip and speed than dirt; ice: much less grip",
+			"(snow grip %.2f, speed %.2f; ice grip %.2f)" % [config.snow_grip_factor, config.snow_speed_factor, config.ice_grip_factor])
+	await _place(main, 330.0)
+	var run := await _drive(main, 1300.0, 70.0, 30.0)
+	var surfaces: Dictionary = run["surfaces"]
+	var top := _speed_between(run["speeds"], 330.0, 1300.0, true)
+	_check(surfaces.get("snow", 0) > 600 and run["arrived"] and run["respawns"] == 0 and main.rider.is_riding(),
+			"the fast snowy descent drives cleanly on snow", "(%s ticks, top %.1f m/s, %.1f s)" % [str(surfaces), top, run["time"]])
+	_check(top > config.max_speed * config.snow_speed_factor - 2.5, "snow keeps most of the speed", "(top %.1f m/s)" % top)
+
+
+## Snow Slide: gusts push a trike sideways in a wind stretch, never outside,
+## identically for the same race time.
+func _test_wind(main: RaceSession) -> void:
+	print("\n[Snow Slide: crosswind]")
+	var track := main.track
+	var zone: Array = track.get_zones("wind")[0]
+	var index := track.path.index_at_distance((float(zone[0]) + float(zone[1])) * 0.5)
+	track.hazard_time = 10.0
+	var a := track.wind_at(index)
+	var b := track.wind_at(index)
+	var outside := track.wind_at(track.path.index_at_distance(float(zone[0]) - 50.0))
+	var strongest := 0.0
+	var gust_at := 0.0
+	for k in 60:
+		track.hazard_time = k * 0.1
+		if track.wind_at(index).length() > strongest:
+			strongest = track.wind_at(index).length()
+			gust_at = k * 0.1
+	_check(a == b and outside == Vector3.ZERO and strongest > 2.0 and strongest <= float(zone[4]) + 0.01,
+			"gusty crosswind only in its stretch, a function of race time", "(up to %.1f m/s²)" % strongest)
+	# A trike rolling straight through the wind drifts toward the zone's side.
+	main.trike.teleport(track.path.get_frame(index).translated_local(Vector3(0.0, 0.8, 0.0)))
+	main.get_progress().reset(index)
+	await _wait(0.3)
+	track.hazard_time = gust_at + track.wind_gust_period - 0.75  # the 1.5 s window centred on a gust
+	var start := main.trike.global_position
+	var drift := 0.0
+	for k in runner._ticks(1.5):
+		main.trike.input.throttle = 0.3
+		await _tree().physics_frame
+	main.trike.input.clear()
+	drift = (main.trike.global_position - start).dot(track.path.rights[index]) * signf(float(zone[3]))
+	_check(drift > 0.6 and drift < 4.0 and main.rider.is_riding(), "a gust pushes a trike sideways, but not off the road (steer against it)",
+			"(%.1f m in 1.5 s)" % drift)
+	track.hazard_time = 0.0
 
 
 # --- AI on the whole route ----------------------------------------------------
 
 func _test_ai_full_route() -> void:
-	print("\n[Forest Rush: AI drives the whole route]")
+	print("\n[%s: AI drives the whole route]" % label)
 	var world := Node3D.new()
 	world.name = "MapWorld"
 	runner.add_child(world)
-	var track: Track = TRACK_SCENE.instantiate()
+	var track: Track = (spec["track"] as PackedScene).instantiate()
 	world.add_child(track)
 	var manager := RacerManager.new()
 	manager.ai_configs = AI_CONFIGS.duplicate()
@@ -632,5 +956,5 @@ func _test_ai_full_route() -> void:
 	_check(racer.finish_time >= 300.0 and racer.finish_time <= 600.0, "the expert (hard AI) run takes 5-10 minutes",
 			"(%.1f s)" % racer.finish_time)
 	_check(driver.reset_count + driver.emergency_count == 0 and racer.respawn_count == 0, "no resets or respawns needed on the way",
-			"(%d wipeouts)" % racer.rider.eject_count)
+			"(%d wipeouts, %d resets, %d respawns)" % [racer.rider.eject_count, driver.reset_count + driver.emergency_count, racer.respawn_count])
 	await _free(world)

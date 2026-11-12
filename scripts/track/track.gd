@@ -37,9 +37,25 @@ const GATE_SCRIPT := preload("res://scripts/track/track_gate.gd")
 ##   "mud", u0, u1       mud band across the road (0 = left edge, 1 = right)
 ##   "overlook", side    viewpoint on one side (-1 left, 1 right): no trees there
 ##   "clearing"          no trees on either side
+##   "rocks"             rock pillars right behind both barriers (narrows)
+##   "ice", u0, u1       ice band across the road (low grip, see TrikeConfig)
+##   "cliff", side       the slope on that side rises as a rock wall (-1 left, 1 right)
+##   "wind", side, m/s²  gusty crosswind pushing toward that side (snow passes)
 @export var zones: Array = []
+## Look of the map (paint, scenery, sky); null = the default forest look.
+@export var theme: TrackTheme
+## Ground of the plain road (Snow Slide: SNOW) and of bridge decks
+## (frozen bridges: ICE). Forest Rush and the test track: ROAD and WOOD.
+@export var road_surface := TrackSurface.Kind.ROAD
+@export var bridge_surface := TrackSurface.Kind.WOOD
+## Cliff walls and wind fade in and out over this length (m).
+@export var zone_blend := 16.0
+## Gust cycle of "wind" zones (s); the push varies from 35 % to 100 %.
+@export var wind_gust_period := 5.0
 @export var wall_height := 1.1
 @export var start_distance := 14.0
+## Road left after the finish line (m). The real maps use 90 m, enough for a
+## finished trike to brake to a stop before the end wall.
 @export var finish_distance_from_end := 30.0
 ## Spacing between grid slots on the start line (for up to 5 racers).
 @export var grid_slot_spacing := Vector2(2.6, 3.5)
@@ -83,6 +99,8 @@ func _ready() -> void:
 
 
 func build() -> void:
+	if theme == null:
+		theme = TrackTheme.new()
 	build_timings.clear()
 	var t := Time.get_ticks_usec()
 	if not route_segments.is_empty():
@@ -93,6 +111,7 @@ func build() -> void:
 	builder.road_width = road_width
 	builder.wall_height = wall_height
 	builder.chunk_samples = chunk_samples
+	theme.apply_to_builder(builder)
 	builder.build(path)
 	t = _time_stage("geometry", t)
 	_add_chunks()
@@ -193,14 +212,30 @@ func get_sample_kind(index: int) -> TrackMeshBuilder.SampleKind:
 func surface_at(index: int, lateral := 0.0) -> TrackSurface.Kind:
 	match builder.quad_kind(clampi(index, 0, path.size() - 2)):
 		TrackMeshBuilder.SampleKind.BRIDGE:
-			return TrackSurface.Kind.WOOD
+			return bridge_surface
 		TrackMeshBuilder.SampleKind.GAP:
 			return TrackSurface.Kind.GRASS
 	var mud := builder.mud_bands[index]
 	var u := 0.5 + lateral / (half_width_at(index) * 2.0)
 	if mud.y > mud.x and u >= mud.x and u <= mud.y:
-		return TrackSurface.Kind.MUD
-	return TrackSurface.Kind.ROAD
+		return builder.band_kinds[index] as TrackSurface.Kind
+	return road_surface
+
+
+## Crosswind acceleration (m/s², horizontal) at sample `index` and the
+## current race clock: zero outside "wind" zones. A pure function of
+## `hazard_time`, so every computer pushes its own trikes identically.
+func wind_at(index: int) -> Vector3:
+	if index < 0 or index >= path.size():
+		return Vector3.ZERO
+	var distance := index * path.spacing
+	for zone: Array in zones:
+		if zone[2] != "wind" or distance < float(zone[0]) or distance > float(zone[1]):
+			continue
+		var fade := clampf(minf(distance - float(zone[0]), float(zone[1]) - distance) / maxf(zone_blend, 0.01), 0.0, 1.0)
+		var gust := 0.35 + 0.65 * maxf(sin(TAU * hazard_time / maxf(wind_gust_period, 0.1) + float(zone[0]) * 0.01), 0.0)
+		return path.rights[index] * signf(float(zone[3])) * float(zone[4]) * gust * fade
+	return Vector3.ZERO
 
 
 ## Zones of one kind: [start m, end m, kind, ...] entries.
@@ -269,6 +304,14 @@ func _classify_samples() -> void:
 	var mud := PackedVector2Array()
 	mud.resize(count)
 	mud.fill(Vector2.ZERO)
+	var band_kinds := PackedByteArray()
+	band_kinds.resize(count)
+	band_kinds.fill(TrackSurface.Kind.MUD)
+	var cliffs: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array()]
+	for slot in 2:
+		cliffs[slot].resize(count)
+		cliffs[slot].fill(0.0)
+	var blend := maxf(zone_blend / path.spacing, 1.0)
 	_unsafe.resize(count)
 	_unsafe.fill(0)
 	for zone: Array in zones:
@@ -281,11 +324,19 @@ func _classify_samples() -> void:
 			"gap":
 				for i in range(first, last + 1):
 					kinds[i] = TrackMeshBuilder.SampleKind.GAP
-			"mud":
+			"mud", "ice":
 				for i in range(first, last + 1):
 					mud[i] = Vector2(zone[3], zone[4])
+					band_kinds[i] = TrackSurface.Kind.ICE if zone[2] == "ice" else TrackSurface.Kind.MUD
+			"cliff":
+				var slot := 0 if int(zone[3]) < 0 else 1
+				for i in range(maxi(first - ceili(blend), 0), mini(last + ceili(blend), count - 1) + 1):
+					var inside := minf(float(i - first), float(last - i))
+					cliffs[slot][i] = maxf(cliffs[slot][i], clampf((inside + blend) / blend, 0.0, 1.0))
 	builder.sample_kinds = kinds
 	builder.mud_bands = mud
+	builder.band_kinds = band_kinds
+	builder.cliff_weights = cliffs
 	for zone: Array in get_zones("gap"):
 		mark_unsafe(float(zone[0]) - gap_unsafe_before, float(zone[1]) + gap_unsafe_after)
 
@@ -295,9 +346,14 @@ func _add_chunks() -> void:
 	var bodies := {
 		"road": _surface_body("TrackBody", TrackSurface.Kind.ROAD),
 		"mud": _surface_body("MudBody", TrackSurface.Kind.MUD),
-		"wood": _surface_body("BridgeBody", TrackSurface.Kind.WOOD),
+		"ice": _surface_body("IceBody", TrackSurface.Kind.ICE),
+		"wood": _surface_body("BridgeBody", bridge_surface),
 		"slope": _surface_body("SlopeBody", TrackSurface.Kind.GRASS),
 	}
+	# The plain road's own surface (snow on Snow Slide). Walls and cliffs
+	# share its body; wheels only touch them in a crash.
+	if road_surface != TrackSurface.Kind.ROAD:
+		TrackSurface.tag(bodies["road"], road_surface)
 	bodies["wall"] = bodies["road"]
 	bodies["cliff"] = bodies["road"]
 	var road_material := TrackMaterials.road()
@@ -321,7 +377,7 @@ func _add_chunks() -> void:
 			collider.name = "%s%s" % [category.capitalize(), suffix]
 			collider.shape = shape
 			(bodies[category] as StaticBody3D).add_child(collider)
-	for key: String in ["mud", "wood", "slope"]:
+	for key: String in ["mud", "ice", "wood", "slope"]:
 		var body: StaticBody3D = bodies[key]
 		if body.get_child_count() == 0:
 			body.free()
@@ -364,7 +420,7 @@ func _add_end_blocker(body: StaticBody3D, index: int, push_dir: float) -> void:
 	var visual := MeshInstance3D.new()
 	visual.mesh = mesh
 	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.62, 0.42, 0.26)
+	material.albedo_color = theme.end_blocker_color
 	material.albedo_texture = TrackMaterials.detail_texture(0.8, 0.2)
 	material.uv1_triplanar = true
 	material.uv1_world_triplanar = true

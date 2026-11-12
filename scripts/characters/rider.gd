@@ -13,6 +13,21 @@ extends Node3D
 ## update_free_pose(), which uses internal IK targets.
 
 enum PoseMode { RIDE, FLAIL, GET_UP, STAND }
+## Faces. The first five are the looks' resting faces (RiderLook.Face);
+## SHOCKED, DIZZY and CHEER are shown for falls, get-ups and celebrations.
+enum Face { CHEERFUL, DETERMINED, GRINNING, SLEEPY, CHEEKY, SHOCKED, DIZZY, CHEER }
+## Per expression: [brow tilt (rad, + = inner ends down), brow lift (m),
+## mouth scale (width, height), eye open L, eye open R, pupil scale].
+const FACES := {
+	Face.CHEERFUL: [0.0, 0.0, Vector2(1.0, 1.0), 1.0, 1.0, 1.0],
+	Face.DETERMINED: [0.38, -0.012, Vector2(0.75, 0.55), 0.8, 0.8, 1.0],
+	Face.GRINNING: [-0.1, 0.012, Vector2(1.45, 1.35), 0.85, 0.85, 1.0],
+	Face.SLEEPY: [-0.05, -0.008, Vector2(0.85, 0.7), 0.42, 0.42, 1.0],
+	Face.CHEEKY: [0.15, 0.006, Vector2(1.25, 1.15), 1.0, 0.35, 1.0],
+	Face.SHOCKED: [-0.35, 0.035, Vector2(0.6, 1.9), 1.2, 1.2, 0.6],
+	Face.DIZZY: [-0.2, 0.0, Vector2(1.0, 0.45), 0.3, 0.3, 1.0],
+	Face.CHEER: [-0.2, 0.03, Vector2(1.6, 1.7), 0.55, 0.55, 1.0],
+}
 
 ## Rider-root position relative to the feet when standing (rider space is
 ## the seated trike space, so the hips are lifted and moved over the feet).
@@ -59,6 +74,12 @@ const BONE_MAP := {
 @export var free_leg_pole := Vector3(0.2, 0.2, -1.0)
 
 var pose_mode := PoseMode.RIDE
+var expression := Face.CHEERFUL
+## The look's resting face (RiderStyle sets it).
+var base_face := Face.CHEERFUL
+## Seconds of finish celebration left (arms up while seated).
+var celebrate_time := 0.0
+var _face_rest := {}
 var _time := 0.0
 var _run_phase := 0.0
 var _free_targets: Array[Marker3D] = []
@@ -83,6 +104,10 @@ func _ready() -> void:
 		marker.name = target_name
 		add_child(marker)
 		_free_targets.append(marker)
+	for part: String in ["BrowL", "BrowR", "Mouth", "EyeL", "EyeR", "PupilL", "PupilR", "EyeShineL", "EyeShineR"]:
+		var node := _head.get_node_or_null(part) as Node3D
+		if node:
+			_face_rest[part] = node.transform
 	solve_limbs()
 
 
@@ -94,6 +119,62 @@ func set_pose_mode(mode: PoseMode) -> void:
 	scale = Vector3.ONE
 	if mode == PoseMode.RIDE:
 		_spine.rotation = Vector3.ZERO
+	match mode:
+		PoseMode.FLAIL:
+			set_expression(Face.SHOCKED)
+		PoseMode.GET_UP:
+			set_expression(Face.DIZZY)
+		_:
+			set_expression(base_face)
+
+
+## The look's resting face; shown now unless a fall/get-up face is on.
+func set_base_face(face: int) -> void:
+	base_face = face as Face
+	if pose_mode == PoseMode.RIDE or pose_mode == PoseMode.STAND:
+		set_expression(base_face)
+
+
+## Poses brows, eyes, pupils and mouth for `face` (relative to the rest pose).
+func set_expression(face: Face) -> void:
+	expression = face
+	if _face_rest.is_empty():
+		return
+	var spec: Array = FACES[face]
+	var tilt: float = spec[0]
+	var lift: float = spec[1]
+	var mouth: Vector2 = spec[2]
+	for side in ["L", "R"]:
+		var side_sign := -1.0 if side == "L" else 1.0
+		var brow := _head.get_node("Brow" + side) as Node3D
+		var rest: Transform3D = _face_rest["Brow" + side]
+		brow.transform = Transform3D(Basis(Vector3.FORWARD, tilt * side_sign) * rest.basis, rest.origin + Vector3(0.0, lift, 0.0))
+		var open: float = spec[3] if side == "L" else spec[4]
+		for part: String in ["Eye", "EyeShine"]:
+			var node := _head.get_node(part + side) as Node3D
+			var eye_rest: Transform3D = _face_rest[part + side]
+			node.transform = Transform3D(Basis.from_scale(Vector3(1.0, open, 1.0)) * eye_rest.basis, eye_rest.origin)
+			if part == "EyeShine":
+				node.visible = open > 0.5
+		var pupil := _head.get_node("Pupil" + side) as Node3D
+		var pupil_rest: Transform3D = _face_rest["Pupil" + side]
+		var pupil_scale: float = spec[5]
+		pupil.transform = Transform3D(Basis.from_scale(Vector3(pupil_scale, pupil_scale * minf(open, 1.0), pupil_scale))
+				* pupil_rest.basis, pupil_rest.origin)
+	var mouth_node := _head.get_node("Mouth") as Node3D
+	var mouth_rest: Transform3D = _face_rest["Mouth"]
+	mouth_node.transform = Transform3D(Basis.from_scale(Vector3(mouth.x, mouth.y, 1.0)) * mouth_rest.basis, mouth_rest.origin)
+
+
+## Finish celebration: arms up (fist pump, wave) for `seconds` while seated,
+## then the hands go back to the grips.
+func celebrate(seconds := 3.5) -> void:
+	celebrate_time = seconds
+	set_expression(Face.CHEER)
+
+
+func is_celebrating() -> bool:
+	return celebrate_time > 0.0
 
 
 func get_head_global_position() -> Vector3:
@@ -120,12 +201,25 @@ func update_free_pose(delta: float, speed_ratio := 0.0, progress := 0.0) -> void
 ## lean: -1 (left) .. 1 (right). speed_ratio: 0..1.
 func update_pose(lean: float, speed_ratio: float, delta: float) -> void:
 	_time += delta
+	if celebrate_time > 0.0:
+		celebrate_time = maxf(celebrate_time - delta, 0.0)
+		# Left fist pumps, right hand waves above the head.
+		var pump := absf(sin(_time * 7.0))
+		_set_free_targets(Vector3(-0.32, 1.25 + pump * 0.18, 0.05 - pump * 0.05),
+				Vector3(0.36 + sin(_time * 9.0) * 0.08, 1.38, 0.08), Vector3.ZERO, Vector3.ZERO)
+		if celebrate_time <= 0.0:
+			set_expression(base_face)
 	var weight := 1.0 - exp(-pose_smoothing * delta)
 	var target_roll := -clampf(lean, -1.5, 1.5) * deg_to_rad(max_side_lean_deg)
 	var target_pitch := -speed_ratio * deg_to_rad(max_forward_tuck_deg)
 	_spine.rotation.z = lerpf(_spine.rotation.z, target_roll, weight)
 	_spine.rotation.x = lerpf(_spine.rotation.x, target_pitch, weight)
-	_twist_with_handlebar()
+	if celebrate_time > 0.0:
+		_chest.rotation.y = lerpf(_chest.rotation.y, 0.0, weight)
+		_neck.rotation = Vector3(-0.25, sin(_time * 3.0) * 0.2, 0.0)
+	else:
+		_neck.rotation.x = lerpf(_neck.rotation.x, 0.0, weight)
+		_twist_with_handlebar()
 	var flutter := sin(_time * (6.0 + speed_ratio * 14.0)) * (0.2 + speed_ratio)
 	_scarf_tail.rotation.x = deg_to_rad(10.0 + speed_ratio * scarf_sway_deg + flutter * 6.0)
 	_scarf_tail.rotation.y = -lean * 0.25 + flutter * 0.08
@@ -152,7 +246,8 @@ func solve_limbs() -> void:
 		var root: Node3D = limb["root"]
 		var start := to_local(root.global_position)
 		var goal := to_local(target.global_position)
-		var pole: Vector3 = limb["pole"] if pose_mode == PoseMode.RIDE else limb["free_pole"]
+		var free: bool = pose_mode != PoseMode.RIDE or (celebrate_time > 0.0 and limb["is_arm"])
+		var pole: Vector3 = limb["free_pole"] if free else limb["pole"]
 		var l1: float = limb["l1"]
 		var l2: float = limb["l2"]
 		var points := solve_two_bone(start, goal, l1, l2, pole)
@@ -217,7 +312,8 @@ func _limb(root: Node3D, upper: Node3D, lower: Node3D, tip: Node3D, side: float,
 
 func _target_for(limb: Dictionary) -> Node3D:
 	var left: bool = limb["side"] < 0.0
-	if pose_mode != PoseMode.RIDE and _free_targets.size() == 4:
+	var celebrating_arm: bool = celebrate_time > 0.0 and limb["is_arm"] and pose_mode == PoseMode.RIDE
+	if (pose_mode != PoseMode.RIDE or celebrating_arm) and _free_targets.size() == 4:
 		var index := (0 if left else 1) + (0 if limb["is_arm"] else 2)
 		return _free_targets[index]
 	if limb["is_arm"]:

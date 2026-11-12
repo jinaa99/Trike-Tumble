@@ -2,3 +2,7 @@
 .DS_Store
 *.tmp
 *.bak
+
+# Export builds (too big for GitHub; share via Releases/Drive instead)
+release/TrikeTumble-Windows/
+release/TrikeTumble-macOS/

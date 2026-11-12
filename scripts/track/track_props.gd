@@ -10,15 +10,25 @@ const RAMP := preload("res://scenes/props/ramp.tscn")
 const BOULDER := preload("res://scenes/props/boulder.tscn")
 const ROAD_TREE := preload("res://scenes/props/road_tree.tscn")
 const FALLING_LOG := preload("res://scenes/props/falling_log.tscn")
+const FALLING_ROCK := preload("res://scenes/props/falling_rock.tscn")
+const ROLLING_ROCK := preload("res://scenes/props/rolling_rock.tscn")
+const SNOWMAN := preload("res://scenes/props/snowman.tscn")
 
 ## Overridable per track in the inspector. Kinds:
-##   crate, crate_stack, cone_line, rock, ramp
+##   crate, crate_stack, cone_line, rock
+##   ramp           kicker ({"length", "height", "width"} optional)
 ##   boulder        big rock on the road ({"radius", "height"} optional)
 ##   road_tree      pine growing in the road
 ##   falling_log    timed log hazard; lateral sign = side the logs come from
 ##                  ({"period", "phase"} optional)
 ##   big_ramp       full-width kicker for a jump gap ({"length", "height"});
 ##                  its lip sits at the given distance
+##   falling_rock   timed rock dropping off a cliff on the lateral sign's side
+##                  ({"period", "phase", "height"} optional)
+##   rolling_rock   timed boulder rolling diagonally across ({"period", "phase"})
+##   snowman        knockable snowman (like crates)
+##   snowman_group  three snowmen in a row across part of the road
+## Boulders take the theme's `road_boulder_color` ({"color"} overrides it).
 @export var layout: Array = [
 	[70.0, -3.5, "crate_stack"],
 	[115.0, 0.0, "cone_line"],
@@ -69,13 +79,20 @@ func build_for_track(track: Track) -> void:
 			"rock":
 				_spawn(ROCK, frame, Vector3(0.0, 0.6, 0.0))
 			"ramp":
-				_spawn(RAMP, frame, Vector3.ZERO)
-				track.mark_unsafe(distance - unsafe_margin, distance + unsafe_margin)
+				# {"length", "height", "width"} make a bigger kicker (Snow Slide).
+				var kicker: Ramp = RAMP.instantiate()
+				kicker.length = params.get("length", kicker.length)
+				kicker.height = params.get("height", kicker.height)
+				kicker.width = params.get("width", kicker.width)
+				_spawn_node(kicker, frame)
+				var run_up := kicker.length * 0.5 if params.has("length") else 0.0
+				track.mark_unsafe(distance - unsafe_margin - run_up, distance + unsafe_margin)
 			"boulder":
 				var boulder: RoadBoulder = BOULDER.instantiate()
 				boulder.radius = params.get("radius", boulder.radius)
 				boulder.height = params.get("height", boulder.height)
 				boulder.random_seed = roundi(distance)
+				boulder.color = params.get("color", track.theme.road_boulder_color if track.theme else boulder.color)
 				_place(boulder, frame)
 				track.mark_unsafe(distance - unsafe_margin, distance + unsafe_margin)
 			"road_tree":
@@ -91,6 +108,25 @@ func build_for_track(track: Track) -> void:
 				# Road space: centered on the road, whatever the lateral sign.
 				_place(hazard, frame.translated_local(Vector3(-lateral, 0.0, 0.0)))
 				track.mark_unsafe(distance - unsafe_margin, distance + unsafe_margin)
+			"falling_rock", "rolling_rock":
+				var rock: RollingRock = (FALLING_ROCK if kind == "falling_rock" else ROLLING_ROCK).instantiate()
+				rock.track = track
+				rock.from_side = -1 if lateral < 0.0 else 1
+				rock.half_width = track.half_width_at(track.path.index_at_distance(distance))
+				rock.period = params.get("period", rock.period)
+				rock.phase = params.get("phase", rock.phase)
+				rock.drop_height = params.get("height", rock.drop_height)
+				rock.random_seed = roundi(distance)
+				if track.theme:
+					rock.color = track.theme.road_boulder_color
+				_place(rock, frame.translated_local(Vector3(-lateral, 0.0, 0.0)))
+				track.mark_unsafe(distance - unsafe_margin - (rock.downhill_drift if kind == "rolling_rock" else 0.0),
+						distance + unsafe_margin + (rock.downhill_drift if kind == "rolling_rock" else 0.0))
+			"snowman":
+				_spawn(SNOWMAN, frame, Vector3(0.0, 0.6, 0.0))
+			"snowman_group":
+				for x in [-2.2, 0.0, 2.2]:
+					_spawn(SNOWMAN, frame, Vector3(x, 0.6, -absf(x) * 0.4))
 			"big_ramp":
 				var ramp: Ramp = RAMP.instantiate()
 				var index := track.path.index_at_distance(distance)

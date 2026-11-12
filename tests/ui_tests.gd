@@ -19,6 +19,7 @@ func _init(test_runner: Node) -> void:
 func run() -> void:
 	await _test_title_buttons_and_navigation()
 	await _test_map_select()
+	await _test_quick_race()
 	await _test_host_screen()
 	await _test_join_validation()
 	await _test_lobby_actions()
@@ -114,6 +115,23 @@ func _test_title_buttons_and_navigation() -> void:
 	await _free(menu)
 
 
+## `-- --quick-race=MAP` (exported builds can't open a scene from the
+## command line): a solo race with 4 AI on that map, via the normal lobby.
+func _test_quick_race() -> void:
+	print("\n[Menu: quick race launch option]")
+	var menu := await _load_menu()
+	var loaded: Array[String] = []
+	menu.scene_changer = func(path: String) -> void: loaded.append(path)
+	var bad := menu.quick_race("no_such_map")
+	var ok := menu.quick_race("rocky_canyon")
+	_check(not bad and ok and loaded == ["res://scenes/main/rocky_canyon.tscn"] and GameSession.lobby.count() == 5
+			and GameSession.lobby.map_id == "rocky_canyon", "quick race: the map's race scene with you + 4 AI",
+			"(%s, %d racers)" % [str(loaded), GameSession.lobby.count()])
+	GameSession.end_race_for_lobby()
+	GameSession.leave_lobby()
+	await _free(menu)
+
+
 func _test_map_select() -> void:
 	print("\n[Menu: map selection]")
 	var menu := await _load_menu()
@@ -124,21 +142,31 @@ func _test_map_select() -> void:
 	for card in maps.cards:
 		names.append(card.map.display_name)
 	_check(names == ["Forest Rush", "Rocky Canyon", "Snow Slide"], "three map cards", "(%s)" % ", ".join(names))
-	var all_placeholders := true
+	var all_routes := true
 	var described := true
 	for card in maps.cards:
-		all_placeholders = all_placeholders and card.is_placeholder_preview() and card.map.preview == null
+		all_routes = all_routes and card.is_route_preview() and not card.is_placeholder_preview() and card.map.preview == null
 		described = described and not card.map.description.is_empty() and not card.map.characteristic.is_empty()
-	_check(all_placeholders, "previews are labelled placeholders (no fake screenshots)")
+	_check(all_routes, "previews are route maps drawn from each map's track data (no fake screenshots)")
 	_check(described, "each card has a description and a gameplay characteristic")
+	var lengths: Array[String] = []
+	for card in maps.cards:
+		var route: Dictionary = card._preview.get_route()
+		lengths.append("%.1f km / %d m" % [float(route.get("length", 0.0)) / 1000.0, roundi(float(route.get("drop", 0.0)))])
+	_check(lengths.size() == 3 and not lengths.has("0.0 km / 0 m"), "each route map shows the real length and drop",
+			"(%s)" % ", ".join(lengths))
 	var forest := maps.cards[0]
 	var canyon := maps.cards[1]
+	var snow := maps.cards[2]
 	_check(forest.selectable and forest.selected and forest.map.get_status_text() == "READY",
 			"Forest Rush is selectable, selected by default, marked READY")
 	canyon.press()
+	_check(canyon.selectable and canyon.selected and not forest.selected and maps.selected_id == "rocky_canyon"
+			and canyon.map.get_status_text() == "READY", "Rocky Canyon is READY and selectable")
 	maps.select("snow_slide")
-	_check(not canyon.selectable and not canyon.selected and not maps.cards[2].selected and maps.selected_id == "forest_rush",
-			"coming-soon maps can't be selected")
+	_check(snow.selectable and snow.selected and not canyon.selected and maps.selected_id == "snow_slide"
+			and snow.map.get_status_text() == "READY", "Snow Slide is READY and selectable")
+	maps.select("forest_rush")
 	maps.continue_button.pressed.emit()
 	await _frames()
 	_check(menu.current_name == &"lobby" and GameSession.mode == GameSession.Mode.SOLO
@@ -272,7 +300,7 @@ func _test_lobby_actions() -> void:
 	(menu.get_screen(&"maps") as MapSelectScreen).continue_button.pressed.emit()
 	await _frames()
 	_check(menu.current_name == &"lobby" and lobby.map_id == "forest_rush" and screen.map_card != null
-			and screen.map_card.map.id == "forest_rush" and screen.map_card.is_placeholder_preview(),
+			and screen.map_card.map.id == "forest_rush" and screen.map_card.is_route_preview(),
 			"back in the lobby with the selected map and its preview")
 	screen.leave_button.pressed.emit()
 	await _frames()
@@ -476,7 +504,7 @@ func _test_pause_menu() -> void:
 	var keys_text := ""
 	for child in main.pause_menu.find_child("Controls", true, false).get_children():
 		keys_text += (child as Label).text + " "
-	_check(keys_text.contains("W / ↑") and keys_text.contains("F") and keys_text.contains("ESC"),
+	_check(keys_text.contains("W / ↑") and keys_text.contains("Q") and keys_text.contains("ESC"),
 			"pause menu lists the current keys")
 	_tree().paused = false
 	await _free(main)
@@ -504,7 +532,7 @@ func _test_hud() -> void:
 			"(%s)" % " → ".join(states))
 	_check(hud.get_race_position_text().contains("/ 3") and hud.position_title.text.contains("CP 0/12"),
 			"position and checkpoint progress shown", "(%s, %s)" % [hud.get_race_position_text(), hud.position_title.text])
-	_check(hud.get_item_text() == "EMPTY" and hud.get_item_hint_text() == "[F] USE ITEM", "empty item slot with its use key")
+	_check(hud.get_item_text() == "EMPTY" and hud.get_item_hint_text() == "[Q] USE ITEM", "empty item slot with its use key (Q)")
 	hud.set_item("Bouncy Ball")
 	_check(hud.get_item_text() == "Bouncy Ball", "item slot shows a held item")
 	hud.set_item("")

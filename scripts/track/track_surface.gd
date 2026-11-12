@@ -5,7 +5,9 @@ extends RefCounted
 ## applies that surface's handling (TrikeConfig, "Surfaces" group).
 ## Anything without the metadata is ROAD (props, ramps, test arenas).
 
-enum Kind { ROAD, GRASS, MUD, WOOD }
+## SNOW: packed snow road (Snow Slide, slightly less grip). ICE: ice patches
+## and frozen bridges (low grip, no slowdown).
+enum Kind { ROAD, GRASS, MUD, WOOD, SNOW, ICE }
 
 const META := &"surface"
 
@@ -21,4 +23,4 @@ static func tag(body: Object, kind: Kind) -> void:
 
 
 static func name_of(kind: Kind) -> String:
-	return ["road", "grass", "mud", "wood"][kind]
+	return ["road", "grass", "mud", "wood", "snow", "ice"][kind]

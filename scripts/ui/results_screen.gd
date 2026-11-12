@@ -4,6 +4,11 @@ extends RaceMenuBase
 ## the finish timeout ended their race), the race duration, and the Race
 ## Again / Return to Lobby actions.
 
+## Place colors for the podium (gold, silver, bronze).
+const MEDALS: Array[Color] = [Color(1.0, 0.8, 0.2), Color(0.82, 0.86, 0.92), Color(0.86, 0.55, 0.3)]
+## Seconds between rows popping in.
+const ROW_DELAY := 0.12
+
 signal race_again_pressed
 signal lobby_pressed
 
@@ -41,19 +46,33 @@ func show_results(results: Array[Dictionary], race_duration: float, local_id: in
 		_rows.remove_child(child)
 		child.queue_free()
 	row_texts.clear()
-	for entry in results:
+	for row in results.size():
+		var entry: Dictionary = results[row]
 		var is_local: bool = entry["id"] == local_id
 		var color := RaceMenuBase.TITLE_COLOR if is_local else RaceMenuBase.TEXT_COLOR
 		var place := RaceSession.ordinal(entry["position"])
 		var player_name: String = entry["name"]
 		var time := Hud.format_time(entry["time"]) if entry["finished"] else "DNF"
-		for text in [place, player_name, time]:
-			var cell := _label(text, 30, color)
+		var texts := [place, player_name, time]
+		for k in texts.size():
+			var cell_color := color
+			if k == 0 and entry["finished"] and int(entry["position"]) <= MEDALS.size():
+				cell_color = MEDALS[int(entry["position"]) - 1]
+			var cell := _label(texts[k], 30, cell_color)
 			_rows.add_child(cell)
+			_pop_in(cell, row * ROW_DELAY)
 		row_texts.append("%s|%s|%s" % [place, player_name, time])
 	_duration_label.text = "Race duration  %s" % Hud.format_time(race_duration)
 	root.visible = true
 	_again_button.grab_focus()
+
+
+## Fades and slides a cell in after `delay` seconds.
+func _pop_in(cell: Control, delay: float) -> void:
+	cell.modulate.a = 0.0
+	var tween := cell.create_tween()
+	tween.tween_interval(delay)
+	tween.tween_property(cell, "modulate:a", 1.0, 0.25)
 
 
 ## Online: only the host decides Race Again; clients can leave.

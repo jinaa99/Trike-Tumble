@@ -33,6 +33,9 @@ metallic_specular = 0.7
 rim_enabled = true
 rim = 0.2
 rim_tint = 0.5
+clearcoat_enabled = true
+clearcoat = 0.6
+clearcoat_roughness = 0.2
 
 [sub_resource type="StandardMaterial3D" id="mat_accent"]
 albedo_color = Color(1, 0.8, 0.16, 1)
@@ -42,6 +45,9 @@ metallic_specular = 0.5
 rim_enabled = true
 rim = 0.25
 rim_tint = 0.5
+clearcoat_enabled = true
+clearcoat = 0.6
+clearcoat_roughness = 0.2
 
 [sub_resource type="StandardMaterial3D" id="mat_frame"]
 albedo_color = Color(0.16, 0.21, 0.42, 1)

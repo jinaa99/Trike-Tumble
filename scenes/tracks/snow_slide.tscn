@@ -1,0 +1,48 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/track/track.gd" id="1_track"]
+[ext_resource type="Script" path="res://scripts/track/track_props.gd" id="2_props"]
+[ext_resource type="Script" path="res://scripts/track/track_decorator.gd" id="3_decor"]
+[ext_resource type="Script" path="res://scripts/track/track_landmarks.gd" id="4_landmarks"]
+[ext_resource type="Script" path="res://scripts/track/track_backdrop.gd" id="5_backdrop"]
+[ext_resource type="Script" path="res://scripts/track/track_structures.gd" id="6_structures"]
+[ext_resource type="Resource" path="res://resources/maps/themes/snow_slide_theme.tres" id="7_theme"]
+
+[node name="SnowSlide" type="Node3D"]
+script = ExtResource("1_track")
+route_segments = PackedVector3Array(110, 0, 2, 140, -30, 6, 120, 25, 8, 200, 35, 11, 180, -45, 12, 160, 25, 11, 200, -30, 12, 170, 40, 11, 130, 0, 10, 110, -60, 7, 120, 0, 6, 100, 70, 7, 110, 0, 6, 120, -75, 7, 100, 0, 6, 110, 65, 7, 140, 0, 5, 150, 20, 3, 100, 0, 2, 130, -30, 4, 90, 0, 2, 160, 25, 4, 120, -20, 5, 100, 0, 9, 90, 0, 13, 120, 0, 10, 40, 0, 7, 50, 135, 6, 35, 0, 7, 55, -145, 6, 35, 0, 7, 50, 140, 6, 35, 0, 7, 55, -140, 6, 50, 0, 7, 150, 30, 9, 140, -40, 10, 160, 0, 9, 130, 45, 10, 150, -30, 9, 120, -55, 6, 110, 0, 5, 100, 60, 6, 120, 0, 5, 110, -50, 6, 130, 0, 5, 140, 20, 4, 120, -25, 4, 150, 0, 6, 130, -35, 8, 120, 40, 7, 140, 0, 6, 120, -30, 7, 180, -35, 12, 170, 40, 12, 160, -30, 11, 150, 35, 10, 160, -25, 10, 140, 30, 9, 150, 0, 8, 120, -20, 5, 110, 0, 2)
+route_start = Vector3(0, 560, 0)
+width_profile = PackedVector2Array(0, 18, 250, 18, 330, 14, 2320, 14, 2340, 12, 3100, 12, 3130, 13, 3390, 13, 3410, 11, 3780, 11, 3810, 14, 7313, 14, 7373, 18, 7513, 18)
+zones = [[0.0, 80.0, "clearing"], [1420.0, 2330.0, "wind", 1, 6.0], [1760.0, 1850.0, "overlook", -1], [2340.0, 2470.0, "ice", 0.05, 0.6], [2492.0, 2573.0, "bridge"], [2600.0, 2700.0, "ice", 0.4, 0.95], [2720.0, 2797.0, "bridge"], [2830.0, 2950.0, "ice", 0.1, 0.55], [3215.0, 3227.0, "gap"], [4540.0, 5230.0, "wind", -1, 6.0], [4880.0, 4980.0, "overlook", 1], [5240.0, 5360.0, "ice", 0.45, 0.95], [5400.0, 5480.0, "ice", 0.05, 0.5], [7373.0, 7513.0, "clearing"]]
+theme = ExtResource("7_theme")
+road_surface = 4
+bridge_surface = 5
+checkpoint_spacing = 250.0
+finish_distance_from_end = 90.0
+finish_timeout = 120.0
+item_box_rows = PackedFloat32Array(400, 760, 1100, 1460, 1800, 2150, 2420, 2650, 2900, 3080, 3330, 3790, 4130, 4500, 4900, 5300, 5900, 6313, 6633, 6993, 7313)
+
+[node name="Props" type="Node3D" parent="."]
+script = ExtResource("2_props")
+layout = [[200.0, -3.0, "snowman"], [330.0, 3.0, "snowman"], [480.0, 0.0, "ramp", {"length": 8.0, "height": 1.7, "width": 5.0}], [640.0, -4.0, "boulder", {"radius": 2.0, "height": 1.3}], [830.0, 3.5, "snowman_group"], [1000.0, 0.0, "ramp", {"length": 8.0, "height": 1.7, "width": 5.0}], [1200.0, -3.5, "boulder", {"radius": 1.8, "height": 1.2}], [1350.0, 3.0, "snowman"], [1620.0, -3.5, "snowman_group"], [2000.0, 3.0, "snowman_group"], [2250.0, 0.0, "ramp", {"length": 8.0, "height": 1.7, "width": 5.0}], [3020.0, -3.0, "snowman"], [3215.0, 0.0, "big_ramp", {"length": 10.0, "height": 2.4}], [3360.0, 3.0, "snowman"], [3900.0, -3.5, "boulder", {"radius": 1.8, "height": 1.2}], [4000.0, 0.0, "ramp", {"length": 8.0, "height": 1.7, "width": 5.0}], [4180.0, 3.5, "snowman_group"], [4320.0, -3.0, "snowman"], [4450.0, 0.0, "ramp", {"length": 8.0, "height": 1.7, "width": 5.0}], [5050.0, 3.0, "boulder", {"radius": 1.8, "height": 1.2}], [5780.0, 3.0, "snowman"], [6050.0, -3.0, "snowman_group"], [6213.0, 0.0, "ramp", {"length": 9.0, "height": 2.0, "width": 5.5}], [6413.0, -3.5, "snowman_group"], [6563.0, 3.5, "boulder", {"radius": 1.8, "height": 1.2}], [6743.0, 0.0, "ramp", {"length": 8.0, "height": 1.7, "width": 5.0}], [6913.0, -3.0, "snowman"], [7073.0, 3.5, "snowman_group"], [7213.0, 0.0, "ramp", {"length": 8.0, "height": 1.7, "width": 5.0}]]
+
+[node name="Decor" type="Node3D" parent="."]
+script = ExtResource("3_decor")
+tree_spacing_samples = 1
+tree_chance = 0.75
+pine_share = 0.92
+tree_scale = Vector2(1.1, 2.2)
+bush_chance = 0.5
+
+[node name="Landmarks" type="Node3D" parent="."]
+script = ExtResource("4_landmarks")
+
+[node name="Backdrop" type="Node3D" parent="."]
+script = ExtResource("5_backdrop")
+terrain_cell = 20.0
+terrain_margin = 750.0
+terrain_edge_blend = 400.0
+far_forest_chance = 0.5
+
+[node name="Structures" type="Node3D" parent="."]
+script = ExtResource("6_structures")

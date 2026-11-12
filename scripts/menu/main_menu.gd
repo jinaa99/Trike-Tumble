@@ -34,6 +34,38 @@ func _ready() -> void:
 		show_screen(&"lobby")
 	else:
 		show_screen(&"title")
+	_quick_race_from_command_line.call_deferred()
+
+
+## QA/launch option for exported builds (which can't open a scene from the
+## command line): `-- --quick-race=snow_slide` starts a solo race on that map
+## through the normal solo lobby (you + 4 AI). Used once per launch.
+static var _quick_race_used := false
+
+
+func _quick_race_from_command_line() -> void:
+	if _quick_race_used:
+		return
+	for arg in OS.get_cmdline_user_args():
+		if not arg.begins_with("--quick-race="):
+			continue
+		_quick_race_used = true
+		quick_race(arg.trim_prefix("--quick-race="))
+		return
+
+
+## Solo race on `map_id` with 4 AI, straight from the menu. False if the map
+## isn't playable.
+func quick_race(map_id: String) -> bool:
+	var map := MapCatalog.get_map(map_id)
+	if map == null or not map.is_playable():
+		push_warning("--quick-race: unknown or unplayable map %s" % map_id)
+		return false
+	GameSession.create_solo_lobby(GameSettings.player_name)
+	GameSession.lobby.add_ai()
+	GameSession.lobby.set_map(map.id)
+	start_race()
+	return true
 
 
 func _add_screen(screen_name: StringName, screen: MenuScreen) -> void:

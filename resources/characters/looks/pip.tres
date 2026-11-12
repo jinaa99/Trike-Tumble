@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="RiderLook" format=3]
+
+[ext_resource type="Script" path="res://scripts/characters/rider_look.gd" id="1_look"]
+
+[resource]
+script = ExtResource("1_look")
+look_name = "Pip"
+helmet_style = 1
+accessory = 1
+face = 1
+goggles = true
+head_scale = 1.04
+helmet_color = Color(0.2, 0.45, 0.95, 1)
+accent_color = Color(1, 0.5, 0.12, 1)
+jacket_color = Color(0.92, 0.22, 0.22, 1)
+jacket_dark_color = Color(0.6, 0.12, 0.15, 1)
+pants_color = Color(0.2, 0.2, 0.26, 1)
+glove_color = Color(1, 0.85, 0.2, 1)
+boot_color = Color(0.2, 0.2, 0.26, 1)
+skin_color = Color(0.98, 0.76, 0.6, 1)
+lens_color = Color(1, 0.55, 0.2, 1)

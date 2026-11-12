@@ -20,7 +20,8 @@ signal race_requested(scene_path: String)
 signal lobby_return_requested
 signal peer_left(peer_id: int)
 
-const PROTOCOL_VERSION := 1
+## 2: items (final demo milestone 07) added item RPCs.
+const PROTOCOL_VERSION := 2
 const CONNECT_TIMEOUT := 6.0
 ## How long the host waits for every client to load the race scene.
 const LOAD_TIMEOUT := 15.0
@@ -49,6 +50,8 @@ var relayed_snapshots := 0
 var last_reason := ""
 ## Host diagnostics: repeated hellos from a peer already in the lobby.
 var duplicate_hellos := 0
+## Host diagnostics: item requests for a racer the sender doesn't own.
+var rejected_item_requests := 0
 
 var _peer: ENetMultiplayerPeer
 var _connect_elapsed := -1.0
@@ -59,6 +62,12 @@ var _owners := {}
 
 
 func _ready() -> void:
+	# Everything goes through the host; clients never talk to each other, so
+	# the host doesn't relay peer join/leave notices (relaying them to clients
+	# that are leaving at the same moment only logged ENet send errors).
+	var scene_multiplayer := multiplayer as SceneMultiplayer
+	if scene_multiplayer:
+		scene_multiplayer.server_relay = false
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -72,6 +81,27 @@ func is_online() -> bool:
 
 func is_host() -> bool:
 	return role == Role.HOST
+
+
+## True while the ENet connection is really up. A client can still be
+## "CLIENT" for a moment after the host left (the disconnect signal comes
+## later): sending then only logs ENet errors, so client sends check this.
+func is_connected_to_host() -> bool:
+	return _peer != null and _peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+
+
+## Host: calls RPC `method` on every client whose connection is really up.
+## A client that is just leaving is skipped (sending to it only logs ENet
+## "Unable to send packet" errors).
+func _send_to_clients(method: StringName, args: Array) -> void:
+	if not is_host() or _peer == null:
+		return
+	for peer_id in multiplayer.get_peers():
+		var link := _peer.get_peer(peer_id)
+		if link and link.get_state() == ENetPacketPeer.STATE_CONNECTED:
+			var call_args: Array = [peer_id, method]
+			call_args.append_array(args)
+			callv(&"rpc_id", call_args)
 
 
 func my_id() -> int:
@@ -183,7 +213,7 @@ func _on_peer_disconnected(peer_id: int) -> void:
 	if lobby and lobby.get_player(peer_id):
 		lobby.remove_player(peer_id)
 	if race_in_progress:
-		_h_player_left.rpc(peer_id)
+		_send_to_clients(&"_h_player_left", [peer_id])
 		if race and race.has_method(&"net_player_left"):
 			race.net_player_left(peer_id)
 	peer_left.emit(peer_id)
@@ -238,7 +268,7 @@ func _h_welcome(lobby_data: Dictionary) -> void:
 
 func _broadcast_lobby() -> void:
 	if is_host() and _peer:
-		_h_lobby.rpc(lobby.to_dict())
+		_send_to_clients(&"_h_lobby", [lobby.to_dict()])
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -249,7 +279,7 @@ func _h_lobby(lobby_data: Dictionary) -> void:
 
 ## Client: asks the host to change this player's ready flag.
 func request_set_ready(ready: bool) -> void:
-	if role == Role.CLIENT:
+	if role == Role.CLIENT and is_connected_to_host():
 		_c_set_ready.rpc_id(1, ready)
 
 
@@ -271,7 +301,7 @@ func start_race(setup: Array, scene_path: String) -> void:
 	for entry: Dictionary in setup:
 		_owners[int(entry["id"])] = int(entry["owner"])
 	_loaded.clear()
-	_h_start_race.rpc(setup, scene_path)
+	_send_to_clients(&"_h_start_race", [setup, scene_path])
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -288,7 +318,7 @@ func attach_race(race_session: Node, race_sync: Node) -> void:
 	sync = race_sync
 	if is_host():
 		_load_elapsed = 0.0
-	elif role == Role.CLIENT:
+	elif role == Role.CLIENT and is_connected_to_host():
 		_c_race_loaded.rpc_id(1)
 
 
@@ -319,7 +349,7 @@ func owner_of(racer_id: int) -> int:
 func send_snapshot(racer_id: int, data: Array) -> void:
 	if is_host():
 		_h_snapshot.rpc(racer_id, data)
-	elif role == Role.CLIENT:
+	elif role == Role.CLIENT and is_connected_to_host():
 		_c_snapshot.rpc_id(1, racer_id, data)
 
 
@@ -348,7 +378,7 @@ func _h_snapshot(racer_id: int, data: Array) -> void:
 ## Host: race state change (+ results once known).
 func send_race_state(state: int, race_time: float, results: Array, duration: float) -> void:
 	if is_host():
-		_h_race_state.rpc(state, race_time, results, duration)
+		_send_to_clients(&"_h_race_state", [state, race_time, results, duration])
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -369,6 +399,36 @@ func _h_status(status: Array) -> void:
 		race.net_apply_status(status)
 
 
+## Owner → host: item request (pickup, use, banana hit; see ItemManager).
+func send_item_request(racer_id: int, req_id: int, kind: int, data: Array) -> void:
+	if role == Role.CLIENT and is_connected_to_host():
+		_c_item_request.rpc_id(1, racer_id, req_id, kind, data)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _c_item_request(racer_id: int, req_id: int, kind: int, data: Array) -> void:
+	if not is_host():
+		return
+	if owner_of(racer_id) != multiplayer.get_remote_sender_id():
+		rejected_item_requests += 1  # someone else's racer (AI included)
+		return
+	if race and race.has_method(&"net_item_request"):
+		race.net_item_request(racer_id, req_id, kind, data)
+
+
+## Host: an item decision for every client (reliable and ordered, like the
+## race state, so a reset never overtakes an item event).
+func send_item_event(event: Array) -> void:
+	if is_host():
+		_send_to_clients(&"_h_item_event", [event])
+
+
+@rpc("authority", "call_remote", "reliable")
+func _h_item_event(event: Array) -> void:
+	if race and race.has_method(&"net_apply_item_event"):
+		race.net_apply_item_event(event)
+
+
 @rpc("authority", "call_remote", "reliable")
 func _h_player_left(peer_id: int) -> void:
 	if race and race.has_method(&"net_player_left"):
@@ -381,7 +441,7 @@ func return_all_to_lobby() -> void:
 	if not is_host():
 		return
 	race_in_progress = false
-	_h_return_to_lobby.rpc()
+	_send_to_clients(&"_h_return_to_lobby", [])
 
 
 @rpc("authority", "call_remote", "reliable")

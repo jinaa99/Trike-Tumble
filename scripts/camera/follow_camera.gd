@@ -58,6 +58,24 @@ extends Camera3D
 ## Follow stiffness at the start of a transition (1/s).
 @export var transition_smoothing := 3.0
 
+@export_group("Feedback")
+## Impact shake: offset (m) and roll (deg) at full trauma. Trauma decays per
+## second; impacts and landings add to it but it never exceeds 1.
+@export var shake_offset := 0.16
+@export var shake_roll_deg := 1.4
+@export var shake_decay := 2.2
+@export var shake_frequency := 22.0
+## Impact strength (m/s) that gives full trauma; small bumps barely register.
+@export var shake_full_impact := 14.0
+@export var shake_min_impact := 3.0
+## Landing dip: camera drops this many m per second of airtime (capped) and
+## springs back.
+@export var landing_dip_per_second := 0.35
+@export var landing_dip_max := 0.4
+@export var dip_recovery := 6.0
+## Looks this many m into the turn at full steering (more road visible).
+@export var turn_look_shift := 1.6
+
 @export_group("Collision")
 @export_flags_3d_physics var collision_mask := 1
 @export var collision_radius := 0.3
@@ -70,6 +88,12 @@ var _speed_ratio := 0.0
 var _travel_dir := Vector3.FORWARD
 var _probe := SphereShape3D.new()
 var _transition_left := 0.0
+## 0..1, squared for the actual shake (see add_impact_shake).
+var trauma := 0.0
+var _dip := 0.0
+var _dip_velocity := 0.0
+var _shake_time := 0.0
+var _turn_shift := 0.0
 
 
 func _ready() -> void:
@@ -105,6 +129,39 @@ func _process(delta: float) -> void:
 	if _transition_left > 0.0:
 		global_position = previous.lerp(global_position, 1.0 - exp(-lerpf(4.0, 30.0, blend) * delta))
 	_update_fov(delta)
+	_apply_feedback(delta)
+
+
+## A hit of `strength` m/s (Trike.impact): adds trauma, scaled and capped.
+func add_impact_shake(strength: float) -> void:
+	if strength < shake_min_impact:
+		return
+	trauma = minf(trauma + clampf((strength - shake_min_impact) / (shake_full_impact - shake_min_impact), 0.0, 1.0), 1.0)
+
+
+## A landing after `airtime` seconds: a short dip and a little shake.
+func add_landing(airtime: float) -> void:
+	_dip_velocity -= minf(airtime * landing_dip_per_second, landing_dip_max) * dip_recovery
+	trauma = minf(trauma + clampf(airtime - 0.4, 0.0, 0.5) * 0.4, 1.0)
+
+
+## Current shake offset magnitude (m), for tests.
+func get_shake_offset() -> float:
+	return shake_offset * trauma * trauma
+
+
+func _apply_feedback(delta: float) -> void:
+	# Landing dip: a critically damped spring back to 0.
+	_dip_velocity += (-_dip * dip_recovery * dip_recovery - 2.0 * dip_recovery * _dip_velocity) * delta
+	_dip += _dip_velocity * delta
+	global_position.y += _dip
+	if trauma <= 0.0:
+		return
+	_shake_time += delta * shake_frequency
+	var amount := trauma * trauma
+	global_position += global_basis * Vector3(sin(_shake_time * 1.3), sin(_shake_time * 1.7 + 1.0), 0.0) * shake_offset * amount
+	rotate_object_local(Vector3.FORWARD, deg_to_rad(shake_roll_deg) * amount * sin(_shake_time * 1.1 + 2.0))
+	trauma = maxf(trauma - shake_decay * delta, 0.0)
 
 
 ## Switches what the camera follows, blending over transition_time.
@@ -180,10 +237,15 @@ func _place() -> void:
 	desired = _resolve_collision(pivot + Vector3.UP * 0.4, desired)
 	global_position = desired
 	var ahead := look_ahead + look_ahead_at_speed * _speed_ratio
-	# Horizontal aim follows the smoothed yaw; vertical aim follows the slope.
+	# Horizontal aim follows the smoothed yaw; vertical aim follows the slope;
+	# in a turn the aim shifts a little into it, so more of the road shows.
 	var slope := clampf(_travel_dir.y, -0.5, 0.3)
 	var flat := sqrt(maxf(1.0 - slope * slope, 0.01))
-	look_at(pivot - back * ahead + Vector3.UP * (slope / flat) * ahead, Vector3.UP)
+	var trike := target as Trike
+	var steer := trike.steer_amount if trike else 0.0
+	_turn_shift = lerpf(_turn_shift, steer * turn_look_shift * _speed_ratio, 0.08)
+	var side := Vector3(cos(_yaw), 0.0, -sin(_yaw))
+	look_at(pivot - back * ahead + Vector3.UP * (slope / flat) * ahead + side * _turn_shift, Vector3.UP)
 
 
 ## Character mode: stay where we are relative to the target, at a fixed

@@ -43,6 +43,10 @@ var owner_peer := 1
 var disconnected := false
 ## Empty trike crossed the line; finish confirmed when its rider is back on.
 var pending_finish := false
+## Item carried (ItemKind.Kind; one at a time) and for how long. Set only by
+## ItemManager events (the host decides).
+var held_item := ItemKind.Kind.NONE
+var item_hold_time := 0.0
 
 
 func is_ai() -> bool:

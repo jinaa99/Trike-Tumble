@@ -46,7 +46,70 @@
       - Measured times: Hard AI about 5:25, Medium about 5:37, Easy about
         6:42, a simple player driver 5:23.
       - **Human playtest of the map and real human times still open.**
-- [ ] Next (only when the owner starts it): see `docs/FINAL_DEMO_AUDIT.md` §9.
+- [x] **07 — items:** item boxes (Forest Rush: 45, respawn 6 s, never on
+      top of a racer), position-weighted random roll, one held item, HUD
+      slot, **Q** to use (was F). Four original items: Mud Bomb
+      (projectile + slippery puddle), Spring Punch (sideways knockback,
+      point-blank ejection), Turbo Bottle, Banana Peel (spin-out).
+      - Host-authoritative: owners send requests, the host validates
+        (ownership, request ids, box state, hands, distance, data) and
+        broadcasts numbered events; victims' owners apply the effects.
+        `PROTOCOL_VERSION` 2.
+      - Balance: use delay, pickup cooldown, 2.5 s hit immunity, short
+        slowdowns, thrower spared by its own fresh puddle, peel cap.
+        All values in `ItemConfig`. AI uses items (`AIItemTactics`).
+      - Procedural item meshes, effects and synthesized sounds (no files).
+      - Tests: 514/514 checks (64 item checks), 14/14 timed map races,
+        44/44 network checks (8 item checks), all also in strict mode.
+      - **Human balance playtest and a real two-computer online test still open.**
+- [x] **08 — Rocky Canyon and Snow Slide:** both maps on the same
+      data-driven track system as Forest Rush (no per-map code).
+      - `TrackTheme` (paint, scenery style, sky) for every build pass;
+        forest defaults keep Forest Rush unchanged.
+      - New generic map features: cliff roads (`cliff` zones), ice bands,
+        snow/ice road and bridge surfaces, crosswind (`wind` zones),
+        falling and rolling rocks, snowmen, sized ramps.
+      - **Rocky Canyon** 7.34 km: cliff roads, 14 hairpins, rockfall, two
+        canyon bridges, rock narrows, two big jumps.
+      - **Snow Slide** 7.49 km: snow road, partial-width ice, frozen
+        bridges, windy turns, snowmen and snowbanks, large ramps, a jump.
+      - Map select: all three READY, route-map previews from track data;
+        host's map loads for everyone (tested with 2 and 3 instances).
+      - Tests: 640/640 checks (map checks for all three maps), 42/42 timed
+        races (14 per map), 50/50 network checks, all also in strict mode
+        (one strict network run had 2 real-time timing failures in the
+        `drop`/`five` scenarios that passed on re-run, 11/11).
+      - **Human playtest of both maps (and real human times) still open.**
+- [x] **09 — audio, animation and visual polish:**
+      - Audio: every sound synthesized in code (no files): engine, skid,
+        brake, hits, landing, rider yelp/thud/get-up/steps/mount, items,
+        countdown, GO, finish, victory, UI; new UI bus + volume slider.
+      - Riders: five distinct looks (helmet, accessory, face, colors, head
+        size), reactive faces, finish celebration; trike accent liveries,
+        clear-coat paint.
+      - Effects: ground-styled wheel spray, skid marks, boost trail, landing
+        puffs, impact bursts, finish confetti; works on network proxies.
+      - Camera: capped impact shake, landing dip, look into turns.
+      - Environment: grass tufts (forest green, canyon dry). UI: button
+        sounds, results medals and row reveal.
+      - Tests: 675/675 checks (35 new polish checks), 42/42 timed races
+        (times identical to milestone 08: the polish doesn't touch gameplay),
+        50/50 network checks, all also in strict mode. 120 fps on all maps
+        (M4); see TESTING.md for the remaining visual defects.
+      - **Human listening/playtest still open; no music yet.**
+- [x] **10 — final QA, performance and desktop release:**
+      - Five real game instances raced a whole map end to end (`e2e5`),
+        AI races on all maps, full + strict regression, performance on all
+        maps, fresh screenshots (`docs/screenshots/milestone_10/`).
+      - Fixed: finish run-off (finishers hit the end wall), ENet send
+        errors on leave, Mac export texture setting; added `--quick-race`.
+      - macOS universal + Windows x86_64 builds in `release/` (official
+        4.7.2 standard templates, SHA-512 verified); Mac build tested on the
+        M4; Windows build never run.
+      - **Two-computer LAN, internet and Windows: not tested.**
+      - Report: `docs/FINAL_DEMO_REPORT.md`; issues: `docs/KNOWN_ISSUES.md`.
+- [ ] Next (only when the owner starts it): human playtests, a real LAN and
+      Windows test, then whatever they reveal.
 
 ## Milestone 1: single-player trike prototype ✅ (implemented, automated tests pass)
 
@@ -120,10 +183,10 @@
 - [x] AI opponents (done in final demo milestone 02, `AIDriver`).
 - Racer-vs-racer bumping and knockback (`Trike.apply_knockback`).
 
-## Milestone 6: items
+## Milestone 6: items ✅ (done in final demo milestone 07)
 
-- Item boxes, random item roll, held-item HUD.
-- Throwables with knockback; big hits call `RiderController.eject()`.
+- [x] Item boxes, random item roll, held-item HUD.
+- [x] Throwables with knockback; point-blank punches call `RiderController.eject()`.
 
 ## Milestone 7: multiplayer (up to 5)
 

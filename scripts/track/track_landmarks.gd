@@ -15,20 +15,25 @@ extends Node3D
 @export var bunting_length_samples := 30
 @export_flags_3d_physics var collision_layer := 1
 
-const WOOD := Color(0.62, 0.42, 0.26)
-const WOOD_DARK := Color(0.45, 0.3, 0.19)
-const STRAW := Color(0.96, 0.8, 0.4)
 const SIGN_RED := Color(0.92, 0.22, 0.2)
 ## Board height above the slope foot: clears the 1.1 m barrier as seen from the road.
 const SIGN_BOARD_Y := 2.5
 const BUNTING: Array[Color] = [Color(0.95, 0.25, 0.3), Color(1.0, 0.8, 0.2), Color(0.2, 0.7, 0.9), Color(0.35, 0.8, 0.4), Color(0.95, 0.5, 0.85)]
 
 var _rng := RandomNumberGenerator.new()
+# Theme colors (TrackTheme), set in build_for_track.
+var _wood := Color(0.62, 0.42, 0.26)
+var _wood_dark := Color(0.45, 0.3, 0.19)
+var _straw := Color(0.96, 0.8, 0.4)
 var _body: StaticBody3D
 var _material := MeshKit.vertex_color_material(0.75)
 
 
 func build_for_track(track: Track) -> void:
+	var theme := track.theme if track.theme else TrackTheme.new()
+	_wood = theme.wood_color
+	_wood_dark = theme.wood_dark_color
+	_straw = theme.straw_color
 	_rng.seed = random_seed
 	_body = StaticBody3D.new()
 	_body.name = "LandmarkCollision"
@@ -82,8 +87,8 @@ func _place_turn_signs(track: Track) -> void:
 ## Built in sign space: +Z faces the rider.
 func _sign_mesh(point_left := false) -> ArrayMesh:
 	var parts := [
-		[MeshKit.box(Vector3(0.14, SIGN_BOARD_Y + 0.5, 0.14)), MeshKit.at(Vector3(-1.0, (SIGN_BOARD_Y + 0.5) * 0.5, -0.05)), WOOD],
-		[MeshKit.box(Vector3(0.14, SIGN_BOARD_Y + 0.5, 0.14)), MeshKit.at(Vector3(1.0, (SIGN_BOARD_Y + 0.5) * 0.5, -0.05)), WOOD],
+		[MeshKit.box(Vector3(0.14, SIGN_BOARD_Y + 0.5, 0.14)), MeshKit.at(Vector3(-1.0, (SIGN_BOARD_Y + 0.5) * 0.5, -0.05)), _wood],
+		[MeshKit.box(Vector3(0.14, SIGN_BOARD_Y + 0.5, 0.14)), MeshKit.at(Vector3(1.0, (SIGN_BOARD_Y + 0.5) * 0.5, -0.05)), _wood],
 		[MeshKit.box(Vector3(2.6, 0.95, 0.1)), MeshKit.at(Vector3(0, SIGN_BOARD_Y, 0.03)), Color(0.98, 0.96, 0.9)],
 		[MeshKit.box(Vector3(2.7, 1.05, 0.06)), MeshKit.at(Vector3(0, SIGN_BOARD_Y, -0.02)), SIGN_RED],
 	]
@@ -104,7 +109,7 @@ func _sign_mesh(point_left := false) -> ArrayMesh:
 func _place_hay_bales(track: Track) -> void:
 	var path := track.path
 	var bale := MeshKit.combine([
-		[RoundedBoxMesh.new(), MeshKit.at(Vector3(0, 0.36, 0), Vector3.ZERO, Vector3(1.3, 0.72, 0.8)), STRAW],
+		[RoundedBoxMesh.new(), MeshKit.at(Vector3(0, 0.36, 0), Vector3.ZERO, Vector3(1.3, 0.72, 0.8)), _straw],
 		[MeshKit.box(Vector3(0.08, 0.76, 0.84)), MeshKit.at(Vector3(-0.35, 0.36, 0)), Color(0.75, 0.55, 0.25)],
 		[MeshKit.box(Vector3(0.08, 0.76, 0.84)), MeshKit.at(Vector3(0.35, 0.36, 0)), Color(0.75, 0.55, 0.25)],
 	])
@@ -147,13 +152,13 @@ func _place_cabin(track: Track) -> void:
 	var roof_red := Color(0.85, 0.28, 0.25)
 	var mesh := MeshKit.combine([
 		[MeshKit.box(Vector3(4.2, 2.0, 3.4)), MeshKit.at(Vector3(0, -0.9, 0)), Color(0.55, 0.55, 0.58)],  # stone footing
-		[MeshKit.box(Vector3(3.8, 2.4, 3.0)), MeshKit.at(Vector3(0, 1.2, 0)), WOOD],
-		[MeshKit.box(Vector3(3.9, 0.12, 3.1)), MeshKit.at(Vector3(0, 0.8, 0)), WOOD_DARK],
-		[MeshKit.box(Vector3(3.9, 0.12, 3.1)), MeshKit.at(Vector3(0, 1.6, 0)), WOOD_DARK],
+		[MeshKit.box(Vector3(3.8, 2.4, 3.0)), MeshKit.at(Vector3(0, 1.2, 0)), _wood],
+		[MeshKit.box(Vector3(3.9, 0.12, 3.1)), MeshKit.at(Vector3(0, 0.8, 0)), _wood_dark],
+		[MeshKit.box(Vector3(3.9, 0.12, 3.1)), MeshKit.at(Vector3(0, 1.6, 0)), _wood_dark],
 		[MeshKit.box(Vector3(2.8, 0.25, 3.8)), MeshKit.at(Vector3(-1.0, 3.05, 0), Vector3(0, 0, 38)), roof_red],
 		[MeshKit.box(Vector3(2.8, 0.25, 3.8)), MeshKit.at(Vector3(1.0, 3.05, 0), Vector3(0, 0, -38)), roof_red],
-		[PrismMesh.new(), MeshKit.at(Vector3(0, 3.0, 0), Vector3.ZERO, Vector3(3.8, 1.3, 2.98)), WOOD],
-		[MeshKit.box(Vector3(0.9, 1.6, 0.1)), MeshKit.at(Vector3(-0.8, 0.8, -1.5)), WOOD_DARK],  # door
+		[PrismMesh.new(), MeshKit.at(Vector3(0, 3.0, 0), Vector3.ZERO, Vector3(3.8, 1.3, 2.98)), _wood],
+		[MeshKit.box(Vector3(0.9, 1.6, 0.1)), MeshKit.at(Vector3(-0.8, 0.8, -1.5)), _wood_dark],  # door
 		[MeshKit.box(Vector3(0.8, 0.7, 0.1)), MeshKit.at(Vector3(0.9, 1.4, -1.5)), Color(0.55, 0.85, 1.0)],  # window
 		[MeshKit.box(Vector3(1.0, 0.12, 0.14)), MeshKit.at(Vector3(0.9, 1.0, -1.55)), Color(0.98, 0.96, 0.9)],
 		[MeshKit.box(Vector3(0.5, 1.2, 0.5)), MeshKit.at(Vector3(1.2, 3.6, 0.6)), Color(0.6, 0.58, 0.6)],  # chimney
@@ -171,7 +176,7 @@ func _place_cabin(track: Track) -> void:
 	var log_layout: Array[Vector3] = [Vector3(-0.45, 0.22, 0), Vector3(0, 0.22, 0), Vector3(0.45, 0.22, 0),
 			Vector3(-0.22, 0.6, 0), Vector3(0.22, 0.6, 0), Vector3(0, 0.98, 0)]
 	for p in log_layout:
-		logs.append([log_mesh, MeshKit.at(p, Vector3(90, 0, 0)), WOOD.lightened(_rng.randf_range(0.0, 0.15))])
+		logs.append([log_mesh, MeshKit.at(p, Vector3(90, 0, 0)), _wood.lightened(_rng.randf_range(0.0, 0.15))])
 	var pile_mesh := MeshKit.combine(logs)
 	pile_mesh.surface_set_material(0, _material)
 	var pile := MeshInstance3D.new()

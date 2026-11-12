@@ -1,0 +1,107 @@
+[gd_scene format=3]
+
+[sub_resource type="PhysicsMaterial" id="phys_snow"]
+friction = 0.5
+bounce = 0.05
+
+[sub_resource type="CylinderShape3D" id="shape_body"]
+height = 1.9
+radius = 0.55
+
+[sub_resource type="StandardMaterial3D" id="mat_snow"]
+albedo_color = Color(0.96, 0.98, 1, 1)
+roughness = 0.8
+diffuse_mode = 3
+
+[sub_resource type="StandardMaterial3D" id="mat_coal"]
+albedo_color = Color(0.12, 0.12, 0.15, 1)
+roughness = 0.9
+
+[sub_resource type="StandardMaterial3D" id="mat_carrot"]
+albedo_color = Color(1, 0.5, 0.12, 1)
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="mat_scarf"]
+albedo_color = Color(0.9, 0.22, 0.3, 1)
+roughness = 0.8
+
+[sub_resource type="SphereMesh" id="mesh_base"]
+radius = 0.6
+height = 1.15
+material = SubResource("mat_snow")
+
+[sub_resource type="SphereMesh" id="mesh_mid"]
+radius = 0.44
+height = 0.85
+material = SubResource("mat_snow")
+
+[sub_resource type="SphereMesh" id="mesh_head"]
+radius = 0.32
+height = 0.62
+material = SubResource("mat_snow")
+
+[sub_resource type="SphereMesh" id="mesh_coal"]
+radius = 0.05
+height = 0.1
+radial_segments = 8
+rings = 4
+material = SubResource("mat_coal")
+
+[sub_resource type="CylinderMesh" id="mesh_nose"]
+top_radius = 0.0
+bottom_radius = 0.06
+height = 0.3
+radial_segments = 8
+material = SubResource("mat_carrot")
+
+[sub_resource type="CylinderMesh" id="mesh_scarf"]
+top_radius = 0.36
+bottom_radius = 0.4
+height = 0.14
+radial_segments = 12
+material = SubResource("mat_scarf")
+
+[node name="Snowman" type="RigidBody3D"]
+collision_layer = 4
+collision_mask = 7
+mass = 15.0
+physics_material_override = SubResource("phys_snow")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 0)
+shape = SubResource("shape_body")
+
+[node name="Base" type="MeshInstance3D" parent="."]
+mesh = SubResource("mesh_base")
+
+[node name="Middle" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+mesh = SubResource("mesh_mid")
+
+[node name="Head" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.33, 0)
+mesh = SubResource("mesh_head")
+
+[node name="Scarf" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.08, 0)
+mesh = SubResource("mesh_scarf")
+
+[node name="EyeL" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.11, 1.42, 0.27)
+mesh = SubResource("mesh_coal")
+
+[node name="EyeR" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.11, 1.42, 0.27)
+mesh = SubResource("mesh_coal")
+
+[node name="Nose" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 1.33, 0.42)
+mesh = SubResource("mesh_nose")
+
+[node name="Button1" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0.43)
+mesh = SubResource("mesh_coal")
+
+[node name="Button2" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0.53)
+mesh = SubResource("mesh_coal")

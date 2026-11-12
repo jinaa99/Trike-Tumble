@@ -117,6 +117,14 @@ extends Resource
 @export_range(0.1, 1.0) var mud_speed_factor := 0.5
 @export var mud_drag := 8.0
 @export_range(0.1, 1.0) var mud_grip_factor := 0.55
+## Packed snow road (Snow Slide): a little less grip and top speed than dirt.
+@export_range(0.1, 1.0) var snow_speed_factor := 0.96
+@export var snow_drag := 2.0
+@export_range(0.1, 1.0) var snow_grip_factor := 0.8
+## Ice: full speed but little sideways grip (the trike slides wide).
+@export_range(0.1, 1.0) var ice_speed_factor := 1.0
+@export var ice_drag := 0.0
+@export_range(0.1, 1.0) var ice_grip_factor := 0.32
 
 @export_group("Recovery")
 ## Body up·world up below this counts as overturned.

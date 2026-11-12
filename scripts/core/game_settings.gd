@@ -2,7 +2,7 @@ extends Node
 ## Autoload "GameSettings": player settings, saved to user://settings.cfg and
 ## applied at launch and on every change.
 ##
-## Audio: master/music/sfx volume (0..1) on the Master, Music and SFX buses.
+## Audio: master/music/sfx/ui volume (0..1) on the Master, Music, SFX and UI buses.
 ## Video: window resolution, fullscreen, graphics quality (Low/Medium/High:
 ## MSAA, 3D render scale, sun shadows). Controls: the primary keyboard key of
 ## each rebindable action. Player: name used in lobbies and results.
@@ -33,6 +33,7 @@ var settings_path := DEFAULT_PATH
 var master_volume := 1.0
 var music_volume := 0.8
 var sfx_volume := 0.9
+var ui_volume := 0.8
 var resolution_index := 0
 var fullscreen := false
 var quality := Quality.MEDIUM
@@ -62,6 +63,7 @@ func load_settings() -> void:
 	master_volume = clampf(file.get_value("audio", "master", master_volume), 0.0, 1.0)
 	music_volume = clampf(file.get_value("audio", "music", music_volume), 0.0, 1.0)
 	sfx_volume = clampf(file.get_value("audio", "sfx", sfx_volume), 0.0, 1.0)
+	ui_volume = clampf(file.get_value("audio", "ui", ui_volume), 0.0, 1.0)
 	resolution_index = clampi(file.get_value("video", "resolution", resolution_index), 0, RESOLUTIONS.size() - 1)
 	fullscreen = file.get_value("video", "fullscreen", fullscreen)
 	quality = clampi(file.get_value("video", "quality", quality), 0, Quality.HIGH) as Quality
@@ -78,6 +80,7 @@ func save_settings() -> Error:
 	file.set_value("audio", "master", master_volume)
 	file.set_value("audio", "music", music_volume)
 	file.set_value("audio", "sfx", sfx_volume)
+	file.set_value("audio", "ui", ui_volume)
 	file.set_value("video", "resolution", resolution_index)
 	file.set_value("video", "fullscreen", fullscreen)
 	file.set_value("video", "quality", quality)
@@ -92,6 +95,7 @@ func reset_to_defaults(apply := true) -> void:
 	master_volume = 1.0
 	music_volume = 0.8
 	sfx_volume = 0.9
+	ui_volume = 0.8
 	resolution_index = 0
 	fullscreen = false
 	quality = Quality.MEDIUM
@@ -119,6 +123,8 @@ func set_volume(bus: String, value: float) -> void:
 			music_volume = value
 		"SFX":
 			sfx_volume = value
+		"UI":
+			ui_volume = value
 	_apply_audio()
 	_commit()
 
@@ -210,6 +216,7 @@ func _apply_audio() -> void:
 	_set_bus("Master", master_volume)
 	_set_bus("Music", music_volume)
 	_set_bus("SFX", sfx_volume)
+	_set_bus("UI", ui_volume)
 
 
 static func _set_bus(bus_name: String, value: float) -> void:

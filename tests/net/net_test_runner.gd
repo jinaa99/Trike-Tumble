@@ -4,10 +4,12 @@ extends Node
 ## scripted scenarios through the real game code and checks the JSON each
 ## peer writes. Run (takes a few minutes):
 ##   $GODOT --headless --path . --scene res://tests/net/net_test_runner.tscn
-## Optional: -- duo rules drop five forest   (scenarios to run; default all)
+## Optional: -- duo rules drop five forest items maps   (scenarios to run; default all)
 
 const PEER_SCENE := "res://tests/net/net_peer.tscn"
-const ALL_SCENARIOS: Array[String] = ["duo", "rules", "drop", "five", "forest"]
+const ALL_SCENARIOS: Array[String] = ["duo", "rules", "drop", "five", "forest", "items", "maps"]
+## Not in the default run (a whole real race, ~8 minutes): `-- e2e5`.
+const LONG_SCENARIOS: Array[String] = ["e2e5"]
 
 var _passed := 0
 var _failed := 0
@@ -25,7 +27,7 @@ func _run() -> void:
 	_port = 47100 + randi() % 800
 	var wanted: Array[String] = []
 	for arg in OS.get_cmdline_user_args():
-		if ALL_SCENARIOS.has(arg):
+		if ALL_SCENARIOS.has(arg) or LONG_SCENARIOS.has(arg):
 			wanted.append(arg)
 	if wanted.is_empty():
 		wanted = ALL_SCENARIOS.duplicate()
@@ -43,6 +45,14 @@ func _run() -> void:
 				await _scenario_five()
 			"forest":
 				await _scenario_forest()
+			"items":
+				await _scenario_items()
+			"e2e5":
+				await _scenario_e2e5()
+			"maps":
+				await _scenario_maps("rocky_canyon", "RockyCanyon", 2)
+				_port += 7
+				await _scenario_maps("snow_slide", "SnowSlide", 3)
 	print("\n=== NETWORK RESULT: %d passed, %d failed ===" % [_passed, _failed])
 	get_tree().quit(1 if _failed > 0 else 0)
 
@@ -168,6 +178,184 @@ func _scenario_duo() -> void:
 			"teleporting past checkpoints never counts: the client is DNF")
 	_check(client["results"] == host["results"] and (host["results"] as Array).size() == 2,
 			"both show the same results", "(%s)" % " / ".join(host["results"]))
+
+
+## Five real, independent game instances (no AI) play one whole race on a
+## real map, end to end: lobby and ready, the host's map choice, countdown,
+## driving, collisions, a wipeout and recovery, items, checkpoints, the
+## finishing order, results on every screen, and Race Again.
+func _scenario_e2e5() -> void:
+	var map_id := "snow_slide"
+	print("\n[Network: five real players, a whole race on %s]" % map_id)
+	var started := Time.get_ticks_msec()
+	var common: Array[String] = ["--real-map", "--dodge", "--use-items", "--race-again", "--second-race-seconds=8",
+			"--max-time=900"]
+	var host_args: Array[String] = ["--expect=5", "--map=" + map_id, "--start-delay=2", "--lane=0"]
+	host_args.append_array(common)
+	var paths := {"host": _launch("Hana", "host", host_args)}
+	await _wait_seconds(2.0)
+	var names := ["Kai", "Lumi", "Milo", "Noor"]
+	var lanes := [-3.0, 3.0, -1.5, 1.5]
+	for i in 4:
+		var client_args: Array[String] = ["--lane=%.1f" % lanes[i]]
+		client_args.append_array(common)
+		if i == 1:
+			client_args.append("--eject-at=40")
+		paths["p%d" % (i + 2)] = _launch(names[i], "client", client_args)
+		await _wait_seconds(0.5)
+	var r := await _collect(paths, 960.0)
+	var minutes := (Time.get_ticks_msec() - started) / 60000.0
+	var host: Dictionary = r["host"]
+	var all_ran := true
+	for key: String in r:
+		all_ran = all_ran and not (r[key] as Dictionary).has("missing") and not (r[key] as Dictionary).get("timed_out", false)
+	_check(all_ran and r.size() == 5, "five independent instances played and reported", "(%.1f min real time)" % minutes)
+	var lobby: Dictionary = host.get("lobby_at_start", {"players": [], "map": ""})
+	var ready := true
+	for player: Dictionary in lobby["players"]:
+		ready = ready and bool(player["ready"]) and not bool(player.get("ai", false))
+	_check(lobby["players"].size() == 5 and ready and lobby["map"] == map_id,
+			"lobby: 5 human players, all ready, host's map chosen", "(%s)" % ", ".join(_names(lobby)))
+	var tracks := {}
+	var counted := true
+	for key: String in r:
+		var report: Dictionary = r[key]
+		tracks[str(report.get("track", "?"))] = true
+		counted = counted and (report["countdown"] as Array).slice(0, 4) == ["3", "2", "1", "GO!"]
+	_check(tracks.size() == 1 and tracks.has("SnowSlide") and counted, "everyone loaded the host's map and saw 3-2-1-GO")
+	var finished := 0
+	var orders := {}
+	var wipeouts := 0
+	var respawns := 0
+	var impacts := 0
+	var hardest := 0.0
+	var pickups := 0
+	var uses := 0
+	var hits := 0
+	for key: String in r:
+		var report: Dictionary = r[key]
+		var mine: Dictionary = report.get("first_results_data", []).filter(
+				func(row: Dictionary) -> bool: return int(row["id"]) == int(report.get("my_id_in_race", -1))).front() \
+				if not report.get("first_results_data", []).is_empty() else {}
+		if bool(mine.get("finished", false)):
+			finished += 1
+		orders[str(report.get("first_results", []))] = true
+		wipeouts += int(report.get("my_wipeouts", 0))
+		respawns += int(report.get("my_respawns", 0))
+		impacts += int(report.get("impacts", 0))
+		hardest = maxf(hardest, float(report.get("max_impact", 0.0)))
+	for line: String in host.get("item_log", []):
+		pickups += int(line.begins_with("BOX_TAKEN"))
+		uses += int(line.begins_with("TURBO_USED") or line.begins_with("BANANA_DROPPED") or line.begins_with("BOMB_THROWN")
+				or line.begins_with("PUNCH"))
+		hits += int(line.begins_with("BANANA_HIT") or (line.begins_with("PUNCH") and not line.ends_with(", 0]")))
+	var first: Array = host.get("first_results", [])
+	_check(finished == 5 and first.size() == 5 and not first.any(func(row: String) -> bool: return row.contains("DNF")),
+			"all five finished the whole map through every checkpoint", "(%s)" % " / ".join(first))
+	_check(orders.size() == 1, "every screen shows the same finishing order and times")
+	_check(impacts > 0, "racers collided with each other or the course", "(%d hits over 4, hardest %.1f)" % [impacts, hardest])
+	var lumi := _named(r, "Lumi")
+	var lumi_states: Array = _proxy_named(host, "Lumi").get("states", [])
+	_check(int(lumi.get("my_wipeouts", 0)) >= 1 and lumi_states.has("EJECTED") and lumi_states.has("MOUNTING"),
+			"a wipeout and recovery, seen by the host", "(%s)" % " → ".join(lumi_states.slice(0, 8)))
+	_check(pickups >= 10 and uses >= 5, "items collected and used during the race", "(%d pickups, %d uses, %d hits)" % [pickups, uses, hits])
+	var again := true
+	for key: String in r:
+		var states: Array = (r[key] as Dictionary)["race_states"]
+		again = again and states.count("RESULTS") >= 1 and states.count("RACING") >= 2
+	_check(again, "Race Again: everyone went back to the grid and raced again")
+	print("        info: %d wipeouts, %d respawns in total; results %s" % [wipeouts, respawns, " / ".join(first)])
+	_last_e2e = {"minutes": minutes, "results": first, "wipeouts": wipeouts, "respawns": respawns, "impacts": impacts,
+			"hardest": hardest, "pickups": pickups, "uses": uses, "hits": hits}
+
+
+var _last_e2e := {}
+
+
+## The report of the instance with this player name.
+static func _named(reports: Dictionary, wanted: String) -> Dictionary:
+	for key: String in reports:
+		if (reports[key] as Dictionary).get("name", "") == wanted:
+			return reports[key]
+	return {}
+
+
+## The host picks a map in the lobby: every client gets it in the lobby and
+## loads the same track (same boxes, same sky), and they race on it.
+func _scenario_maps(map_id: String, node_name: String, players: int) -> void:
+	print("\n[Network: host picks %s, %d instances]" % [map_id, players])
+	var paths := {"host": _launch("Hosty", "host", ["--expect=%d" % players, "--real-map", "--map=" + map_id,
+			"--start-delay=1", "--stop-at=25", "--max-time=90"])}
+	await _wait_seconds(1.5)
+	for i in range(1, players):
+		paths["client%d" % i] = _launch("Cleo%d" % i, "client", ["--real-map", "--stop-at=25", "--max-time=90"])
+	var r := await _collect(paths, 110.0)
+	var tracks: Array[String] = []
+	var maps: Array[String] = []
+	var boxes: Array[int] = []
+	var skies: Array[String] = []
+	var raced := true
+	for key: String in r:
+		var report: Dictionary = r[key]
+		tracks.append(str(report.get("track", "?")))
+		maps.append(str(report.get("lobby_map", "?")))
+		boxes.append(int(report.get("boxes", -1)))
+		skies.append(str(report.get("sky", "?")))
+		raced = raced and float(report.get("my_distance", 0.0)) > 250.0
+	_check(tracks.size() == players and tracks.count(node_name) == players and maps.count(map_id) == players,
+			"everyone loaded the host's map", "(%s)" % ", ".join(tracks))
+	_check(boxes.count(boxes[0]) == players and boxes[0] > 30 and skies.count(skies[0]) == players,
+			"identical item boxes and sky on every computer", "(%d boxes, sky #%s)" % [boxes[0], skies[0]])
+	_check(raced, "everyone raced down the map", "(%d players)" % players)
+
+
+## Two instances race through shared item boxes and use their items: the
+## host decides every pickup and use, both apply the same events in the same
+## order, nobody gets a box twice, and forged or replayed requests are refused.
+func _scenario_items() -> void:
+	print("\n[Network: items, host authority]")
+	var paths := {"host": _launch("Hosty", "host", ["--expect=2", "--items", "--stop-at=40", "--max-time=100"])}
+	await _wait_seconds(1.5)
+	paths["client"] = _launch("Cleo", "client", ["--items", "--stop-at=40", "--item-spoof-at=5", "--item-dup-at=12",
+			"--max-time=100"])
+	var r := await _collect(paths, 120.0)
+	var host: Dictionary = r["host"]
+	var client: Dictionary = r["client"]
+	var host_events: Array = host.get("item_events", [])
+	var client_events: Array = client.get("item_events", [])
+	_check(not host.has("missing") and not client.has("missing") and host_events.size() >= 6,
+			"both raced through item boxes", "(%d item events on the host)" % host_events.size())
+	var common := mini(host_events.size(), client_events.size())
+	_check(common >= 6 and client_events.slice(0, common) == host_events.slice(0, common),
+			"the client applied exactly the host's item events, in order", "(%d of %d)" % [client_events.size(), host_events.size()])
+	var client_id := int(client.get("my_id", 0))
+	var taken := {}
+	var pickups := {1: 0, client_id: 0}
+	var uses := 0
+	var double_pickup := false
+	for text: String in host_events:
+		var event: Array = str_to_var(text.replace("(", "Vector3(")) if text.contains("(") else str_to_var(text)
+		if event == null or event.size() < 3:
+			continue
+		match int(event[1]):
+			ItemManager.Event.BOX_TAKEN:
+				double_pickup = double_pickup or taken.get(int(event[2]), false)
+				taken[int(event[2])] = true
+				pickups[int(event[3])] = int(pickups.get(int(event[3]), 0)) + 1
+			ItemManager.Event.BOX_RESPAWNED:
+				taken[int(event[2])] = false
+			ItemManager.Event.TURBO_USED, ItemManager.Event.BANANA_DROPPED, ItemManager.Event.BOMB_THROWN, ItemManager.Event.PUNCH:
+				uses += 1
+	_check(int(pickups[1]) >= 2 and int(pickups[client_id]) >= 2, "host and client both collected items (host-approved)",
+			"(host %d, client %d, %d requests denied)" % [pickups[1], pickups[client_id], int(host.get("item_denied_requests", 0))])
+	_check(uses >= 3, "items were used and synchronized", "(%d uses)" % uses)
+	_check(not double_pickup, "no box was ever collected twice before respawning")
+	_check(int(host.get("rejected_item_requests", 0)) >= 1, "an item request for someone else's racer was refused",
+			"(%d)" % int(host.get("rejected_item_requests", 0)))
+	_check(int(host.get("item_duplicate_requests", 0)) >= 1, "a replayed item request was ignored",
+			"(%d)" % int(host.get("item_duplicate_requests", 0)))
+	_check(int(client.get("item_duplicate_events", 0)) == 0 and int(client.get("item_invalid_events", 0)) == 0,
+			"the client got every event once, well-formed")
 
 
 ## Two instances racing on the real map (Forest Rush) for a minute.

@@ -3,16 +3,18 @@ extends Node
 ## Needs a visible window (not --headless). Usage:
 ##   Godot --path . --fixed-fps 60 --always-on-top --resolution 1280x720 \
 ##     --scene res://tests/visual_capture.tscn -- <output_dir> [modes...]
-## Modes (default: all): closeup overview drive pause eject race5 menu forest
-## perf perf5 perfmap
+## Modes (default: all): closeup overview drive pause eject race5 menu forest items canyon snow polish
+## perf perf5 perfmap perfcanyon perfsnow
 ## "forest": Forest Rush, every section. "perf"/"perf5" (1 and 5 racers,
 ## test track) and "perfmap" (5 racers on Forest Rush, several spots) must
 ## run WITHOUT --fixed-fps to measure real frame rate.
 
 const MAIN_SCENE := preload("res://scenes/main/main.tscn")
 const FOREST_SCENE := preload("res://scenes/main/forest_rush.tscn")
+const CANYON_SCENE := preload("res://scenes/main/rocky_canyon.tscn")
+const SNOW_SCENE := preload("res://scenes/main/snow_slide.tscn")
 const DRIVE_SHOTS: Array[float] = [0.5, 4.0, 9.0, 12.6, 14.4, 20.0, 27.0, 34.0]
-const ALL_MODES: Array[String] = ["closeup", "overview", "drive", "pause", "eject", "race5", "menu", "forest"]
+const ALL_MODES: Array[String] = ["closeup", "overview", "drive", "pause", "eject", "race5", "menu", "forest", "items", "canyon", "snow", "polish"]
 const MENU_SCENE := preload("res://scenes/menu/main_menu.tscn")
 ## race5 screenshot times (s after the start).
 const RACE_SHOTS: Array[float] = [0.0, 2.5, 8.0, 16.0, 30.0]  # index 0 = the GO shot
@@ -59,6 +61,22 @@ func _run(modes: Array[String]) -> void:
 				await _capture_forest_rush()
 			"perfmap":
 				await _measure_map_performance()
+			"perfcanyon":
+				await _measure_map_performance(CANYON_SCENE, [["start (5 racers together)", 0.0, 20.0], ["cliff road + rocks", 700.0, 8.0],
+						["switchbacks", 1950.0, 8.0], ["bridges", 2560.0, 8.0], ["jump", 3060.0, 8.0], ["sharp descent", 3500.0, 8.0],
+						["third switchbacks", 6000.0, 8.0], ["finish", 7250.0, 8.0]])
+			"perfsnow":
+				await _measure_map_performance(SNOW_SCENE, [["start (5 racers together)", 0.0, 20.0], ["snowy pine descent", 600.0, 8.0],
+						["windy turns", 1600.0, 8.0], ["frozen lake + bridges", 2400.0, 8.0], ["jump", 3150.0, 8.0],
+						["hairpins", 3450.0, 8.0], ["second wind + ice", 4800.0, 8.0], ["finish", 7350.0, 8.0]])
+			"items":
+				await _capture_items()
+			"canyon":
+				await _capture_rocky_canyon()
+			"polish":
+				await _capture_polish()
+			"snow":
+				await _capture_snow_slide()
 	get_tree().quit()
 
 
@@ -261,7 +279,7 @@ func _capture_five_racers() -> void:
 		if main.rider.is_riding() and not main.get_local_racer().finished:
 			pilot.drive()
 		await get_tree().physics_frame
-	await _frames(6)
+	await _frames(70)  # the rows pop in one after another (~0.75 s)
 	await _save("race5_results")
 	print("  results: ", main.results_screen.row_texts)
 	main.return_to_lobby()
@@ -325,6 +343,56 @@ func _capture_pause() -> void:
 ## Wipeout sequence: thrown off at speed, tumble, get up, run back, get on.
 ## Ejection is triggered via RiderController.eject() so the shots are
 ## repeatable; real crash ejection is covered by the automated tests.
+## Item boxes ahead, the HUD with a held item, a mud bomb in flight, its
+## puddle, a banana peel and a spring punch.
+func _capture_items() -> void:
+	var main := _load_main(1)
+	var items := main.items
+	var bot := main.racers.get_racer(2)
+	bot.get_ai_driver().active = false
+	var path := main.track.path
+	var frame := path.get_frame(path.index_at_distance(45.0))
+	for lateral: float in [-4.0, 0.0, 4.0]:
+		items.add_box(frame.translated_local(Vector3(lateral, 1.0, 0.0)))
+	await _frames(40)
+	await _save("items_boxes_ahead")
+	var me := main.get_local_racer()
+	items.grant_item(me, ItemKind.Kind.MUD_BOMB)
+	bot.trike.teleport(path.get_frame(path.index_at_distance(40.0)).translated_local(Vector3(0, 0.8, 0)), false)
+	await _frames(30)
+	await _save("items_hud_mud_bomb")
+	me.trike.input.use_item_pressed = true
+	await _frames(18)
+	await _save("items_bomb_flight")
+	await _frames(40)
+	await _save("items_mud_splat")
+	items.grant_item(me, ItemKind.Kind.BANANA_PEEL)
+	await _frames(30)
+	me.trike.input.use_item_pressed = true
+	await _frames(10)
+	var camera := _free_camera(main)
+	var peel: BananaPeel = items.peels.values()[0]
+	camera.global_position = peel.global_position + Vector3(2.2, 1.6, 2.2)
+	camera.look_at(peel.global_position, Vector3.UP)
+	await _frames(4)
+	await _save("items_banana_peel")
+	var patch: MudPatch = items.patches.values()[0]
+	camera.global_position = patch.global_position + Vector3(6.0, 5.0, 6.0)
+	camera.look_at(patch.global_position, Vector3.UP)
+	await _frames(4)
+	await _save("items_mud_patch")
+	bot.trike.teleport(me.trike.global_transform.translated_local(Vector3(3.5, 0.0, -1.0)), false)
+	await _frames(30)
+	items.grant_item(me, ItemKind.Kind.SPRING_PUNCH)
+	me.item_hold_time = 1.0
+	camera.global_position = me.trike.global_transform * Vector3(1.5, 4.0, 7.0)
+	camera.look_at(me.trike.global_position + me.trike.global_basis.x * 1.8, Vector3.UP)
+	me.trike.input.use_item_pressed = true
+	await _frames(9)
+	await _save("items_spring_punch")
+	await _unload(main)
+
+
 func _capture_eject() -> void:
 	var main := _load_main()
 	var trike := main.trike
@@ -504,6 +572,200 @@ func _zone(track: Track, kind: String, n := 0) -> Array:
 	return track.get_zones(kind)[n]
 
 
+## Aerial overview (no fog) and the five-racer grid; the race is then started.
+func _map_intro(main: RaceSession, prefix: String) -> void:
+	var track := main.track
+	main.hud.visible = false
+	main.lobby_screen.visible = false
+	var camera := _free_camera(main)
+	camera.far = 5000.0
+	var environment: Environment = (main.get_node("WorldEnvironment") as WorldEnvironment).environment
+	environment.fog_enabled = false
+	var bounds := AABB(track.path.points[0], Vector3.ZERO)
+	for p in track.path.points:
+		bounds = bounds.expand(p)
+	var center := bounds.get_center()
+	camera.global_position = center + Vector3(-1500.0, 1700.0, 900.0)
+	camera.look_at(center + Vector3(150, -150, 0), Vector3.UP)
+	camera.fov = 60.0
+	await _frames(6)
+	await _save(prefix + "_00_overview")
+	environment.fog_enabled = true
+	await _wait_physics(40)
+	var start := track.get_start_transform(0)
+	camera.global_position = start * Vector3(10.0, 7.0, -16.0)
+	camera.look_at(start * Vector3(0.0, 0.5, 4.0), Vector3.UP)
+	await _frames(4)
+	await _save(prefix + "_01_start_grid")
+	main.start_from_lobby()
+	while not main.race.is_racing():
+		await get_tree().physics_frame
+
+
+## A timed hazard posed `t` seconds into its cycle, seen from beside the road.
+func _hazard_shot(main: RaceSession, hazard: Node3D, t: float, file_name: String) -> void:
+	var track := main.track
+	track.hazard_time = 100.0 * float(hazard.get(&"period")) - float(hazard.get(&"phase")) + t
+	await _wait_physics(2)
+	var index := track.path.find_nearest(hazard.global_position)
+	var camera := _free_camera(main)
+	var frame := track.path.get_frame(index)
+	camera.global_position = frame * Vector3(-4.0, 4.0, 18.0)
+	camera.look_at(frame * Vector3(0.0, 2.0, 0.0), Vector3.UP)
+	camera.fov = 60.0
+	await _frames(4)
+	await _save(file_name)
+
+
+func _first_prop(track: Track, kind: String) -> Node3D:
+	for child in track.get_node("Props").get_children():
+		if (child as Node).scene_file_path.get_file().get_basename() == kind:
+			return child
+	return null
+
+
+## Milestone 09: the five riders, faces, celebration and effects.
+func _capture_polish() -> void:
+	var main := _load_main(4, false)
+	main.hud.visible = false
+	main.lobby_screen.visible = false
+	await _wait_physics(30)
+	var camera := _free_camera(main)
+	var track := main.track
+	var frame := track.path.get_frame(track.path.index_at_distance(40.0))
+	var racers := main.racers.get_racers()
+	# Line the five racers up across the road, facing the camera's left.
+	for i in racers.size():
+		racers[i].trike.teleport(frame.translated_local(Vector3((i - 2) * 2.6, 0.8, 0.0)), false)
+		racers[i].progress.reset(track.path.index_at_distance(40.0))
+	await _wait_physics(40)
+	camera.global_position = frame * Vector3(0.0, 2.2, -9.0)
+	camera.look_at(frame * Vector3(0.0, 1.0, 0.0), Vector3.UP)
+	camera.fov = 50.0
+	await _frames(4)
+	await _save("polish_01_five_riders_front")
+	camera.global_position = frame * Vector3(9.0, 3.0, 3.0)
+	camera.look_at(frame * Vector3(0.0, 1.0, 0.0), Vector3.UP)
+	await _frames(4)
+	await _save("polish_02_five_riders_side")
+	# Faces close up.
+	for i in racers.size():
+		var head := (racers[i].trike.get_node("Visuals/Rider") as Rider).get_head_global_position()
+		var facing := -racers[i].trike.global_basis.z
+		camera.global_position = head + facing * 1.15 + Vector3.UP * 0.12
+		camera.look_at(head, Vector3.UP)
+		camera.fov = 40.0
+		await _frames(3)
+		await _save("polish_03_face_%d" % i)
+	# Expressions on the player.
+	var model := main.trike.get_node("Visuals/Rider") as Rider
+	var head := model.get_head_global_position()
+	camera.global_position = head - main.trike.global_basis.z * 1.0 + Vector3.UP * 0.1
+	camera.look_at(head, Vector3.UP)
+	for face: Rider.Face in [Rider.Face.SHOCKED, Rider.Face.DIZZY, Rider.Face.CHEER]:
+		model.set_expression(face)
+		await _frames(3)
+		await _save("polish_04_expression_%s" % String(Rider.Face.keys()[face]).to_lower())
+	model.set_expression(model.base_face)
+	# Celebration.
+	model.celebrate(5.0)
+	await _wait_physics(30)
+	camera.global_position = main.trike.global_transform * Vector3(2.5, 1.6, -3.5)
+	camera.look_at(main.trike.global_position + Vector3.UP * 1.0, Vector3.UP)
+	camera.fov = 50.0
+	await _frames(3)
+	await _save("polish_05_celebration")
+	await _unload(main)
+	# Effects while driving: dust, drift marks, boost trail.
+	main = _load_main(0, true)
+	main.hud.visible = true
+	await _chase_shot(main, 60.0, 2.5, "polish_06_dirt_spray")
+	# A gentle drift on a long straight.
+	var straight := 450.0
+	var index := main.track.path.index_at_distance(straight)
+	main.trike.teleport(main.track.path.get_frame(index).translated_local(Vector3(-3.0, 0.8, 0.0)))
+	main.get_progress().reset(index)
+	main.follow_camera.snap_to_target()
+	for k in 150:
+		main.trike.input.throttle = 1.0
+		main.trike.input.drift = k > 100
+		main.trike.input.steer = 0.55 if k > 100 else 0.0
+		await get_tree().physics_frame
+	main.trike.input.clear()
+	await _frames(2)
+	await _save("polish_07_drift_marks")
+	var pilot := TrackAutopilot.new(main.track, main.trike)
+	main.trike.boost_time = 2.0
+	for k in 40:
+		pilot.drive()
+		await get_tree().physics_frame
+	await _frames(2)
+	await _save("polish_08_boost_trail")
+	await _unload(main)
+
+
+func _capture_rocky_canyon() -> void:
+	var main := _load_main(4, false, CANYON_SCENE)
+	var track := main.track
+	await _map_intro(main, "canyon")
+	var cliff := _zone(track, "cliff")
+	main.hud.visible = true
+	await _chase_shot(main, float(cliff[0]) + 140.0, 2.6, "canyon_02_cliff_road")
+	main.hud.visible = false
+	await _frame_shot(main, float(cliff[0]) + 260.0, Vector3(40.0, 30.0, 30.0), Vector3(0.0, 4.0, -20.0), "canyon_03_cliff_road_aerial", 55.0)
+	var rock := _first_prop(track, "falling_rock") as RollingRock
+	await _hazard_shot(main, rock, rock.warning_time * 0.7, "canyon_04_falling_rock_warning")
+	await _hazard_shot(main, rock, rock.warning_time + rock.drop_time * 0.6, "canyon_05_falling_rock")
+	var roller := _first_prop(track, "rolling_rock") as RollingRock
+	await _hazard_shot(main, roller, roller.mid_crossing_time() - 0.6, "canyon_06_rolling_rock")
+	await _frame_shot(main, 2100.0, Vector3(40.0, 110.0, 70.0), Vector3(0.0, -10.0, -60.0), "canyon_07_switchbacks", 60.0)
+	var bridge := _zone(track, "bridge")
+	var mid := (float(bridge[0]) + float(bridge[1])) * 0.5
+	await _frame_shot(main, mid, Vector3(70.0, -6.0, 25.0), Vector3(0.0, -8.0, 0.0), "canyon_08_bridge_side", 55.0)
+	main.hud.visible = true
+	await _chase_shot(main, float(bridge[0]) - 25.0, 2.4, "canyon_09_bridge_deck")
+	await _chase_shot(main, float(_zone(track, "rocks")[0]) - 20.0, 2.2, "canyon_10_rock_narrows")
+	main.hud.visible = false
+	var gap := _zone(track, "gap")
+	await _frame_shot(main, float(gap[0]), Vector3(28.0, 4.0, -6.0), Vector3(0.0, -2.0, -6.0), "canyon_11_big_jump", 60.0)
+	main.hud.visible = true
+	await _chase_shot(main, float(gap[0]) - 60.0, 2.75, "canyon_12_jump_air")
+	await _chase_shot(main, 3420.0, 2.4, "canyon_13_sharp_descent")
+	await _chase_shot(main, track.path.length - track.finish_distance_from_end - 60.0, 2.2, "canyon_14_finish")
+	await _unload(main)
+
+
+func _capture_snow_slide() -> void:
+	var main := _load_main(4, false, SNOW_SCENE)
+	var track := main.track
+	await _map_intro(main, "snow")
+	main.hud.visible = true
+	await _chase_shot(main, 620.0, 2.6, "snow_02_pine_descent")
+	var wind := _zone(track, "wind")
+	await _chase_shot(main, float(wind[0]) + 160.0, 2.4, "snow_03_windy_turns")
+	main.hud.visible = false
+	await _frame_shot(main, float(wind[0]) + 300.0, Vector3(30.0, 22.0, 26.0), Vector3(0.0, 2.0, -20.0), "snow_04_windy_aerial", 55.0)
+	var ice := _zone(track, "ice")
+	main.hud.visible = true
+	await _chase_shot(main, float(ice[0]) - 15.0, 1.6, "snow_05_ice_patch", -2.0)
+	main.hud.visible = false
+	await _frame_shot(main, float(ice[0]) + 60.0, Vector3(14.0, 16.0, 28.0), Vector3(0.0, 0.0, -10.0), "snow_06_frozen_lake", 55.0)
+	var bridge := _zone(track, "bridge")
+	var mid := (float(bridge[0]) + float(bridge[1])) * 0.5
+	await _frame_shot(main, mid, Vector3(70.0, -6.0, 25.0), Vector3(0.0, -8.0, 0.0), "snow_07_frozen_bridge_side", 55.0)
+	main.hud.visible = true
+	await _chase_shot(main, float(bridge[0]) - 25.0, 2.4, "snow_08_frozen_bridge_deck")
+	main.hud.visible = false
+	var gap := _zone(track, "gap")
+	await _frame_shot(main, float(gap[0]), Vector3(28.0, 4.0, -6.0), Vector3(0.0, -2.0, -6.0), "snow_09_big_jump", 60.0)
+	await _frame_shot(main, 3600.0, Vector3(40.0, 110.0, 70.0), Vector3(0.0, -10.0, -60.0), "snow_10_hairpins", 60.0)
+	main.hud.visible = true
+	await _chase_shot(main, 4140.0, 1.6, "snow_11_snowmen")
+	await _chase_shot(main, 6180.0, 2.2, "snow_12_large_ramp")
+	await _chase_shot(main, track.path.length - track.finish_distance_from_end - 60.0, 2.2, "snow_13_finish")
+	await _unload(main)
+
+
 func _capture_forest_rush() -> void:
 	var main := _load_main(4, false, FOREST_SCENE)
 	var track := main.track
@@ -613,10 +875,14 @@ func _capture_forest_rush() -> void:
 
 
 ## Five racers on Forest Rush, at several spots of the map (real frame rate).
-func _measure_map_performance() -> void:
-	var main := _load_main(4, true, FOREST_SCENE)
-	var spots := [["start (5 racers together)", 0.0, 20.0], ["hairpins", 1600.0, 8.0], ["bridges", 2480.0, 8.0],
-			["mud and logs", 3380.0, 8.0], ["jump", 4560.0, 8.0], ["final descent", 5600.0, 8.0], ["finish", 7200.0, 8.0]]
+func _measure_map_performance(scene: PackedScene = FOREST_SCENE, spots: Array = [["start (5 racers together)", 0.0, 20.0],
+		["hairpins", 1600.0, 8.0], ["bridges", 2480.0, 8.0], ["mud and logs", 3380.0, 8.0], ["jump", 4560.0, 8.0],
+		["final descent", 5600.0, 8.0], ["finish", 7200.0, 8.0]]) -> void:
+	var load_start := Time.get_ticks_msec()
+	var main := _load_main(4, true, scene)
+	var load_ms := Time.get_ticks_msec() - load_start
+	print("PERFMAP map %s" % main.track.name)
+	print("PERFMAP scene load (instance + track build + 5 racers) %d ms" % load_ms)
 	var viewport_rid := get_viewport().get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(viewport_rid, true)
 	print("PERFMAP map build %.0f ms (%s)" % [main.track.build_timings["total"], str(main.track.build_timings)])
@@ -648,7 +914,12 @@ func _measure_map_performance() -> void:
 			last = now
 		var seconds := (Time.get_ticks_msec() - start_ms - 1500) / 1000.0
 		var n := maxf(frames, 1)
-		print("PERFMAP %-26s avg %.0f fps, worst frame %.1f ms, physics %.2f ms, %.0f draw calls, %.0f primitives" % [
-			spot[0], frames / seconds, worst, physics / n, draw_calls / n, primitives / n])
+		print("PERFMAP %-26s avg %.0f fps (%.1f ms/frame), worst frame %.1f ms, physics %.2f ms, %.0f draw calls, %.0f primitives" % [
+			spot[0], frames / seconds, 1000.0 * seconds / maxf(frames, 1), worst, physics / n, draw_calls / n, primitives / n])
 	print("PERFMAP nodes %d, adapter %s" % [get_tree().get_node_count(), RenderingServer.get_video_adapter_name()])
+	print("PERFMAP memory: static %.0f MB (peak %.0f MB), video %.0f MB, textures %.0f MB, buffers %.0f MB" % [
+		Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0, Performance.get_monitor(Performance.MEMORY_STATIC_MAX) / 1048576.0,
+		Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0,
+		Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED) / 1048576.0,
+		Performance.get_monitor(Performance.RENDER_BUFFER_MEM_USED) / 1048576.0])
 	await _unload(main)

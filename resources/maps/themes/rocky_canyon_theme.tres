@@ -1,0 +1,54 @@
+[gd_resource type="Resource" script_class="TrackTheme" format=3]
+
+[ext_resource type="Script" path="res://scripts/track/track_theme.gd" id="1_theme"]
+
+[resource]
+script = ExtResource("1_theme")
+scenery_style = 1
+dirt_color = Color(0.88, 0.63, 0.44, 1)
+dirt_dark_color = Color(0.72, 0.47, 0.32, 1)
+rut_color = Color(0.76, 0.52, 0.36, 1)
+verge_color = Color(0.86, 0.66, 0.46, 1)
+curb_colors = Array[Color]([Color(0.99, 0.8, 0.2, 1), Color(0.32, 0.22, 0.2, 1)])
+plank_colors = Array[Color]([Color(0.84, 0.64, 0.45, 1), Color(0.78, 0.57, 0.39, 1)])
+plank_gap_color = Color(0.45, 0.3, 0.22, 1)
+post_color = Color(0.42, 0.28, 0.19, 1)
+rail_color = Color(0.97, 0.76, 0.2, 1)
+deck_colors = Array[Color]([Color(0.74, 0.52, 0.34, 1), Color(0.66, 0.45, 0.29, 1), Color(0.8, 0.58, 0.38, 1)])
+deck_kerb_color = Color(0.4, 0.26, 0.18, 1)
+bridge_wall_colors = Array[Color]([Color(0.62, 0.42, 0.27, 1), Color(0.55, 0.37, 0.24, 1)])
+timber_color = Color(0.45, 0.3, 0.2, 1)
+timber_light_color = Color(0.62, 0.43, 0.28, 1)
+end_blocker_color = Color(0.72, 0.45, 0.3, 1)
+grass_colors = Array[Color]([Color(0.88, 0.68, 0.46, 1), Color(0.82, 0.57, 0.39, 1), Color(0.74, 0.46, 0.32, 1)])
+rock_slope_color = Color(0.72, 0.4, 0.3, 1)
+cliff_colors = Array[Color]([Color(0.84, 0.46, 0.32, 1), Color(0.73, 0.38, 0.28, 1)])
+cliff_band_colors = Array[Color]([Color(0.93, 0.64, 0.43, 1), Color(0.76, 0.36, 0.26, 1), Color(0.95, 0.78, 0.56, 1), Color(0.67, 0.31, 0.24, 1)])
+leaf_greens = Array[Color]([Color(0.56, 0.66, 0.36, 1), Color(0.7, 0.72, 0.4, 1), Color(0.86, 0.62, 0.3, 1)])
+flower_colors = Array[Color]([Color(1, 0.86, 0.3, 1), Color(0.96, 0.42, 0.5, 1), Color(1, 0.6, 0.25, 1)])
+boulder_colors = Array[Color]([Color(0.86, 0.5, 0.34, 1), Color(0.78, 0.42, 0.3, 1), Color(0.92, 0.62, 0.43, 1)])
+road_boulder_color = Color(0.8, 0.48, 0.35, 1)
+structure_rock_color = Color(0.78, 0.45, 0.33, 1)
+water_color = Color(0.28, 0.66, 0.8, 1)
+terrain_low_color = Color(0.84, 0.6, 0.41, 1)
+terrain_high_color = Color(0.76, 0.46, 0.32, 1)
+terrain_steep_color = Color(0.68, 0.36, 0.27, 1)
+terrain_patch_color = Color(0.72, 0.68, 0.42, 1)
+far_peak_color = Color(0.8, 0.56, 0.62, 1)
+mid_peak_color = Color(0.86, 0.52, 0.39, 1)
+far_snow_line = 1.0
+mid_snow_line = 1.0
+hill_colors = Array[Color]([Color(0.86, 0.56, 0.39, 1), Color(0.76, 0.63, 0.41, 1)])
+valley_color = Color(0.86, 0.66, 0.46, 1)
+lake_color = Color(0.26, 0.66, 0.76, 1)
+cloud_emission = Color(0.65, 0.58, 0.55, 1)
+apply_environment = true
+sky_top_color = Color(0.3, 0.56, 0.96, 1)
+sky_horizon_color = Color(0.96, 0.86, 0.72, 1)
+ground_bottom_color = Color(0.6, 0.42, 0.3, 1)
+fog_color = Color(0.96, 0.86, 0.76, 1)
+fog_density = 0.0004
+ambient_color = Color(1, 0.9, 0.8, 1)
+sun_color = Color(1, 0.9, 0.76, 1)
+sun_energy = 1.5
+saturation = 1.15

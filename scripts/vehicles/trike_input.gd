@@ -17,6 +17,8 @@ var drift := false
 var reset_pressed := false
 ## One-shot interact request (E). Used on foot to get back on the trike.
 var interact_pressed := false
+## One-shot "use held item" request (Q). ItemManager consumes it.
+var use_item_pressed := false
 ## Optional world-space on-foot direction (length 0..1) for AI and network
 ## input. When non-zero it replaces the camera-relative WASD movement.
 var move_direction := Vector3.ZERO
@@ -29,4 +31,5 @@ func clear() -> void:
 	drift = false
 	reset_pressed = false
 	interact_pressed = false
+	use_item_pressed = false
 	move_direction = Vector3.ZERO

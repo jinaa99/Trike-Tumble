@@ -21,14 +21,15 @@ printf '[debug]\n\ngdscript/warnings/treat_warnings_as_errors=true\n' > override
 $GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn; rm override.cfg
 ```
 
-`-- --only=core|racers|flow|ui|net|map` runs one group while you work on it.
+`-- --only=core|racers|flow|ui|net|items|polish|map` runs one group while you work on it
+(`-- --only=map --map=rocky_canyon` runs one map).
 
-### What the suite covers (448 checks)
+### What the suite covers (682 checks)
 
 `tests/test_runner.gd` runs everything. The racer/AI checks live in
 `tests/racer_tests.gd` and the race-flow checks in `tests/race_flow_tests.gd`, the menu/UI
 checks in `tests/ui_tests.gd`, in-process networking checks in
-`tests/net_unit_tests.gd` and the Forest Rush map checks in
+`tests/net_unit_tests.gd`, the item checks in `tests/item_tests.gd` and the Forest Rush map checks in
 `tests/map_tests.gd`; they run last. The runner first switches
 `GameSettings` to a test profile (`user://test_settings.cfg`, default
 controls). Older tests load the race scene with
@@ -38,7 +39,7 @@ jumps over. Their checks are unchanged.
 
 | Area | Checks |
 |---|---|
-| Input map | all 8 actions exist with bindings (incl. `interact`); E is mapped to `interact` |
+| Input map | all 9 actions exist with bindings (incl. `interact`, `use_item`); E is mapped to `interact` |
 | Keyboard | real key events (W/S/A/D, arrows, SPACE, R, E) reach the input through `PlayerInputSource` |
 | Suspension | 3 wheels down, upright, settles without bounce, no creep |
 | Engine | 0→12 m/s in 1 s, top speed near config, upright at speed |
@@ -91,7 +92,7 @@ jumps over. Their checks are unchanged.
 | Race flow: pending finish | thrown off before the line → empty trike = pending; an AI finishes 1st meanwhile; remount confirms 2nd with the confirmation time |
 | Race flow: finish timeout | others keep racing after the first finisher; race ends exactly `finish_timeout` later; unfinished = DNF; results show time / DNF / DNF |
 | Menu: title | opens on the title; the five buttons; PLAY/HOST/JOIN/SETTINGS open their screens; ESC and Back return; QUIT quits (hooked) |
-| Menu: map select | 3 cards (Forest Rush, Rocky Canyon, Snow Slide), all placeholder previews, descriptions and characteristics; only Forest Rush selectable (READY); Continue → solo lobby |
+| Menu: map select | 3 cards (Forest Rush, Rocky Canyon, Snow Slide), all READY and selectable; previews are route maps drawn from the track data with the real length and drop; descriptions and characteristics; Continue → solo lobby |
 | Menu: host | default port valid; 8 invalid ports disable Host Game with an error; limit 2–5; LAN info and status; Host Game → hosted lobby with the limit, transport HOSTING; Leave Lobby closes it |
 | Menu: join | 10 invalid IPs and invalid/empty ports rejected with messages and no connection attempt; valid input reaches the transport and its error is shown; stays on the screen |
 | Menu: lobby | count, host row with HOST/NOT READY; Start blocked until ready; Add AI to 5 then disabled; Remove AI; difficulty button cycles; Ready enables Start; Change Map round trip with preview; Leave Lobby |
@@ -99,7 +100,7 @@ jumps over. Their checks are unchanged.
 | Settings | tabs; sliders set bus volumes (and mute at 0); resolution; fullscreen; Low/High quality change MSAA, 3D scale and sun shadows; name (empty → Player); everything reloads from the file like after a relaunch; Back |
 | Settings: keys | rebinding with a real key press; new key drives the action; used key refused; ESC cancels; saved; Reset Controls |
 | Pause menu | the five buttons; ESC pauses; Resume; Settings over the paused race and ESC back; Restart; Quit; Return to Lobby (direct launch → race lobby); key reminder |
-| HUD | GET READY → STARTING → RACING chip; position + CP; empty item slot + use key; held item shows; prompt/hint follow rebinding; speed and timer |
+| HUD | GET READY → STARTING → RACING chip; position + CP; empty item slot + use key (`[Q] USE ITEM`); held item shows; prompt/hint follow rebinding; speed and timer |
 | Layout | every menu page (full 5-player lobby included) fits 1280×720; canvas_items/expand scaling |
 | Net: lobby data | peer ids as player ids; duplicate names numbered; duplicate id refused; client mirror matches the host; own seat marked; AI seats sync |
 | Net: snapshots | real snapshot valid; 7 kinds of malformed/impossible data rejected; across a respawn the proxy snaps |
@@ -108,22 +109,65 @@ jumps over. Their checks are unchanged.
 | Net: collisions | driving into a remote trike stops you with an impact (16.3); it doesn't move; a moving remote trike knocks you 8 m |
 | Net: ENet hosting | real server; status shows the port; port really in use; host owns its racer; leaving shuts down; port reusable |
 | Net: online menus | pause doesn't freeze the race; clients get Leave Game, no Restart; Race Again "Host decides…" |
+| Items: roll | all four items come out of boxes; 4,000 rolls: last place gets 4.6× the leader's turbos, the leader 4× the bananas; consecutive rolls vary |
+| Items: pickup | driving through a box at 23 m/s collects it with no slowdown (lowest speed in the next 0.5 s = pickup speed); one event; HUD shows the item; pickup sound; "+ ITEM" message; hint is `[Q]` |
+| Items: inventory, respawn | standing in a box collects it; a second box doesn't overwrite the item and stays active ("HANDS FULL" shown); no respawn while a trike sits on the spot; respawn after the delay once clear (one event); an empty trike collects nothing |
+| Items: turbo | no use inside the 0.35 s use delay; Q starts a 2.2 s boost; it ends after 2.20 s; speed up to 34 m/s; empty hands do nothing; no use while thrown off |
+| Items: mud bomb | thrown as a projectile; hits the racer 18 m ahead (0.6 s); victim slips, is immune, stays on; puddle left; a trike in the puddle slips; puddle there until shortly before its time, then gone, slipperiness ends; a miss splats on the road ahead; the thrower is spared by its own fresh puddle, others aren't |
+| Items: banana | dropped 2.6 m behind on the road; dropper safe while unarmed; another racer driving over it spins out (6.7 rad/s, 19.3 → 7.4 m/s), peel gone, stays on; spin-out over within 1.5 s; peels capped at 8 |
+| Items: spring punch | hits the racer beside; knocks sideways 3.3 m (7.4 m/s), no ejection, moderate; point-blank throws the rider off; out of range = miss, item gone, nobody moves, "MISSED!"; an immune racer can't be hit |
+| Items: host validation | simultaneous pickup of one box: first wins, one event; repeated request id ignored; can't use an item you don't hold; malformed and NaN requests rejected; far pickup and unknown box refused; an item is used once; no pickups after the race |
+| Polish: riders | 5 racers with 5 helmet colors, jackets and helmet styles; each rider has its own materials; every look keeps gloves on the grips and boots on the footrests (IK error 0.000 m); 5 different silhouettes (helmet shape + accessory); 5 trike accent colors; re-applying a look adds no duplicate parts |
+| Polish: faces, celebration | shocked → dizzy → own face through a fall; the mouth really changes; celebrating lifts a hand 0.61 m above the grip with a cheer, then the hands return to the grips (IK 0.000 m); crossing the finish starts it; finish fanfare + confetti for the local player |
+| Polish: trike sounds/effects | engine pitch 0.55 → 1.51 with speed; wheel dust at speed; drift: skid sound (1.0) + skid marks; snow powder vs heavy dark mud; boost trail; landing thump + puff; crash sound + impact burst |
+| Polish: rider sounds | yelp, thud, get-up boing, mount hop; footsteps while running (18) |
+| Polish: race sounds | 3 countdown beeps + GO; results chord without podium, victory jingle on the podium; items share the bank |
+| Polish: camera | small bumps don't shake; a big crash shakes ≤ 0.16 m (capped); gone within 0.5 s; landing dip 0.12 m and back; the player's crashes shake it |
+| Polish: remote players | a remote drifting, boosting trike shows spray, skid marks, boost trail and sounds like it; a remote landing thumps and puffs |
+| Polish: UI audio | UI bus with its own saved volume; buttons click |
+| Items: event sync | events recorded on a host race applied to a client-mode race give identical items, boxes, peels, puddles; repeats and junk ignored; a client driving into a box only sends one request |
 | Race flow: race again | 3 consecutive races: each reaches results; Race Again puts everyone back on the grid, riding, progress/checkpoints/finish cleared, locked, AI off, timer 0, results hidden, knocked crate restored, countdown restarts; Return to Lobby waits locked with the lobby screen; Start Race begins the countdown |
 
 | Map: Forest Rush build | in the catalog as READY, 6.5–8 km, builds < 3 s headless (stage timings printed), 60 render/collision chunks, grid lookup = full scan on 400 probes |
 | Map: route layout | tightest corner ≥ 18 m (21 m by data, 18.6 m measured), longest straight ≤ 160 m, downhill all the way (≤ 20 %), parts > 250 m apart along the route ≥ 90 m apart (147 m), hairpin legs ≥ 40 m (57 m) |
-| Map: sections | 2 bridges, 6 mud stretches, boulders/road trees/falling logs, 12 m gap + kicker + 6 ramps, 9.5 m narrows, 3 overlooks, > 3,000 pines (10,891) |
-| Map: spawns, checkpoints, items, recovery | 5 grid slots on solid road, ≥ 3.6 m apart, 5 racers settle upright; 30 ordered checkpoints ≤ 250 m apart on solid road; 42 item box points on road, ≥ 8 m from obstacles, none near the jump; 2,019 recovery points on solid road with no obstacle within 5 m; falling in the gap returns you before the run-up |
+| Map: sections | 2 bridges, 6 mud stretches, boulders/road trees/falling logs, 12 m gap + kicker + 6 ramps, 9.5 m narrows, 3 overlooks, > 3,000 pines (10,602) |
+| Map: spawns, checkpoints, items, recovery | 5 grid slots on solid road, ≥ 3.6 m apart, 5 racers settle upright; 30 ordered checkpoints ≤ 250 m apart on solid road; 45 item box points on road (the race places an active box on each, ≥ 400 m from the grid), ≥ 8 m from obstacles, none near the jump; 2,019 recovery points on solid road with no obstacle within 5 m; falling in the gap returns you before the run-up |
 | Map: collision | 17,815 downward probes: no holes, the surface (dirt/mud/planks) matches the map; barriers on both sides everywhere except the gap (1,424 probes); 5,982 scenery/structure colliders, none in the road corridor |
 | Map: driving | mud slows the trike (24 → 12.7 m/s, cap 13) and the road gives speed back; grass slope off-road top 15.5 m/s (cap 16.9); falling off the mountain respawns on the road; full-speed jump clears the ravine (take-off 24.5 m/s, landing hit 2.2, no eject); rolling off slowly drops in and respawns before the run-up; both bridges crossed on their planks with no bump > 4 |
 | Map: falling logs | waits off the road, rolls across the center, pose depends only on race time, a parked trike gets hit (impact 7.5, pushed 5 m) |
 | Map: AI | a hard AI drives the whole 7.45 km through all 30 checkpoints in order: 5:25.5, no resets |
+| All maps (milestone 08) | every generic map check runs on Forest Rush, Rocky Canyon and Snow Slide: READY in the catalog, length, build < 3 s, chunks, route layout (radius, kinks, straights, grade, clearances), own sky, 5 grid slots, 30 checkpoints on solid road, item box points + boxes in the race, recovery points, no collision holes, surfaces match (road/snow, mud, ice, bridge decks), barriers everywhere, scenery off the road, off-road and falling off, every big jump cleared and landed, slow roll into the gap respawns before the run-up, every bridge crossed on its deck, every timed hazard kind (waits off road, crosses, race-time only, hits a parked trike), hard AI full route 5–10 min with no resets |
+| Map: Rocky Canyon | 5 cliff stretches (2.5 km of rock wall), wall 20 m above the road and solid 1.7 m behind the barrier, a whole cliff road driven cleanly; 10 falling + 4 rolling rocks; 2 jumps + 6 ramps; 9.5 m narrows; 14 hairpins (tightest 19.1 m); 596+ rock spires, no pines; hard AI 5:11.6 |
+| Map: Snow Slide | 5 ice bands each ≤ 55 % of the width, ice + frozen bridges ≈ 6 % of the route; snow road, ice band and ice bridge bodies; on ice the travel direction turns 6° vs 19° on snow (same steering), trike stays upright; snow descent driven cleanly at 23.7 m/s; 2 wind stretches, gusts up to 6 m/s² only inside them, a function of race time, push a rolling trike 0.8 m in 1.5 s; 29 snowmen, 5 snowbanks, 8 large ramps; 4,500+ snowy pines; hard AI 5:24.3 |
 
-Last result (final-demo milestone 06): **448 passed, 0 failed** (396 earlier
-checks + 52 map checks), zero GDScript warnings in strict mode, about 70 s
-wall time.
+Last result (final-demo milestone 10, 2026-11-11): **682 passed, 0 failed**,
+normal and strict (675 earlier + finish run-off on 3 maps + quick-race).
+Final reports with error/warning counts: `docs/FINAL_DEMO_REPORT.md` §3.
+Milestone 09: **675 passed, 0 failed**,
+normal and strict (640 earlier + 35 polish checks). Milestone 08: **640 passed, 0 failed**,
+normal and strict (all three maps' checks included). Previous, milestone 07: **514 passed, 0 failed**
+(448 earlier checks with 2 key texts updated from F to Q, 64 item checks,
+1 Forest Rush box check, `use_item` in the input-map check), zero GDScript
+warnings in strict mode.
 
-### Forest Rush races (timed, ~80 s)
+### Timed races on every map (~4 min)
+
+Since milestone 08 `map_test_runner` races all three maps (`-- --map=ID`
+for one). Actual completion times (2026-11-09, Godot 4.7.2, M4, items on in
+the player race with seed 7):
+
+| Map | mixed (H, M, M, E, H) | easy ×5 | hard ×5 | player race (simple driver + mixed AI) |
+|---|---|---|---|---|
+| Forest Rush | 5:24.8 / 5:25.1 · 5:36.0 / 5:36.4 · 6:41.7 | 6:40.5–6:47.7 | 5:24.4–5:28.9 | You 5:50.9 (4 wipeouts, 2 respawns) · H 5:23.0 · M 5:38.6 / 5:44.6 · E 6:45.2 |
+| Rocky Canyon | 5:12.2 / 5:15.5 · 5:29.2 / 5:38.9 · 6:34.7 | 6:34.0–6:46.7 | 5:18.6–5:32.8 (1–3 wipeouts each) | You 5:19.4 (2 wipeouts, 1 respawn) · H 5:22.1 · M 5:27.6 / 5:30.3 · E 6:38.6 |
+| Snow Slide | 5:24.3 / 5:26.2 · 5:36.4 / 5:36.9 · 6:34.2 | 6:33.7–6:41.0 | 5:24.3–5:28.4 | You 5:24.2 (1 wipeout) · H 5:27.0 · M 5:34.2 / 5:36.0 · E 6:34.2 |
+
+All 42 checks passed (every racer finished through all 30 checkpoints, no AI
+reset, every run 5–10 min), normal and strict. Rocky Canyon is the most
+demanding (hard AIs wipe out 1–3 times on rocks and switchbacks). Not
+measured: **human** times on any map.
+
+### Forest Rush races (timed, ~80 s, milestone 06–07 detail)
 
 ```sh
 $GODOT --headless --path . --fixed-fps 60 --scene res://tests/map_test_runner.tscn
@@ -146,6 +190,20 @@ Actual completion times (2026-11-08, Godot 4.7.2, M4):
 No AI needed a reset or emergency recovery in any race. Last result:
 **14 passed, 0 failed** (normal and strict).
 
+**Since milestone 07 the player race has items** (the AI-only races build
+their own racers without the race scene, so they have none and their times
+are unchanged). Its item rolls use a fixed seed (7; `-- --item-seed=N` tries
+another, `--verbose` prints every item event). Over 16 seeds (2026-11-09):
+every racer finished through all 30 checkpoints, no AI reset, times 5:22–6:41.
+Per race about 33 pickups and 33 uses; hits are rare because the field
+spreads out (0–2 banana slips, 0–2 mud bomb hits, 0–2 punch hits). Items
+sometimes cost an AI 10–15 s through a crash after a slip. One earlier
+*unseeded* run had a Medium AI press reset once (lost ~23 s); it could not be
+reproduced with any of the 16 seeds. The suite's own run (seed 7, after the
+mud bomb aim fix): You 5:50.9 (5 wipeouts in the field), Hard 5:23.0, Medium
+5:38.6 / 5:44.6, Easy 6:45.2; 32 pickups, 3 banana slips, 1 bomb hit, 1 punch
+hit; 14 passed, 0 failed (normal and strict).
+
 Not measured: a **human** driving the whole map. A skilled player who
 chains drift boosts may be somewhat faster than the simple driver (5:22.7).
 A casual player with wipeouts will be slower. Please time a few real runs.
@@ -154,7 +212,7 @@ A casual player with wipeouts will be slower. Please time a few real runs.
 
 ```sh
 $GODOT --headless --path . --scene res://tests/net/net_test_runner.tscn          # all scenarios
-$GODOT --headless --path . --scene res://tests/net/net_test_runner.tscn -- duo   # duo | rules | drop | five | forest
+$GODOT --headless --path . --scene res://tests/net/net_test_runner.tscn -- duo   # duo | rules | drop | five | forest | items | maps
 ```
 
 It launches real game instances (`tests/net/net_peer.tscn`, headless, real
@@ -169,11 +227,30 @@ Scenarios:
 - `drop`: 3 players, one quits
 - `five`: 5 players
 - `forest`: 2 instances race on Forest Rush (the real map) for a minute
+- `maps`: the host picks Rocky Canyon (2 instances), then Snow Slide (3):
+  everyone loads the host's map with the same boxes and sky and races
+- `e2e5` (not in the default run, ~6 min): **five real, independent
+  instances** (no AI) play one whole race on Snow Slide: lobby + ready,
+  the host's map choice, countdown, driving with obstacle avoidance,
+  collisions, a forced wipeout + recovery, items, finishing order and times
+  on every screen, then the host presses Race Again and everyone races
+  again. The scripted driver presses R after 15 s on foot or 2 s stuck,
+  like a player.
+- `items`: 2 instances race through 30 shared item boxes for 40 s, using
+  every item they get; the client also forges a request for the host's
+  racer and replays an old request id
 
 `duo`, `rules`, `drop` and `five` use the short test track (fast). `forest`
 passes `--real-map`, so the peers load the scene the lobby's map asks for.
 
-Last result: **36 passed, 0 failed** (normal and strict). Details and what
+Last result (milestone 10, 2026-11-11): **50 passed, 0 failed**, normal and
+strict, 0 ENet errors; `e2e5` (five real players): **9/9** (runs 2–4).
+Milestone 09: **50 passed, 0 failed**, normal and strict, with
+the new audio/effects running on every instance. Milestone 08: **50 passed, 0 failed** (44 earlier + 6 map-choice checks). Strict mode:
+48/50 on the full run (the `drop` "remaining client finished" and the `five`
+smoothness check missed on real-time timing); re-running those two scenarios
+in strict mode: 11/11. These scenarios run in real time and are sensitive to
+machine load. Details and what
 is *not* tested: `docs/NETWORKING.md`.
 
 Windowed two-instance run (screenshots in `docs/screenshots/milestone_online/`):
@@ -207,6 +284,8 @@ Needs a visible window (not headless). Captures inspection screenshots:
 ```sh
 $GODOT --path . --fixed-fps 60 --always-on-top --resolution 1280x720 \
   --scene res://tests/visual_capture.tscn -- /some/output/dir [modes...]
+# milestone 08 modes: canyon snow (screenshots, docs/screenshots/milestone_08/); perfcanyon perfsnow (no --fixed-fps).
+# Measured on M4, 5 racers: all three maps 120 fps (vsync cap), worst frame 11–27 ms; Snow Slide ~1 M primitives.
 ```
 
 Modes (default: all except `perf`/`perf5`):
@@ -264,6 +343,93 @@ passes included). Godot reports no GPU timings on Metal, so the true GPU
 headroom is unmeasured.
 
 ## 3. Manual playtest checklist (needs a human)
+
+### Audio, animation and polish (final demo milestone 09)
+
+**Remaining visual/audio defects (found while testing, not fixed):**
+- Performance hitch: in 2 of 4 windowed Snow Slide perf runs one frame took
+  ~1 s, at a different spot each time (jump / frozen lake); the other runs
+  were clean (worst 21 ms). That run also jumped between 60 and 145 fps,
+  so macOS window throttling is likely, but a one-time shader compile the
+  first time an effect appears can't be ruled out. Needs a check while
+  really playing (and on Windows).
+- Snow Slide renders ~1 M primitives (snow-cap layers): fine on the M4
+  (120 fps), unmeasured on weaker GPUs.
+- The rider is still a procedural model (no skinned mesh); there is no
+  item-throw or hit-flinch animation, and the run cycle is the milestone 3
+  one.
+- Remote players' crashes make no hit sound or impact burst on other
+  screens (proxies don't report impacts; landings, skids, engine and
+  boost do play).
+- The drift dust from milestone 2 is large when it passes close to the
+  camera during a sharp drift.
+- Grass tufts are subtle (fade out beyond 110 m); the environment pass was
+  deliberately light to keep the road readable.
+- No music. Sounds are simple synth tones: they need a listening test.
+- Capture tool: running the `forest` mode and then `canyon` in one session
+  hangs (each mode works on its own); run modes in separate processes.
+
+Measured (windowed, M4, 5 racers): Forest Rush, Rocky Canyon and Snow Slide
+120 fps at every spot except the hitch above; worst frames otherwise 11–31 ms.
+
+Screenshots: `docs/screenshots/milestone_09/` (riders, faces, expressions,
+celebration, effects, the three maps, menus, a two-player online session).
+
+- [ ] Listen with headphones: engine, skid/drift, brake, crashes, landings feel right and aren't annoying over 6 minutes
+- [ ] Rider sounds: the "whoa!", thud, dizzy boing, footsteps (crunch on snow), mount hop
+- [ ] Countdown beeps + GO, finish fanfare, victory jingle, results chord, menu clicks
+- [ ] Volume sliders (Master, Music, Sound effects, Menu sounds) each work and are saved
+- [ ] The five riders are easy to tell apart in a pack (also from behind)
+- [ ] Faces: shocked when thrown, dizzy getting up, the cheer at the finish
+- [ ] Celebration after finishing looks fun and the hands go back to the bars
+- [ ] Wheel spray/snow powder/mud splash, skid marks and boost trail never hide the road ahead
+- [ ] Camera shake on crashes feels punchy but never nauseating; landings dip nicely
+- [ ] Online: the other players' riders look right and their effects/sounds play
+
+### Rocky Canyon and Snow Slide (final demo milestone 08)
+
+Play them: PLAY → pick the map → Start Race, or
+`$GODOT --path . res://scenes/main/rocky_canyon.tscn` / `snow_slide.tscn`.
+Screenshots of every section: `docs/screenshots/milestone_08/`.
+
+Rocky Canyon:
+- [ ] Time a full run (target 5–10 min); it should feel harder than Forest Rush, not unfair
+- [ ] The cliff walls read clearly; the barrier on the cliff side never feels like a trap
+- [ ] Falling rocks: you notice the shadow in time and can steer around it
+- [ ] Rolling rocks are visible early enough; getting hit feels fair
+- [ ] Switchbacks are tight but drivable at your speed (14 hairpins)
+- [ ] Both canyon bridges, the rock narrows and both big jumps feel good
+- [ ] The red-rock look, spires and warm sky look good; nothing floats or clips
+
+Snow Slide:
+- [ ] Time a full run (target 5–10 min)
+- [ ] The snow road feels a little looser than dirt but fully controllable
+- [ ] Ice patches are easy to see; there is always a grippy line beside them
+- [ ] Frozen bridges are slippery but straight enough to cross calmly
+- [ ] Wind: windsocks and blowing snow warn you; gusts push but never feel cheap
+- [ ] Snowmen and snowbanks are fun to dodge (and to plow through)
+- [ ] Large ramps and the big jump feel good
+- [ ] The snow scene isn't too bright/washed out on your screen
+- [ ] Both maps: frame rate smooth with 5 racers (also on Windows / a weaker PC if possible)
+
+### Items (final demo milestone 07)
+
+Play Forest Rush (you + 4 AI). Screenshots of every item:
+`docs/screenshots/milestone_07/`.
+
+- [ ] Item boxes are easy to spot ahead and you can aim for one at speed
+- [ ] Driving through a box never slows you; the pop, sound and HUD item feel rewarding
+- [ ] The HUD shows what you hold; Q uses it; a second box while holding says HANDS FULL
+- [ ] Mud bomb: the throw arc is readable; you can hit someone ~15 m ahead; the puddle is visible and avoidable; driving through it feels slippery but short
+- [ ] Spring punch: hitting someone beside you is satisfying; the knock isn't too far; a point-blank punch throwing them off feels fair
+- [ ] Turbo bottle: a clear speed burst; 2.2 s feels right
+- [ ] Banana peel: visible on the road; slipping on one spins you but you recover in about a second
+- [ ] Being hit never feels like a long stun; right after a hit you can't be hit again at once
+- [ ] Leaders vs. the back: does the back of the field get enough turbos/punches to catch up without it feeling unfair?
+- [ ] AI use their items sensibly (bananas when someone is behind, bombs when someone is ahead)
+- [ ] Online (two computers): pickups, items and hits look the same on both screens; nobody gets an item twice from one box
+- [ ] Sounds: pickup chime, throw whoosh, splat, boing, slip, turbo — not too loud or annoying (SFX volume slider)
+
 
 ### Forest Rush (final demo milestone 06)
 
@@ -344,7 +510,7 @@ Record tuning feedback in terms of `TrikeConfig` values where possible.
 **Menus** (`$GODOT --path .`):
 
 - [ ] Title over the live AI race; buttons grow on hover, squish on click; arrow keys + Enter work
-- [ ] PLAY → Forest Rush → lobby → Start Race → countdown; Rocky Canyon / Snow Slide can't be picked
+- [ ] PLAY → each of the three maps → lobby → Start Race → countdown on that map
 - [ ] Lobby: Add/Remove AI, click an AI's difficulty, Ready, Change Map, Leave Lobby
 - [ ] HOST GAME: wrong port shows an error; − / + limit; Host Game opens the hosted lobby
 - [ ] JOIN GAME: bad IP/port show errors; a valid address says online play isn't in this build yet

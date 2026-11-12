@@ -216,6 +216,9 @@ func _poll_riding(into: TrikeInput, dt: float) -> void:
 	if into.drift:
 		into.brake = 0.0
 	_track_progress(into, dt)
+	if manager and not finished and AIItemTactics.wants_use(manager.get_racer(racer_id), manager.get_racers(), config,
+			absf(corner)):
+		into.use_item_pressed = true
 
 
 func _hold_still(into: TrikeInput) -> void:

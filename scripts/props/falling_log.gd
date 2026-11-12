@@ -97,6 +97,11 @@ func _pose(t: float) -> Transform3D:
 	return Transform3D(Basis(Vector3.FORWARD, spin), Vector3(x, y, 0.0))
 
 
+## Cycle time at which the log crosses the middle of the road (tests, tools).
+func mid_crossing_time() -> float:
+	return drop_time + (half_width * 2.0 / roll_speed) * 0.5
+
+
 ## True while the log is on (or dropping onto) the road.
 func is_active() -> bool:
 	return phase_state == 1 or phase_state == 2

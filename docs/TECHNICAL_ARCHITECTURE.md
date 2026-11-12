@@ -49,9 +49,12 @@ MainMenu (main_menu.gd)          one MenuScreen at a time + back history, fade/s
   - `NetAddress`: IPv4/localhost and port 1024–65535 validation; LAN
     addresses.
 - **Maps:** `MapInfo` resources in `resources/maps/`, listed by `MapCatalog`.
-  Forest Rush = READY (race scene = `scenes/main/forest_rush.tscn`); Rocky
-  Canyon and Snow Slide = COMING SOON (no scene, can't be selected). No
-  preview textures yet: `MapPreview` draws a labelled placeholder.
+  Forest Rush, Rocky Canyon and Snow Slide are READY (`race_scene` =
+  `scenes/main/<map>.tscn`, `track_scene` = `scenes/tracks/<map>.tscn`).
+  `MapPreview` draws a route map from the track scene's saved data
+  (`SceneState`, no instancing): course shaded by height, start/finish,
+  bridges, jumps, ice, mud, cliffs, wind, length and drop. A map without a
+  track still gets the labelled placeholder; no fake screenshots.
 - **Design system:** `UiKit` (`scripts/ui/kit/ui_kit.gd`).
   - Palette, type scale, display font.
   - Factories: buttons (primary/normal/quiet) with hover/focus grow and
@@ -63,7 +66,7 @@ MainMenu (main_menu.gd)          one MenuScreen at a time + back history, fade/s
   A test checks every menu page's minimum size fits 1280×720.
 - **Race UI additions:**
   - HUD race-state chip (GET READY / STARTING / RACING / FINISHED · WAITING / RACE OVER / RESULTS).
-  - Item slot (EMPTY + `[F] USE ITEM`, `use_item` action reserved for items).
+  - Item slot: held item in its color (pops in on pickup), EMPTY otherwise, `[Q] USE ITEM`.
   - Pause menu: Resume, Restart (scene reload), Settings (overlay), Return
     to Lobby, Quit Game, live key reminder.
   - `RaceSession.scene_changer`, `MainMenu.quit_handler/scene_changer` and
@@ -99,6 +102,8 @@ Main (RaceSession, main.gd)          local player + race flow ↔ camera/HUD/scr
       ├─ AIDriver (TrikeInputSource) AI brain: polled by both the trike and the rider
       ├─ Trike (trike.tscn)          same scene as the player's; PlayerInputSource removed
       └─ RiderCharacter              same scene as the player's; PlayerInputSource removed
+├─ Items (ItemManager)               item boxes, held items, bombs/puddles/peels, host authority (see "Items")
+│  └─ Sounds (ItemSounds)            synthesized item sounds
 ├─ RaceController (race_controller.gd) race flow: RaceStateMachine, countdown, finish timeout, results, race again
 ├─ ResultsScreen (CanvasLayer)       results table + Race Again / Return to Lobby
 └─ LobbyScreen (CanvasLayer)         racer list + Start Race
@@ -401,8 +406,9 @@ once.
   transforms
 - clock zeroed
 
-Ids, slots, colors and AI difficulty stay. There are no items yet; item
-state will hook into the same reset. The pause menu's Restart still reloads
+Ids, slots, colors and AI difficulty stay. `ItemManager.reset_for_new_race()`
+runs on the same `race_reset` signal: empty hands, every box back, no bombs,
+puddles or peels. The pause menu's Restart still reloads
 the whole scene.
 
 ## Checkpoints and positions (final demo milestone 03)
@@ -446,6 +452,172 @@ Two racers on the same checkpoint within `position_swap_margin` (1 m) keep
 their previous order (no flicker). The HUD shows "2nd / 5", "CP 3/12" and,
 while it runs, the finish timeout.
 
+## Items (final demo milestone 07)
+
+Four original items, one carried at a time, collected from floating "?"
+boxes on the road. Everything lives in `scripts/items/`; the only hooks into
+older code are two `Trike` methods, `TrikeInput.use_item_pressed`,
+`Racer.held_item`/`item_hold_time` and one line in `AIDriver`.
+
+| Item | Use (Q) | Effect |
+|---|---|---|
+| Mud bomb | thrown forward in a visible arc | direct hit: victim slips 1.4 s + small wobble; always leaves a mud puddle (r 3.8 m, 8 s) where trikes lose grip and top speed |
+| Spring punch | boxing glove on a spring | nearest riding opponent within 9 m and a 110° cone: knocked sideways 5–10 m/s (stronger closer) + short slide; ≥ 8.5 m/s (about ≤ 2.7 m away) throws the rider off; nobody in range = a miss |
+| Turbo bottle | instant | `boost_time` = 2.2 s (the drift-boost acceleration and top speed) |
+| Banana peel | dropped 2.6 m behind | first racer over it (the dropper only after 1 s) spins out: yaw spin, 55 % speed kept, 1 s low grip; max 8 peels, 45 s life |
+
+**Authority.** One model offline and online (offline = the local machine is
+the host):
+
+1. Each computer watches only the racers it simulates (its player; the host
+   also its AI). Driving through a box (swept segment test, no collision,
+   no slowdown), over an armed peel, or pressing Q creates a **request**
+   `(racer id, request id, kind, data)`. A pending flag stops repeats while
+   waiting for the answer.
+2. The host validates in `ItemManager.handle_request()`:
+   - racer exists, is riding, racing, not finished;
+   - well-formed data (finite vectors, believable speed);
+   - request id newer than the last one from that racer (replays ignored);
+   - pickup: box active, empty hands, no post-use cooldown, racer within
+     `plausible_distance` of the box (host view);
+   - use: the item is really held (and was held ≥ half the use delay);
+     the reported position is used only if it matches the host's view;
+   - banana hit: peel exists and is armed for that racer, racer not immune.
+   Online, `Net` first checks that the sender owns the racer.
+3. Granted requests become **events** `[seq, type, ...]` (`ItemManager.Event`):
+   `BOX_TAKEN`, `BOX_RESPAWNED`, `TURBO_USED`, `BANANA_DROPPED`, `BANANA_HIT`,
+   `BOMB_THROWN`, `BOMB_LANDED`, `PUNCH`. The host applies each one and
+   broadcasts it; clients apply events in order and ignore repeated or
+   malformed ones. Item rolls, peel spots, bomb landings, punch targets,
+   knock velocity and ejection are all decided on the host and carried in
+   the event.
+4. Physical effects are applied only by the victim's owner (`_owns()`), via
+   `Trike.apply_item_hit()` / `set_slippery()` / `RiderController.eject()`;
+   proxies just move with the next snapshots.
+
+Bombs fly as plain ballistics (`MudBomb.step`) on every computer; the host
+alone tests them against trikes and the ground and announces the landing.
+Puddles are areas: each owner makes its own trikes slippery inside one.
+Puddles and peels age locally with the same lifetimes.
+
+**Trike hooks.**
+- `apply_item_hit(velocity_change, spin, speed_keep)`: queued and applied
+  inside `_integrate_forces` after the impact measurement, so the impact
+  rule never also counts it as a crash. Whether an item ejects is the
+  host's decision.
+- `set_slippery(duration, grip_factor, speed_factor)` / `slip_time`: scales
+  surface grip and top speed (mud drag applies) on top of the ground's own
+  surface. Cleared by `teleport()`.
+
+**Balance rules** (all values in `ItemConfig`,
+`resources/items/default_item_config.tres`):
+- one item; a box never overwrites it (it stays for others, the player sees
+  "HANDS FULL")
+- use delay 0.35 s after pickup, 0.6 s pickup cooldown after use
+- no use or pickup while off the trike, before GO or after the race
+- 2.5 s immunity after any item hit (no chain-stuns); immune racers don't
+  trigger peels and aren't punch targets
+- every slowdown lasts ≤ 1.4 s (puddles: only while inside)
+- position-weighted roll (`ItemRoll`): leader mostly bananas and mud,
+  last place mostly turbos and punches
+- boxes respawn after 6 s, but only when no trike or rider is within 3.5 m
+
+**AI.** `AIItemTactics.wants_use()` (called from `AIDriver._poll_riding`)
+presses use through `TrikeInput`: turbo on straight road, banana with a racer
+behind, mud bomb with a racer ahead, punch with a racer close beside; any
+item after `item_max_hold` (punch: twice that). Values per difficulty in
+`AIDriverConfig` ("Items").
+
+**Maps.** `ItemManager.setup()` places a box on every
+`Track.get_item_box_transforms()` point (`item_box_rows` × `item_box_columns`).
+Forest Rush: 15 rows × 3 = 45 boxes. A new map only fills `item_box_rows`
+(distances along the built path, on safe road); the test track has none, so
+the older tests run without items. Tests and tools add boxes with `add_box()`
+and give items with `grant_item()` (host only).
+
+**Feedback.** Box pop burst in the item's color, HUD slot pop + "+ ITEM"
+message, "SPLAT!/SLIPPED!/PUNCHED!/POW!/MISSED!/TURBO!" messages, punch
+glove effect, splat/turbo bursts. Sounds are synthesized in code at startup
+(`ItemSounds`, SFX bus): flat for the local player, positional otherwise.
+
+## Audio, looks, effects and camera feedback (final demo milestone 09)
+
+**Audio.** All sounds are synthesized in code, no files:
+- `SoundSynth`: tones/melodies, pitch sweeps (with vibrato for cartoon
+  voices), filtered noise bursts, seamless loops (whole wave cycles +
+  cross-faded noise), mixing; 16-bit 22 kHz mono `AudioStreamWAV`.
+- `SoundBank`: every sound by name, built once and cached; `played` logs
+  one-shot requests (tests check triggers headless).
+- `SoundPlayer`: positional (`play_at`) and flat (`play_flat`) one-shots,
+  freed on a timer (headless audio never emits `finished`).
+- Buses (`default_bus_layout.tres`): Master, Music (empty for now), SFX,
+  UI, each with a saved volume slider (`GameSettings`, Settings → Audio).
+
+| Component | Created by | Plays |
+|---|---|---|
+| `TrikeAudio` | `TrikeVisuals` | engine loop (pitch by speed/throttle, boost), skid loop (real tyre slip or drifting; softer on snow, hiss on ice), brake squeal, soft/hard hits (`Trike.impact`), landing thumps (`TrikeVisuals.landed`) |
+| `RiderAudio` | `RiderController` | yelp on EJECTED, thud on RAGDOLL, boing + chime on GETTING_UP, footsteps by distance on foot (crunch on snow maps), hop on MOUNTING |
+| `RaceAudio` | `RaceSession` | countdown beeps, GO, the local finish fanfare + confetti, victory jingle (podium) or results chord |
+| `ItemSounds` | `ItemManager` | item sounds, from the same bank |
+| `UiKit.play_ui` | every `UiKit` button | hover tick, press click (UI bus) |
+
+Trike and rider audio read only synced state (speed, slip, wheel contact,
+boost, rider state), so network proxies sound like the real racer.
+
+**Rider looks.** `RiderLook` (`resources/characters/looks/*.tres`: Zip, Pip,
+Bramble, Nutmeg, Rusty) = colors, `HelmetStyle` (bear ears, mohawk, horns,
+antenna, pompom), `Accessory` (scarf, backpack, bandana, bell, none),
+goggles, head size and resting `Face`. `RiderStyle.apply()` gives the rider
+its own copies of the shared materials (by role), adds the style/accessory
+meshes (`Look_*` nodes, replaced on re-apply) and sets the face. The rig
+(bones, IK targets, limb lengths) never changes. `RacerManager.rider_looks`
+and `racer_accents` pick the look and the trike's second color by racer
+order (the same on every computer).
+
+**Faces and celebration.** `Rider.Face`: the five resting faces plus
+SHOCKED (thrown off), DIZZY (getting up) and CHEER. `set_expression()` poses
+brows, eyes, pupils and mouth relative to their rest transforms; pose-mode
+changes pick the face, so proxies show it too. `Rider.celebrate()` (called
+by `RacerManager` on `racer_finished` for every finisher that is riding):
+while seated the arms leave the grips (free IK targets: fist pump + wave),
+then return to them.
+
+**Effects** (`TrikeEffects`, created by `TrikeVisuals`, state-driven so
+proxies show them): wheel spray styled per ground (`SPRAY`: dirt, grass,
+mud, planks none, snow, ice), skid marks while drifting (world-space flat
+particles), a boost trail, a landing puff and an impact burst; plus the
+existing drift dust/sparks and boost flame, item effects and the finish
+confetti (`RaceAudio.fire_confetti`). All low and behind the trike, or
+above the finish arch.
+
+**Camera feedback** (`FollowCamera`): `add_impact_shake(strength)` adds
+trauma (ignored below 3 m/s, full at 14); the shake is trauma² × 0.16 m /
+1.4° and decays in under 0.5 s. `add_landing(airtime)` dips the camera
+(≤ 0.4 m) on a critically damped spring. `turn_look_shift` aims up to 1.6 m
+into a turn at speed. `RaceSession` wires the local trike's `impact` and
+`TrikeVisuals.landed` to it.
+
+## Desktop export (final demo milestone 10)
+
+`export_presets.cfg`:
+- **macOS**: universal (x86_64 + arm64), bundle id
+  `io.github.triketumble.demo`, ad-hoc code signature (built-in signing,
+  hardened runtime, no Apple account), not notarized, no sandbox →
+  `release/TrikeTumble-macOS/TrikeTumble.zip` containing "Trike Tumble.app".
+  Needs `textures/vram_compression/import_etc2_astc=true` (set).
+- **Windows**: x86_64, pck embedded in the exe, no code signing, no rcedit
+  resource changes → `release/TrikeTumble-Windows/TrikeTumble.exe`.
+- Both exclude `tests/`, `docs/`, `release/` and `override.cfg`. The pack is
+  ~0.6 MB (everything is procedural).
+- Templates: official Godot 4.7.2 stable **standard** templates
+  (`Godot_v4.7.2-stable_export_templates.tpz`, SHA-512 checked against the
+  release's `SHA512-SUMS.txt`) in
+  `~/Library/Application Support/Godot/export_templates/4.7.2.stable/`.
+- Export with the strict-mode `override.cfg` removed (project settings are
+  baked into the export).
+- Release builds can't open a scene from the command line; for QA,
+  `-- --quick-race=<map_id>` starts a solo race (you + 4 AI) from the menu.
+
 ## Signals and APIs
 
 - `Trike`:
@@ -454,7 +626,8 @@ while it runs, the finish timeout.
     `impact(strength, velocity_before)`.
   - **Methods:** `request_respawn()`, `teleport(xf, notify := true)`,
     `set_rider_aboard(bool)`, `set_upright()`,
-    `apply_knockback(impulse, spin)`, `get_drift_tier()`, `is_grounded()`.
+    `apply_knockback(impulse, spin)`, `apply_item_hit(dv, spin, speed_keep)`,
+    `set_slippery(duration, grip, speed)`, `get_drift_tier()`, `is_grounded()`.
   - **State:** `has_rider`, `auto_recover_when_flipped` (true only for a
     standalone trike without a rider system).
   - With no `respawn_requested` listener, a reset rights the trike in place,
@@ -570,6 +743,58 @@ exactly what it was before.
   it from GO.
 - `build_timings` records milliseconds per build stage.
 
+**Themes (milestone 08).** `Track.theme` (`TrackTheme`,
+`resources/maps/themes/*.tres`) holds a map's look: road, curb, barrier,
+bridge, slope and cliff paint (copied into `TrackMeshBuilder`), the scenery
+style and palettes (`TrackDecorator`), backdrop colors (`TrackBackdrop`),
+set-dressing colors (`TrackLandmarks`, `TrackStructures`) and, with
+`apply_environment`, the sky, fog, ambient light and sun
+(`RaceSession._load_track` → `TrackTheme.apply_to_world`, on a duplicated
+Environment). The defaults are the forest values, so a track without a
+theme (Forest Rush, test track) looks exactly as before; the map tests
+confirm Forest Rush's scenery counts are unchanged.
+
+Scenery styles (`TrackTheme.SceneryStyle`): FOREST (pines, round trees,
+bushes, boulders, flowers); CANYON (solid striped rock spires instead of
+pines, dry trees, shrubs, desert flowers); SNOW (the forest meshes plus
+white snow-cap batches on the same transforms, snow mounds instead of
+bushes, snow on boulders, no flowers). MultiMesh instances are tinted per
+instance, which is why snow caps are separate batches.
+
+**Per-map ground (milestone 08).**
+- `Track.road_surface` tags `TrackBody` (Snow Slide: SNOW). Forest Rush
+  and the test track keep ROAD, so their road handling is unchanged.
+- `Track.bridge_surface` tags `BridgeBody` (Snow Slide: ICE, frozen bridges).
+- Zone `"ice", u0, u1` is a surface band like mud (`TrackMeshBuilder.band_kinds`)
+  with its own `IceBody` (ICE). Same collision quads, different body.
+- `TrackSurface.Kind` gained SNOW and ICE; `TrikeConfig.snow_*` / `ice_*`.
+
+**Cliff roads (milestone 08).** Zone `"cliff", side`: on that side the slope
+uses `TrackMeshBuilder.cliff_profile` (a sheer 20 m rock face rising 1–2 m
+behind the barrier, a ridge, then back down to the terrain) instead of
+`slope_profile`. `cliff_weights` blend the two over `Track.zone_blend` (16 m)
+so there are no seams. Render and collision use the same points; the face is
+colored from `cliff_colors` with horizontal `cliff_band_colors`. Gorge faces
+at bridges/gaps pick it up automatically. The decorator keeps cliff faces
+clear (no trees, bushes, boulders or flowers).
+
+**Crosswind (milestone 08).** Zone `"wind", side, strength`:
+`Track.wind_at(index)` is a pure function of `hazard_time` (gusts between
+35 % and 100 % of `strength`, `wind_gust_period` 5 s, faded in/out over
+`zone_blend`). `RacerManager` sets `Trike.wind` each tick for the trikes this
+computer simulates; `Trike._integrate_forces` adds it to the velocity after
+the impact measurement (never an impact). Proxies ignore it. Windsocks and
+blowing-snow particles (`TrackStructures._build_wind`) make it visible.
+
+**New props (milestone 08).** `falling_rock` and `rolling_rock`
+(`RollingRock`, an `AnimatableBody3D` like `FallingLog`: pose = function of
+`hazard_time`; FALL drops from the cliff with a landing shadow, ROLL crosses
+diagonally downhill; `is_active()` for the AI, `mid_crossing_time()` for
+tests), `snowman` / `snowman_group` (knockable, props layer, reset with the
+crates), and `ramp` with `{"length", "height", "width"}`. Boulders take the
+theme's `road_boulder_color` (Snow Slide: snowbanks). All mark respawn-unsafe
+stretches; AI avoidance radii are in `RacerManager.obstacle_radii`.
+
 **Children.** Each child with `build_for_track(track)` runs in scene order:
 1. Props (layout table, including `boulder`, `road_tree`, `falling_log` and
    `big_ramp`)
@@ -603,6 +828,8 @@ exactly what it was before.
 | Test track, 1.2 km, headless | 330 ms | ~250 ms | geometry 99, backdrop 50 |
 | Forest Rush, 7.45 km, headless | — | 1.1–1.4 s | geometry ~600, backdrop ~300–450, decor ~250 |
 | Forest Rush, windowed | — | ~1.6 s | mesh uploads make the decorative parts slower |
+| Rocky Canyon, 7.34 km | — | ~1.1 s headless, ~1.6 s windowed | geometry ~530, backdrop ~390 |
+| Snow Slide, 7.49 km | — | ~1.4 s headless, ~2.0 s windowed | geometry ~590, backdrop ~500, decor ~210 (snow caps) |
 
 The old code's cost grew with the square of the map size (terrain vertices
 × track samples, and scenery × samples). For Forest Rush it would have taken
@@ -638,7 +865,7 @@ clearance. It snaps on respawn (`respawned`).
 
 Other queries: wheel rays mask 1+4 (world + props). Camera sphere cast and
 ground check mask 1. Rider ground probe mask 1. Finish trigger mask 2
-(vehicles only; riders on foot can't finish).
+(vehicles only; riders on foot can't finish). Items have no collision: box/peel/puddle contact is a distance test in `ItemManager`; the host's mud bomb ray masks 1 (world).
 
 ## Rendering and visual architecture (milestone 2)
 
@@ -707,6 +934,15 @@ below the out-of-bounds depth, so a falling trike respawns before reaching it.
 | `scripts/camera/follow_camera.gd` | Chase camera |
 | `scripts/track/*.gd` | Track path (+ grid lookup), route builder (`TrackRoute`), mesh builder (chunks, surfaces), `MeshBatch`, `TrackSurface`, track node (zones, safety, item boxes), gate, props, decor, structures |
 | `scenes/tracks/forest_rush.tscn`, `scenes/main/forest_rush.tscn` | Forest Rush map data and its race scene |
+| `scenes/tracks/rocky_canyon.tscn`, `snow_slide.tscn` (+ `scenes/main/` race scenes) | Rocky Canyon and Snow Slide map data and race scenes |
+| `scripts/track/track_theme.gd`, `resources/maps/themes/*.tres` | `TrackTheme`: a map's paint, scenery style and sky |
+| `scripts/props/rolling_rock.gd` (+ `scenes/props/falling_rock.tscn`, `rolling_rock.tscn`), `scenes/props/snowman.tscn` | Canyon rock hazards, snowmen |
+| `scripts/ui/map_preview.gd` | Route-map previews drawn from track data |
+| `scripts/audio/sound_synth.gd`, `sound_bank.gd`, `sound_player.gd` | Synthesized sounds, the named sound bank, one-shot players |
+| `scripts/vehicles/trike_audio.gd`, `trike_effects.gd` | Trike sounds and particles |
+| `scripts/rider/rider_audio.gd`, `scripts/race/race_audio.gd` | Rider sounds; race sounds and finish confetti |
+| `scripts/characters/rider_look.gd`, `rider_style.gd`, `resources/characters/looks/*.tres` | Rider looks and how they are applied |
+| `tests/polish_tests.gd` | Milestone 09 tests (`--only=polish`) |
 | `scripts/props/road_boulder.gd`, `road_tree.gd`, `falling_log.gd` (+ `scenes/props/*.tscn`) | Road obstacles and the timed log hazard |
 | `tests/map_tests.gd`, `tests/map_test_runner.*` | Forest Rush checks (main suite); long timed races |
 | `scripts/race/vehicle_progress.gd` | Per-racer progress and respawn point |
@@ -728,6 +964,13 @@ below the out-of-bounds depth, so a falling trike respawns before reaching it.
 | `scripts/core/game_settings.gd`, `game_session.gd` | Autoloads `GameSettings`, `GameSession` |
 | `scripts/net/*.gd` | `Net` (autoload), `NetworkTransport`, `ENetTransport`, `NetSnapshot`, `SnapshotBuffer`, `NetRaceSync`, `Lobby`, `LobbyPlayer`, `NetAddress` |
 | `tests/net_unit_tests.gd`, `tests/net/*` | In-process network tests; multi-process network suite |
+| `scripts/items/item_manager.gd` | `ItemManager`: boxes, held items, requests/validation/events, bombs, puddles, peels |
+| `scripts/items/item_config.gd`, `resources/items/default_item_config.tres` | `ItemConfig`: every item value |
+| `scripts/items/item_kind.gd`, `item_roll.gd`, `item_rules.gd` | Item ids/names/colors, position-weighted roll, punch targeting and strength |
+| `scripts/items/item_box.gd`, `mud_bomb.gd`, `mud_patch.gd`, `banana_peel.gd` | In-world item objects (no collision) |
+| `scripts/items/item_visuals.gd`, `item_sounds.gd` | Procedural item meshes and effects; synthesized item sounds |
+| `scripts/ai/ai_item_tactics.gd` | When an AI racer uses its item |
+| `tests/item_tests.gd` | Item tests (run by `test_runner.gd`, `--only=items`) |
 | `scripts/maps/*.gd`, `resources/maps/*.tres` | `MapInfo`, `MapCatalog`, the three maps |
 | `scripts/menu/*.gd`, `scenes/menu/*.tscn` | Main menu, its screens and 3D background |
 | `scripts/ui/kit/ui_kit.gd` | `UiKit` design system |

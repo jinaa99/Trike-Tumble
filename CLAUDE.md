@@ -58,8 +58,10 @@ $GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn  
 $GODOT --path .                                            # play the game (main menu)
 $GODOT --path . res://scenes/main/main.tscn                # straight into a 1-racer race
 $GODOT --path . res://scenes/main/race_five.tscn           # you + 4 AI (or: -- --ai=4 --difficulty=hard)
-$GODOT --path . res://scenes/main/forest_rush.tscn          # Forest Rush (the real map), you + 4 AI
-$GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn -- --only=map   # one test group
+$GODOT --path . res://scenes/main/forest_rush.tscn          # Forest Rush, you + 4 AI
+$GODOT --path . res://scenes/main/rocky_canyon.tscn         # Rocky Canyon, you + 4 AI
+$GODOT --path . res://scenes/main/snow_slide.tscn           # Snow Slide, you + 4 AI
+$GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn -- --only=map   # one test group (core|racers|flow|ui|net|items|polish|map)
 $GODOT --headless --path . --fixed-fps 60 --scene res://tests/map_test_runner.tscn             # timed Forest Rush races (~80 s)
 ```
 
@@ -69,12 +71,13 @@ Details, the visual capture tool and the manual checklist: `docs/TESTING.md`.
 
 ```
 scenes/   menu/ main/ vehicles/ characters/ camera/ ui/ tracks/ (test_track, forest_rush) props/
-scripts/  core/ menu/ net/ maps/ main/ vehicles/ characters/ camera/ ui/ track/ race/ props/ visuals/ rider/ ai/
+scripts/  core/ menu/ net/ maps/ main/ vehicles/ characters/ camera/ ui/ track/ race/ props/ visuals/ rider/ ai/ items/
 resources/vehicles/default_trike_config.tres   # all handling values
 resources/rider/default_rider_config.tres      # ejection / fall / on-foot / mount values
 resources/ai/ai_easy|medium|hard.tres           # AI difficulty presets (AIDriverConfig)
+resources/items/default_item_config.tres        # every item value (ItemConfig)
 resources/ui/trike_theme.tres                  # shared UI theme (fonts, buttons, panels)
-tests/    test_runner (automated) + racer/race_flow/ui/net_unit/map tests, map_test_runner (timed races), net/ (multi-process), visual_capture (screenshots/perf), track_autopilot
+tests/    test_runner (automated) + racer/race_flow/ui/net_unit/item/map tests, map_test_runner (timed races), net/ (multi-process), visual_capture (screenshots/perf), track_autopilot
 docs/     design, roadmap, architecture, testing, screenshots/
 ```
 
@@ -108,28 +111,37 @@ docs/     design, roadmap, architecture, testing, screenshots/
   - A race scene doesn't contain its track. `RaceSession.track_scene` is
     instanced at the start of `_ready`. `main.tscn` uses the 1.2 km test
     track, which the fast tests and the menu background rely on.
-    `scenes/main/forest_rush.tscn` uses Forest Rush, and that is what the
-    menu/online "Forest Rush" loads.
-  - Forest Rush is pure data in `scenes/tracks/forest_rush.tscn`:
+    `scenes/main/<map>.tscn` (forest_rush, rocky_canyon, snow_slide) are what
+    the menu/online maps load (`MapInfo.race_scene`).
+  - Every map is pure data in `scenes/tracks/<map>.tscn`, no per-map code:
     - `route_segments` (length, turn, grade)
     - `width_profile`
-    - `zones` (bridge, gap, mud, overlook, clearing, rocks)
+    - `zones` (bridge, gap, mud, ice, cliff, wind, overlook, clearing, rocks)
     - the Props `layout`
+    - `theme` (`TrackTheme`: paint, scenery style, sky), `road_surface`,
+      `bridge_surface`
+  - Theme defaults are the forest look: never change a `TrackTheme` default
+    (it would repaint Forest Rush); give the new map a theme value instead.
+  - Check a new route's layout (clearances, radius, grade) before building:
+    `--only=map` checks it, and the decorator RNG order must stay as is or
+    Forest Rush's scenery reshuffles.
   - Distances in zones and props are along the **built** path, which is
     about 0.5 % longer than the sum of the segment lengths. After changing
     the route, re-check where features land and run `--only=map`.
   - The road width varies: use `Track.half_width_at(i)`, never
     `road_width`.
 - **Surfaces:** a collision body tagged with `TrackSurface` metadata is mud,
-  grass or wood; anything untagged is road. `Trike` reads the tag from its
-  wheel hits. Mud/grass values live in `TrikeConfig` ("Surfaces"). Never
-  tag the road body: road handling must stay unchanged.
+  grass, wood, snow or ice; anything untagged is road. `Trike` reads the tag
+  from its wheel hits. Values live in `TrikeConfig` ("Surfaces"). The road
+  body is tagged only through `Track.road_surface` (Snow Slide: SNOW);
+  Forest Rush and the test track must stay untagged ROAD.
 - **Respawn safety:** `Track.mark_unsafe()` / `is_safe_index()`. Props that
   block the road (ramps, boulders, road trees, logs) mark ±10 m, and jump
   gaps mark their run-up and landing. `VehicleProgress` only records safe
   samples. A new blocking prop kind must mark itself too, or racers can
   respawn inside it.
-- **Timed hazards** (`FallingLog`) move as a pure function of
+- **Timed hazards** (`FallingLog`, `RollingRock`) and **wind**
+  (`Track.wind_at`) are pure functions of
   `Track.hazard_time`, which `RacerManager` advances from GO. Don't give
   them their own timers or physics: online peers rely on identical motion.
 - Scenery batches (MultiMesh) are positioned at the center of their
@@ -189,7 +201,7 @@ docs/     design, roadmap, architecture, testing, screenshots/
   race state only through its methods (`begin_countdown`, `start_immediately`,
   `race_again`, `return_to_lobby`), never by calling `RacerManager.start_race()`
   in the race scene. Race Again resets in place (`RacerManager.reset_for_new_race()`);
-  new per-race state (items later) must be reset there too.
+  new per-race state must be reset there too (items reset on `race_reset`).
 - Tests/tools that need to drive at once set `RaceSession.skip_countdown = true`
   before adding the scene (the old `_load_main` does); `auto_start = false`
   keeps the race in the lobby until the test starts it.
@@ -214,7 +226,9 @@ docs/     design, roadmap, architecture, testing, screenshots/
   test runner).
 - Headless test windows are 1280×1280, so check layout with minimum sizes,
   not positions. `--script` mode runs without autoloads (use a scene).
-- **Online:** read `docs/NETWORKING.md` first.
+- **Online:** read `docs/NETWORKING.md` first. The long five-real-player
+  end-to-end race is `net_test_runner.tscn -- e2e5` (~6 min, not in the
+  default run).
   - Only a racer's owner simulates it; everyone else shows a proxy
     (`network_proxy` on Trike and RiderController). Never simulate a proxy
     or feed it input.
@@ -227,6 +241,43 @@ docs/     design, roadmap, architecture, testing, screenshots/
     instead of sliding.
   - Network suite: `tests/net/net_test_runner.tscn` (separate processes,
     real time, ~3.5 min).
+- **Items** (read "Items" in TECHNICAL_ARCHITECTURE first):
+  - `ItemManager` (node `Items` in main.tscn) owns boxes, held items
+    (`Racer.held_item`), bombs, puddles and peels. Owners send requests;
+    only the host (`authoritative`) decides, via numbered events applied
+    once everywhere. Never change `held_item` or box state outside an event.
+  - Item hits go through `Trike.apply_item_hit()` / `set_slippery()` on the
+    victim's owner only. `apply_item_hit` is applied inside
+    `_integrate_forces`, so it never trips the impact/eject rule; item
+    ejection is the host's decision (`PUNCH` event).
+  - Q (`use_item`) → `TrikeInput.use_item_pressed`; ItemManager consumes it.
+  - Boxes come from `Track.item_box_rows`; the test track has none, so the
+    older tests run item-free. Tests add boxes with `add_box()` and give
+    items with `grant_item()`.
+  - Item state resets on `RaceController.race_reset`.
+  - New item RPCs or event fields: bump `Net.PROTOCOL_VERSION`.
+- **Audio** is synthesized in code (`SoundBank` names → `SoundSynth`); never
+  add audio files without the owner's OK and an ASSET_CREDITS entry. Play
+  one-shots through `SoundPlayer` (timer-freed; headless never emits
+  `finished`). Trike/rider audio and `TrikeEffects` read synced state only,
+  so proxies get them for free; keep it that way.
+- **Rider looks:** `RiderStyle.apply(model, look)` (per-rider material
+  copies, `Look_*` nodes). Never edit the rig or IK targets for a look.
+  `Rider.celebrate()` frees the arms from the grips temporarily; IK tests
+  assume no celebration is running.
+- **Exports:** `export_presets.cfg` has "macOS" (universal, ad-hoc signed,
+  not notarized → `release/TrikeTumble-macOS/TrikeTumble.zip`) and "Windows"
+  (x86_64, embedded pck → `release/TrikeTumble-Windows/TrikeTumble.exe`).
+  They need the official 4.7.2 **standard** templates in
+  `~/Library/Application Support/Godot/export_templates/4.7.2.stable/`
+  (never .NET). Universal/arm64 Mac export needs
+  `textures/vram_compression/import_etc2_astc=true` (set).
+  `$GODOT --headless --path . --export-release "macOS" <path>`.
+- **Finish:** the real maps keep 90 m of road after the finish line, and a
+  finished local player's trike is locked and brakes to a stop (cool-down);
+  `set_controls_locked`/Race Again unlock it.
+- Online client sends check `Net.is_connected_to_host()` (no ENet errors when
+  the host has just left).
 - macOS has no `timeout`; use `perl -e 'alarm 500; exec @ARGV' $GODOT ...`.
 - Autowrap labels need a `custom_minimum_size.x`, or they collapse to one
   word per line and blow up the layout.

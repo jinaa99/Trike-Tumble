@@ -7,9 +7,19 @@ extends Node
 ## Args after `--`: --role=host|client --name=N --port=P --out=FILE
 ##   host:   --cap=N --expect=N --timeout=S --shutdown-after=S --rehost-after=S
 ##           --start-delay=S (wait this long in a full lobby before starting)
+##           --map=ID (choose this map in the lobby before starting)
 ##   client: --address=A --join-delay=S --eject-at=S --cheat-at=S --spoof-at=S
 ##           --quit-at=S --dup-hello --rejoin --bad-address=A
 ##   both:   --max-time=S  (times "at" are seconds after GO)
+##           --items  (item boxes along the test track; use held items after 1 s)
+##           --use-items  (use held items after 1 s; the real maps have their own boxes)
+##           --dodge  (steer around obstacles: needed to finish a whole real map)
+##           --race-again  (host: press Race Again on the results screen; everyone
+##                          records the second countdown and GO, then stops)
+##           --lane=M  (preferred lateral offset on the road)
+##           --second-race-seconds=S  (with --race-again: stop S s after the 2nd GO)
+##   client: --item-spoof-at=S (item request for the host's racer)
+##           --item-dup-at=S (replays an already used item request id)
 ##           --shots=DIR  (windowed runs: screenshots 3, 8, 15 and 30 s after GO)
 
 const MAIN_SCENE := preload("res://scenes/main/main.tscn")
@@ -23,6 +33,7 @@ var _go_time := -1.0
 var _done := false
 var _did := {}
 var _stuck_time := 0.0
+var _on_foot_time := 0.0
 
 
 func _ready() -> void:
@@ -71,6 +82,7 @@ func _record_lobby(key: String) -> void:
 	var players := []
 	for player in lobby.players:
 		players.append({"id": player.id, "name": player.display_name, "host": player.is_host, "ready": player.is_ready,
+				"ai": player.is_ai,
 				"local": player.is_local})
 	report[key] = {"players": players, "map": lobby.map_id, "max": lobby.max_players}
 
@@ -92,6 +104,9 @@ func _host_tick() -> void:
 			_did["full_since"] = _clock
 		if lobby.count() >= expect and _clock - float(_did["full_since"]) >= _num("start-delay", 0.0):
 			lobby.set_ready(1, true)
+			if args.has("map") and lobby.map_id != _arg("map"):
+				lobby.set_map(_arg("map"))
+				_event("host chose map " + _arg("map"))
 			if lobby.all_ready():
 				_record_lobby("lobby_at_start")
 				_did["started"] = true
@@ -181,19 +196,60 @@ func _load_race(path := "") -> void:
 		race.race.finish_timeout = _num("timeout", 10.0)
 		race.race.results_delay = 1.0
 	pilot = TrackAutopilot.new(race.track, race.trike)
+	if args.has("items"):
+		_add_item_boxes()
+		pilot.lateral_offset = -3.0 if Net.is_host() else 3.0  # each through its own column of boxes
 	race.race.state_changed.connect(func(_o: RaceStateMachine.State, n: RaceStateMachine.State) -> void:
 		report["race_states"].append(RaceStateMachine.STATE_NAMES[n])
 		if n == RaceStateMachine.State.RACING:
 			_go_time = _clock
+			_did.erase("stop")
+			if report["race_states"].count("RACING") >= 2:
+				_event("second race started")
 		if n == RaceStateMachine.State.RESULTS:
 			_record_results()
+			if args.has("race-again") and report["race_states"].count("RESULTS") == 1:
+				report["first_results"] = report["results"].duplicate()
+				report["first_results_data"] = report["results_data"].duplicate(true)
+				if Net.is_host():
+					get_tree().create_timer(3.0).timeout.connect(func() -> void:
+						_event("host pressed Race Again")
+						race.race_again())
+				return
 			_finish_soon(2.5 if Net.is_host() else 0.5))
 	race.race.countdown_step.connect(func(text: String) -> void: report["countdown"].append(text))
 	report["track"] = String(race.track.name)
+	report["lobby_map"] = GameSession.lobby.map_id if GameSession.lobby else ""
+	report["boxes"] = race.items.boxes.size()
+	var sky := (race.get_node("WorldEnvironment") as WorldEnvironment).environment.sky.sky_material as ProceduralSkyMaterial
+	report["sky"] = sky.sky_top_color.to_html()
 	report["racers"] = []
 	for racer in race.racers.get_racers():
 		report["racers"].append({"id": racer.id, "name": racer.display_name, "proxy": racer.is_proxy, "slot": racer.spawn_slot})
 	_event("race loaded")
+	report["my_states"] = []
+	race.rider.state_changed.connect(func(_o: int, n: int) -> void:
+		report["my_states"].append("%.1f %s" % [race.racers.race_time, RiderController.STATE_NAMES[n]]))
+	report["impacts"] = 0
+	report["max_impact"] = 0.0
+	report["item_log"] = []
+	race.trike.impact.connect(func(strength: float, _v: Vector3) -> void:
+		if strength > 4.0:
+			report["impacts"] = int(report["impacts"]) + 1
+		report["max_impact"] = maxf(float(report["max_impact"]), strength))
+	race.items.event_applied.connect(func(event: Array) -> void:
+		report["item_log"].append("%s %s" % [ItemManager.EVENT_NAMES[int(event[1])], str(event.slice(2, 4))]))
+
+
+## The same boxes in the same order on every peer (box ids must match).
+func _add_item_boxes() -> void:
+	report["item_events"] = []
+	for distance in range(60, 1000, 100):
+		var frame := race.track.path.get_frame(race.track.path.index_at_distance(distance))
+		for lateral: float in [-3.0, 0.0, 3.0]:
+			race.items.add_box(frame.translated_local(Vector3(lateral, 1.0, 0.0)))
+	race.items.event_applied.connect(func(event: Array) -> void:
+		report["item_events"].append(str(event)))
 
 
 func _free_race() -> void:
@@ -210,6 +266,8 @@ func _record_results() -> void:
 	report["my_finish"] = {"finished": me.finished, "position": me.finish_position, "time": me.finish_time,
 			"dnf": me.did_not_finish}
 	report["my_respawns"] = me.respawn_count
+	report["my_wipeouts"] = race.rider.eject_count
+	report["my_id_in_race"] = me.id
 	if race.net_sync:
 		report["sent"] = race.net_sync.sent
 		report["received"] = race.net_sync.received
@@ -219,6 +277,11 @@ func _record_results() -> void:
 		report["hitches"] = race.net_sync.hitches
 		report["jump_log"] = race.net_sync.jump_log
 	report["rejected_snapshots"] = Net.rejected_snapshots
+	report["rejected_item_requests"] = Net.rejected_item_requests
+	report["item_duplicate_requests"] = race.items.duplicate_requests
+	report["item_denied_requests"] = race.items.denied_requests
+	report["item_duplicate_events"] = race.items.duplicate_events
+	report["item_invalid_events"] = race.items.invalid_events
 	report["duplicate_hellos"] = Net.duplicate_hellos
 
 
@@ -229,7 +292,11 @@ func _race_tick() -> void:
 	var me := race.get_local_racer()
 	if race.race.is_racing() and not me.finished:
 		if race.rider.is_riding():
+			if args.has("dodge"):
+				pilot.dodge(race.racers.get_obstacles(), _num("lane", 0.0))
 			pilot.drive()
+			if (args.has("items") or args.has("use-items")) and ItemKind.is_valid(me.held_item) and me.item_hold_time > 1.0:
+				race.trike.input.use_item_pressed = true
 			# Like a player: stuck for 2 s (pinned in a pile-up) → press R.
 			_stuck_time = _stuck_time + get_physics_process_delta_time() if race.trike.linear_velocity.length() < 1.0 else 0.0
 			if _stuck_time > 2.0:
@@ -238,6 +305,13 @@ func _race_tick() -> void:
 				_event("stuck: pressed reset")
 		else:
 			_walk_back()
+			# Like a player (and the AI): on foot for 15 s without getting back
+			# on (trike out of reach) → R puts trike and rider back on the road.
+			_on_foot_time = _on_foot_time + get_physics_process_delta_time() if race.rider.state == RiderController.State.ON_FOOT else 0.0
+			if _on_foot_time > 15.0:
+				_on_foot_time = 0.0
+				race.rider.input.reset_pressed = true
+				_event("on foot too long: pressed reset")
 	elif me.finished:
 		race.trike.input.clear()
 	if after_go >= 0.0:
@@ -247,6 +321,13 @@ func _race_tick() -> void:
 
 
 func _scripted_actions(after_go: float) -> void:
+	if args.has("race-again") and report["race_states"].count("RACING") >= 2 and after_go >= _num("second-race-seconds", 8.0) \
+			and not _did.has("second_done"):
+		_did["second_done"] = true
+		report["second_race_distance"] = me_distance()
+		_event("second race running: stopping the test")
+		_finish_soon(1.0)
+		return
 	if after_go >= _num("eject-at", 1e9) and not _did.has("eject"):
 		_did["eject"] = true
 		race.rider.eject()
@@ -266,6 +347,16 @@ func _scripted_actions(after_go: float) -> void:
 		for i in 10:
 			Net._c_snapshot.rpc_id(1, 1, fake)
 		_event("sent 10 spoofed snapshots for the host's racer")
+	if after_go >= _num("item-spoof-at", 1e9) and not _did.has("item_spoof"):
+		_did["item_spoof"] = true
+		Net._c_item_request.rpc_id(1, 1, 999, ItemManager.Request.USE,
+				[int(ItemKind.Kind.TURBO_BOTTLE), Vector3.ZERO, Vector3.FORWARD, Vector3.ZERO])
+		_event("sent an item request for the host's racer")
+	if after_go >= _num("item-dup-at", 1e9) and not _did.has("item_dup"):
+		_did["item_dup"] = true
+		var mine := race.get_local_racer().id
+		Net._c_item_request.rpc_id(1, mine, 1, ItemManager.Request.PICKUP, [0])
+		_event("replayed item request id 1")
 	if args.has("shots") and DisplayServer.get_name() != "headless":
 		for t: float in [3.0, 8.0, 15.0, 30.0]:
 			if after_go >= t and not _did.has("shot%d" % t):

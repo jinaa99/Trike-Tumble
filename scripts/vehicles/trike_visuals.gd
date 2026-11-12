@@ -5,6 +5,16 @@ extends Node3D
 ## the safety flag and drives drift/boost effects.
 ## Wheel nodes are placed exactly where the physics raycast wheels are.
 ## Holds no gameplay state, so remote (networked) trikes can reuse it as is.
+## Also creates the trike's sound (TrikeAudio) and particles (TrikeEffects),
+## and reports landings (`landed`) for them and the camera.
+
+## The trike touched down after `airtime` seconds with no wheel on the ground.
+signal landed(airtime: float)
+
+## Accent parts: seat trim, stripes, flag, hub caps (per-racer second color).
+const ACCENT_PARTS: Array[String] = ["SeatBackTrim", "TankStripe", "RearDeckStripe", "RearFenderStripeL",
+		"RearFenderStripeR", "FlagPivot/Flag", "RearWheelLeft/Spin/HubCap", "RearWheelRight/Spin/HubCap",
+		"FrontPivot/FrontWheel/Spin/Hub"]
 
 const DRIFT_TIER_COLORS: Array[Color] = [
 	Color(0.85, 0.78, 0.65), Color(0.35, 0.75, 1.0), Color(1.0, 0.55, 0.15),
@@ -17,6 +27,12 @@ const DRIFT_TIER_COLORS: Array[Color] = [
 		if is_node_ready():
 			_apply_body_color()
 ## Handlebar turns this fraction of the front wheel angle (keeps arms comfortable).
+## Second livery color (ACCENT_PARTS). Unset (alpha 0) = the scene's colors.
+@export var accent_color := Color(0, 0, 0, 0):
+	set(value):
+		accent_color = value
+		if is_node_ready():
+			_apply_accent_color()
 @export_range(0.0, 1.0) var handlebar_steer_ratio := 0.6
 @export var flag_sway_deg := 22.0
 
@@ -24,6 +40,9 @@ var _trike: Trike
 var _wheel_spin := PackedFloat32Array([0.0, 0.0, 0.0])
 var _flag_time := 0.0
 var _flag_lean := 0.0
+var _airtime := 0.0
+var audio: TrikeAudio
+var effects: TrikeEffects
 
 @onready var _wheels: Array[Node3D] = [$FrontPivot/FrontWheel, $RearWheelLeft, $RearWheelRight]
 @onready var _wheel_spinners: Array[Node3D] = [
@@ -41,7 +60,17 @@ var _flag_lean := 0.0
 func _ready() -> void:
 	_trike = get_parent() as Trike
 	_apply_body_color()
+	_apply_accent_color()
 	_front_pivot.position = _trike.get_wheel_mount(Trike.Wheel.FRONT)
+	if _trike:
+		audio = TrikeAudio.new()
+		audio.name = "Audio"
+		add_child(audio)
+		audio.setup(_trike, self)
+		effects = TrikeEffects.new()
+		effects.name = "Effects"
+		add_child(effects)
+		effects.setup(_trike, self)
 
 
 func _process(delta: float) -> void:
@@ -57,6 +86,12 @@ func _process(delta: float) -> void:
 		var spin_speed := _trike.forward_speed / _trike.get_wheel_radius(i)
 		_wheel_spin[i] = wrapf(_wheel_spin[i] - spin_speed * delta, -TAU, TAU)
 		_wheel_spinners[i].rotation.x = _wheel_spin[i]
+	if _trike.grounded_wheel_count == 0:
+		_airtime += delta
+	else:
+		if _airtime > 0.15:
+			landed.emit(_airtime)
+		_airtime = 0.0
 	_front_pivot.rotation.y = _trike.steer_angle
 	_handlebar.rotation.y = _trike.steer_angle * handlebar_steer_ratio
 	_update_flag(delta)
@@ -94,6 +129,24 @@ func _update_flag(delta: float) -> void:
 		deg_to_rad(-minf(speed, 25.0) * 0.5),
 		flutter * 0.6,
 		deg_to_rad(_flag_lean * flag_sway_deg) + flutter * 0.1)
+
+
+func _apply_accent_color() -> void:
+	if accent_color.a <= 0.0:
+		return
+	var painted := {}
+	for path in ACCENT_PARTS:
+		var part := get_node_or_null(path) as MeshInstance3D
+		if part == null:
+			continue
+		var source := part.material_override as StandardMaterial3D
+		if source == null:
+			continue
+		if not painted.has(source):
+			var copy := source.duplicate() as StandardMaterial3D
+			copy.albedo_color = accent_color
+			painted[source] = copy
+		part.material_override = painted[source]
 
 
 func _apply_body_color() -> void:

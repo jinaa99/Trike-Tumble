@@ -14,8 +14,10 @@ const RACE_FLOW_TESTS := preload("res://tests/race_flow_tests.gd")
 const UI_TESTS := preload("res://tests/ui_tests.gd")
 const NET_UNIT_TESTS := preload("res://tests/net_unit_tests.gd")
 const MAP_TESTS := preload("res://tests/map_tests.gd")
+const ITEM_TESTS := preload("res://tests/item_tests.gd")
+const POLISH_TESTS := preload("res://tests/polish_tests.gd")
 const REQUIRED_ACTIONS: Array[StringName] = [
-	&"accelerate", &"brake", &"steer_left", &"steer_right", &"drift", &"reset", &"pause", &"interact",
+	&"accelerate", &"brake", &"steer_left", &"steer_right", &"drift", &"reset", &"pause", &"interact", &"use_item",
 ]
 
 var _passed := 0
@@ -32,7 +34,7 @@ func _ready() -> void:
 
 func _run_all() -> void:
 	print("\n=== TRIKE TUMBLE TESTS ===")
-	# `-- --only=core|racers|flow|ui|net|map` runs one group (while working on it).
+	# `-- --only=core|racers|flow|ui|net|items|polish|map` runs one group (while working on it).
 	var only := ""
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--only="):
@@ -47,6 +49,10 @@ func _run_all() -> void:
 		await UI_TESTS.new(self).run()
 	if only.is_empty() or only == "net":
 		await NET_UNIT_TESTS.new(self).run()
+	if only.is_empty() or only == "items":
+		await ITEM_TESTS.new(self).run()
+	if only.is_empty() or only == "polish":
+		await POLISH_TESTS.new(self).run()
 	if only.is_empty() or only == "map":
 		await MAP_TESTS.new(self).run()
 	print("\n=== RESULT: %d passed, %d failed ===" % [_passed, _failed])

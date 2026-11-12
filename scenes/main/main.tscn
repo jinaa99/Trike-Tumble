@@ -20,6 +20,8 @@
 [ext_resource type="Script" path="res://scripts/race/race_controller.gd" id="13_race"]
 [ext_resource type="PackedScene" path="res://scenes/ui/results_screen.tscn" id="14_results"]
 [ext_resource type="PackedScene" path="res://scenes/ui/lobby_screen.tscn" id="15_lobby"]
+[ext_resource type="Script" path="res://scripts/items/item_manager.gd" id="16_items"]
+[ext_resource type="Resource" path="res://resources/items/default_item_config.tres" id="17_itemcfg"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_material"]
 sky_top_color = Color(0.26, 0.53, 0.95, 1)
@@ -94,6 +96,10 @@ target = NodePath("../Trike")
 [node name="RacerManager" type="Node3D" parent="."]
 script = ExtResource("8_racers")
 ai_configs = Array[ExtResource("12_aicfg")]([ExtResource("9_easy"), ExtResource("10_medium"), ExtResource("11_hard")])
+
+[node name="Items" type="Node3D" parent="."]
+script = ExtResource("16_items")
+config = ExtResource("17_itemcfg")
 
 [node name="RaceController" type="Node" parent="."]
 script = ExtResource("13_race")

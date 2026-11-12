@@ -81,3 +81,21 @@ enum Difficulty { EASY, MEDIUM, HARD }
 @export var on_foot_give_up_time := 15.0
 ## Within this distance (m) of the trike the rider walks instead of running.
 @export var on_foot_slow_radius := 1.2
+
+@export_group("Items")
+## Seconds after getting an item before the AI thinks about using it.
+@export var item_reaction := 0.6
+## Uses a held item anyway after this long (except a punch without a target,
+## which waits up to twice as long).
+@export var item_max_hold := 10.0
+## Throws a mud bomb at a racer ahead within this distance (m). At race
+## speed the bomb reaches a racer ~16 m ahead.
+@export var item_throw_range := 22.0
+## ...and no more than this far (m) to the side of the AI's heading.
+@export var item_throw_aim := 2.0
+## Drops a banana when a racer is behind within this distance (m).
+@export var item_drop_range := 22.0
+## Punches a racer within this distance (m).
+@export var item_punch_range := 6.5
+## Uses a turbo when the road ahead is this straight (curvature, 1/m).
+@export var item_turbo_max_curvature := 0.012

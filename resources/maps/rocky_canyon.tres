@@ -6,8 +6,9 @@
 script = ExtResource("1_map")
 id = "rocky_canyon"
 display_name = "Rocky Canyon"
-description = "Red-rock canyon run between towering walls."
-characteristic = "Narrow walls and falling rocks"
-status = 0
-race_scene = ""
+description = "A 7.3 km technical red-rock descent: cliff-edge roads, three switchback descents, falling boulders, canyon bridges and two big jumps."
+characteristic = "Cliff roads, falling rocks and tight switchbacks"
+status = 2
+race_scene = "res://scenes/main/rocky_canyon.tscn"
+track_scene = "res://scenes/tracks/rocky_canyon.tscn"
 theme_colors = Array[Color]([Color(0.98, 0.78, 0.55, 1), Color(0.78, 0.45, 0.32, 1), Color(0.72, 0.38, 0.22, 1), Color(0.95, 0.62, 0.3, 1)])

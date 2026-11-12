@@ -43,17 +43,21 @@ network test does exactly that: the cheater ends up DNF).
 | `RiderController.set_network_proxy / get_network_state / apply_network_state` | Proxy mode; state transitions reuse the real ones (model on/off the seat, poses) |
 | `RacerManager.add_proxy_racer / authoritative / build_status / apply_remote_status / mark_disconnected` | Racer bookkeeping online |
 | `RaceController.follower / apply_remote_state` | Clients follow the host's race states |
+| `scripts/items/item_manager.gd` (`ItemManager`) | Item requests, host validation, numbered item events (see "Items") |
 
 ## Messages (RPCs on `/root/Net`)
 
 Client → host (`_c_*`, `any_peer`):
 - `hello(name, version)`, `set_ready(bool)`, `race_loaded()` (reliable)
+- `item_request(racer_id, req_id, kind, data)` (reliable)
 - `snapshot(racer_id, data)` (unreliable ordered, channel 1)
 
 Host → clients (`_h_*`, `authority`):
 - `welcome(lobby)`, `reject(reason)`, `lobby(lobby)`
 - `start_race(racers, scene)`, `race_state(state, race_time, results, duration)`
 - `player_left(id)`, `return_to_lobby()` (all reliable)
+- `item_event(event)` (reliable, same channel as race state, so a Race Again
+  reset never overtakes an item event)
 - `snapshot(racer_id, data)` (relay, unreliable ordered, channel 1)
 - `status(list)` (positions, checkpoints, finish, DNF, pending; unreliable ordered, channel 2, 10×/s)
 
@@ -73,6 +77,34 @@ Host → clients (`_h_*`, `authority`):
 
 Anything else is dropped and counted (`Net.rejected_snapshots`).
 
+## Items (final demo milestone 07)
+
+Host-authoritative, like results. `PROTOCOL_VERSION` is 2 (builds without
+items are refused with "Version mismatch").
+
+1. Each owner detects its own racer driving through a box, over a banana
+   peel, or pressing Q, and sends `item_request` (the host calls its own
+   `ItemManager.handle_request` directly).
+2. `Net` drops requests for a racer the sender doesn't own
+   (`Net.rejected_item_requests`). `ItemManager` validates the rest: request
+   id newer than the last one from that racer (replays ignored), racer
+   riding and racing, box active, hands empty, item really held, data
+   well-formed, racer within 14 m (host view) of the box/peel.
+3. The host decides everything with randomness or other players in it
+   (item roll, peel spot, bomb flight and landing, punch target, knock
+   velocity, ejection) and broadcasts a numbered `item_event`. Everyone,
+   the host included, applies events in order; repeats and malformed events
+   are ignored.
+4. Only the victim's owner applies a hit to its trike (velocity change,
+   slippery, ejection); everyone else sees it through the next snapshots.
+   Mud bombs fly as plain ballistics on every computer; the host alone
+   decides where they land.
+
+Two racers reaching one box together: whichever request the host handles
+first gets it; the other is refused and the box is already gone on its
+screen. A client sees its own pickup and item use one round trip after the
+fact (a few ms on a LAN).
+
 ## Smooth remote players
 
 - **Jitter buffer:** proxies are shown 100 ms in the past, interpolated
@@ -88,6 +120,20 @@ Anything else is dropped and counted (`Net.rejected_snapshots`).
 - **Dropouts:** extrapolation is capped at 0.2 s, then the proxy holds.
 - **Rendering:** proxies are moved in `_physics_process`, so the engine's
   physics interpolation renders them smoothly at any frame rate.
+
+## Two real computers / internet (milestone 10)
+
+**Not tested.** Only one computer was available, so every test ran several
+instances on 127.0.0.1 (no real network latency, loss or NAT). Setup for a
+real test: both computers on the same network, the host's firewall allowing
+the game (macOS asks on first host; Windows Firewall: allow on Private
+networks), the client joins the host's LAN address shown in the lobby. Over
+the internet: forward UDP 7777 (or the chosen port) to the host; carrier-
+grade NAT can make this impossible. **Internet play: UNVERIFIED.**
+
+Client sends (`_c_*`) check `Net.is_connected_to_host()`: right after the
+host leaves, a client can still be "CLIENT" for a moment; sending then only
+produced ENet errors ("Unable to send packet on channel 0") at shutdown.
 
 ## Connection handling
 
@@ -125,7 +171,7 @@ Anything else is dropped and counted (`Net.rejected_snapshots`).
 ## Actual tests (2026-11-08, MacBook Air M4, Godot 4.7.2)
 
 `tests/net/net_test_runner.tscn` launches real game instances (headless, real
-time, ENet on 127.0.0.1) and checks what each saw: **36/36 passed**, also in
+time, ENet on 127.0.0.1) and checks what each saw: **44/44 passed**, also in
 strict mode. Since final-demo milestone 06 one scenario (`forest`) races
 on Forest Rush (falling logs need no sync: their motion is a function of the
 race clock).
@@ -137,6 +183,9 @@ race clock).
 | 3 | **Three players** (automated `drop`, one quits mid-race) | Pass. Leaver removed everywhere and DNF; race finishes; identical results |
 | 4 | **Five players** (automated `five`) | Pass. Everyone sees four others race; all finish; identical order and times on all five |
 | — | **Forest Rush online** (`forest`, 2 instances, 60 s) | Pass. Both loaded Forest Rush, each saw the other race ~1.4 km, smooth proxies (max 0.64 m per tick), no honest snapshot rejected |
+| — | **Items** (`items`, 2 instances, 40 s, 30 shared boxes) | Pass. 44 events, identical and in order on both; host 8 / client 6 pickups, 13 uses; no box taken twice; a forged request for the host's racer refused; a replayed request id ignored; no duplicate or malformed events on the client |
+| — | **Five real players, one whole race** (`e2e5`, milestone 10: 5 independent instances, Snow Slide, ~6 min) | Run 1: 8/9 — one player (the one scripted to wipe out) got stuck and was DNF; the test driver then had no "press R when stuck on foot" (players and AI do). Run 2 after adding it: **9/9**: lobby + ready + host's map, 3-2-1-GO, everyone finished (5:21.9–5:27.2), identical results everywhere, 11 collisions, wipeout + recovery seen by the host, 40 item pickups/uses, Race Again. Run 3 (strict): see TESTING.md |
+| — | **Host picks the map** (`maps`: Rocky Canyon with 2 instances, Snow Slide with 3) | Pass. Everyone loaded the host's map with the same item boxes (63 / 60) and sky, and raced down it |
 | — | Connection rules (`rules`) | Pass. Full lobby, mid-race join refused, timeout, invalid IP, duplicate hello, host shutdown → menu with message, rejoin after re-host |
 
 In-process unit tests in the main suite:

@@ -130,13 +130,19 @@ func get_race_state_text() -> String:
 	return state_chip.text if state_chip.visible else ""
 
 
-## Held item ("" = empty). Items arrive in a later milestone; the slot and
-## its key hint are ready for them.
-func set_item(item_name: String) -> void:
+## Held item ("" = empty) in its item color; a new item pops in.
+func set_item(item_name: String, color := Color.WHITE) -> void:
+	var is_new := not item_name.is_empty() and item_name != _item_name
 	_item_name = item_name
 	item_label.text = item_name if not item_name.is_empty() else "EMPTY"
-	item_label.modulate.a = 1.0 if not item_name.is_empty() else 0.55
+	# Lightened so dark item colors (mud) stay readable on the panel.
+	item_label.modulate = Color(color.lerp(Color.WHITE, 0.35), 1.0) if not item_name.is_empty() else Color(1, 1, 1, 0.55)
 	item_hint.modulate.a = 1.0 if not item_name.is_empty() else 0.45
+	if is_new and is_inside_tree():
+		var panel := item_label.get_parent().get_parent() as Control
+		panel.pivot_offset = panel.size * 0.5
+		panel.scale = Vector2.ONE * 1.25
+		create_tween().tween_property(panel, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func get_item_text() -> String:

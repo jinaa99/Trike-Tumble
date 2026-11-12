@@ -109,12 +109,20 @@ static func add_motion(control: Control) -> void:
 		if not control.has_focus():
 			_scale_to(control, 1.0)
 	control.mouse_entered.connect(grow)
+	control.mouse_entered.connect(func() -> void: play_ui(control, &"ui_hover"))
 	control.focus_entered.connect(grow)
 	control.mouse_exited.connect(shrink)
 	control.focus_exited.connect(func() -> void: _scale_to(control, 1.0))
 	if control is BaseButton:
 		(control as BaseButton).button_down.connect(func() -> void: _scale_to(control, PRESS_SCALE))
 		(control as BaseButton).button_up.connect(grow)
+		(control as BaseButton).pressed.connect(func() -> void: play_ui(control, &"ui_click"))
+
+
+## Menu sound on the UI bus (hover tick, press click).
+static func play_ui(control: Control, sound: StringName) -> void:
+	if control.is_inside_tree() and control.is_visible_in_tree():
+		SoundPlayer.play_flat(control, sound, -6.0 if sound == &"ui_hover" else 0.0, SoundBank.UI_BUS)
 
 
 static func _scale_to(control: Control, value: float) -> void:

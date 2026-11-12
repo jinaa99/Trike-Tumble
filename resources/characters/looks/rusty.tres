@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="RiderLook" format=3]
+
+[ext_resource type="Script" path="res://scripts/characters/rider_look.gd" id="1_look"]
+
+[resource]
+script = ExtResource("1_look")
+look_name = "Rusty"
+helmet_style = 4
+accessory = 0
+face = 3
+goggles = true
+head_scale = 1.0
+helmet_color = Color(0.96, 0.95, 0.92, 1)
+accent_color = Color(0.86, 0.2, 0.22, 1)
+jacket_color = Color(0.2, 0.3, 0.62, 1)
+jacket_dark_color = Color(0.12, 0.18, 0.4, 1)
+pants_color = Color(0.55, 0.38, 0.26, 1)
+glove_color = Color(0.86, 0.2, 0.22, 1)
+boot_color = Color(0.4, 0.27, 0.18, 1)
+skin_color = Color(0.5, 0.33, 0.24, 1)
+lens_color = Color(0.5, 1, 0.7, 1)

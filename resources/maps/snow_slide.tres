@@ -6,8 +6,9 @@
 script = ExtResource("1_map")
 id = "snow_slide"
 display_name = "Snow Slide"
-description = "Snowy mountain pass with icy hairpins."
-characteristic = "Icy patches with low grip"
-status = 0
-race_scene = ""
+description = "A 7.5 km alpine run on packed snow: snowy pines, windy turns, a frozen lake with ice patches and frozen bridges, snowmen and big ramps."
+characteristic = "Ice patches, frozen bridges and crosswinds"
+status = 2
+race_scene = "res://scenes/main/snow_slide.tscn"
+track_scene = "res://scenes/tracks/snow_slide.tscn"
 theme_colors = Array[Color]([Color(0.78, 0.88, 1.0, 1), Color(0.62, 0.72, 0.9, 1), Color(0.93, 0.96, 1.0, 1), Color(0.45, 0.75, 1.0, 1)])

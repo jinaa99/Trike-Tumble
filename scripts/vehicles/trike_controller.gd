@@ -69,6 +69,13 @@ var network_velocity := Vector3.ZERO
 var teleport_count := 0
 ## Strength of the latest impact (m/s), for debugging and tests.
 var last_impact_strength := 0.0
+## Item effects (ItemManager): seconds of slippery ground left (mud bomb,
+## banana spin-out, punch slide).
+var slip_time := 0.0
+## Map crosswind (m/s², horizontal), set every tick by RacerManager from
+## Track.wind_at(). Applied with the trike's own forces, so it never counts
+## as an impact.
+var wind := Vector3.ZERO
 
 var _wheel_mounts := PackedVector3Array()
 # Handling of the ground under the wheels (averaged over grounded wheels).
@@ -88,6 +95,13 @@ var _baseline_valid := false
 var _velocity_after_forces := Vector3.ZERO
 var _force_dv := Vector3.ZERO
 var _suspension_force_sum := Vector3.ZERO
+var _slip_grip := 1.0
+var _slip_speed := 1.0
+# Item hit queued for the next physics step (see apply_item_hit).
+var _pending_hit := false
+var _pending_hit_dv := Vector3.ZERO
+var _pending_hit_spin := Vector3.ZERO
+var _pending_hit_keep := 1.0
 
 
 # Wheel setup happens on enter_tree (parent before children) so child
@@ -132,6 +146,7 @@ func _physics_process(delta: float) -> void:
 			* lerpf(1.0, config.high_speed_steer_factor, speed_ratio)
 
 	boost_time = maxf(boost_time - delta, 0.0)
+	slip_time = maxf(slip_time - delta, 0.0)
 	_update_drift(delta)
 	_update_recovery(delta)
 
@@ -153,6 +168,10 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		input.clear()
 	var dt := state.step
 	_measure_impact(state, dt)
+	if _pending_hit:
+		_apply_pending_hit(state)
+	if wind != Vector3.ZERO:
+		state.linear_velocity += wind * dt
 	var xf := state.transform
 	var body_basis := xf.basis.orthonormalized()
 	var up := body_basis.y
@@ -243,6 +262,8 @@ func teleport(target: Transform3D, notify := true) -> void:
 	_hop_requested = false
 	_upside_down_time = 0.0
 	_stuck_time = 0.0
+	slip_time = 0.0
+	_pending_hit = false
 	teleport_count += 1
 	reset_physics_interpolation()
 	if notify:
@@ -298,7 +319,37 @@ func apply_network_state(state: Dictionary) -> void:
 		reset_physics_interpolation()  # no smeared frame across a respawn
 
 
-## For future items/collisions between racers.
+## Item hit (spring punch, banana, mud bomb): changes the velocity by
+## `velocity_change` and the spin by `spin` at the next physics step, after
+## scaling the current velocity by `speed_keep`. Applied inside
+## _integrate_forces, so the impact rule doesn't also count it as a crash:
+## whether an item throws the rider off is the item's (host's) decision.
+func apply_item_hit(velocity_change: Vector3, spin := Vector3.ZERO, speed_keep := 1.0) -> void:
+	if network_proxy:
+		return
+	_pending_hit = true
+	_pending_hit_dv += velocity_change
+	_pending_hit_spin += spin
+	_pending_hit_keep = minf(_pending_hit_keep, speed_keep)
+	if is_drifting:
+		_end_drift(false)
+	if speed_keep < 1.0:
+		boost_time = 0.0
+
+
+## Slippery ground for `duration` seconds: grip and top speed scaled by the
+## factors (the stronger of overlapping effects wins).
+func set_slippery(duration: float, grip_factor: float, speed_factor := 1.0) -> void:
+	if slip_time <= 0.0:
+		_slip_grip = grip_factor
+		_slip_speed = speed_factor
+	else:
+		_slip_grip = minf(_slip_grip, grip_factor)
+		_slip_speed = minf(_slip_speed, speed_factor)
+	slip_time = maxf(slip_time, duration)
+
+
+## For collisions between racers.
 func apply_knockback(impulse: Vector3, spin: Vector3 = Vector3.ZERO) -> void:
 	apply_central_impulse(impulse)
 	if spin != Vector3.ZERO:
@@ -344,6 +395,17 @@ func _measure_impact(state: PhysicsDirectBodyState3D, dt: float) -> void:
 	last_impact_strength = strength
 	if strength >= config.impact_report_threshold:
 		impact.emit(strength, expected)
+
+
+func _apply_pending_hit(state: PhysicsDirectBodyState3D) -> void:
+	var v := state.linear_velocity
+	var vertical := Vector3.UP * v.y
+	state.linear_velocity = (v - vertical) * _pending_hit_keep + vertical + _pending_hit_dv
+	state.angular_velocity += _pending_hit_spin
+	_pending_hit = false
+	_pending_hit_dv = Vector3.ZERO
+	_pending_hit_spin = Vector3.ZERO
+	_pending_hit_keep = 1.0
 
 
 func _store_impact_baseline(state: PhysicsDirectBodyState3D) -> void:
@@ -404,7 +466,9 @@ func _update_surface() -> void:
 	var speed := 0.0
 	var drag := 0.0
 	var grip := 0.0
-	var counts := [0, 0, 0, 0]
+	var counts := []
+	counts.resize(TrackSurface.Kind.size())
+	counts.fill(0)
 	for i in WHEEL_COUNT:
 		if not wheel_contact[i]:
 			continue
@@ -419,12 +483,25 @@ func _update_surface() -> void:
 				speed += config.mud_speed_factor
 				drag += config.mud_drag
 				grip += config.mud_grip_factor
+			TrackSurface.Kind.SNOW:
+				speed += config.snow_speed_factor
+				drag += config.snow_drag
+				grip += config.snow_grip_factor
+			TrackSurface.Kind.ICE:
+				speed += config.ice_speed_factor
+				drag += config.ice_drag
+				grip += config.ice_grip_factor
 			_:
 				speed += 1.0
 				grip += 1.0
 	_surface_speed = speed / grounded_wheel_count
 	_surface_drag = drag / grounded_wheel_count
 	_surface_grip = grip / grounded_wheel_count
+	if slip_time > 0.0:
+		_surface_grip *= _slip_grip
+		_surface_speed *= _slip_speed
+		if _slip_speed < 1.0:
+			_surface_drag = maxf(_surface_drag, config.mud_drag)
 	var most := 0
 	for kind in counts.size():
 		if counts[kind] > counts[most]:

@@ -12,3 +12,5 @@ func poll(into: TrikeInput) -> void:
 		into.reset_pressed = true
 	if Input.is_action_just_pressed(&"interact"):
 		into.interact_pressed = true
+	if Input.is_action_just_pressed(&"use_item"):
+		into.use_item_pressed = true

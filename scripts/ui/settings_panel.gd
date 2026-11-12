@@ -91,7 +91,7 @@ func _row(page: Control, text: String, control: Control) -> HBoxContainer:
 
 
 func _build_audio(page: Control) -> void:
-	for entry: Array in [["Master", "Master volume"], ["Music", "Music volume"], ["SFX", "Sound effects"]]:
+	for entry: Array in [["Master", "Master volume"], ["Music", "Music volume"], ["SFX", "Sound effects"], ["UI", "Menu sounds"]]:
 		var bus: String = entry[0]
 		var slider := HSlider.new()
 		slider.min_value = 0
@@ -109,7 +109,7 @@ func _build_audio(page: Control) -> void:
 		holder.add_child(value)
 		_row(page, entry[1], holder)
 		volume_sliders[bus] = {"slider": slider, "value": value}
-	page.add_child(UiKit.label("The game has no sounds yet; these levels apply as soon as audio is added.",
+	page.add_child(UiKit.label("All sounds are made by the game itself. Music: none yet.",
 			UiKit.SIZE_SMALL, UiKit.TEXT_DIM))
 
 
@@ -224,6 +224,8 @@ static func _volume(bus: String) -> float:
 			return GameSettings.music_volume
 		"SFX":
 			return GameSettings.sfx_volume
+		"UI":
+			return GameSettings.ui_volume
 	return GameSettings.master_volume
 
 

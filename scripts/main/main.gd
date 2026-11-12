@@ -46,6 +46,8 @@ var from_lobby := false
 ## Online race (host or client); `net_sync` moves the other players' racers.
 var online := false
 var net_sync: NetRaceSync
+## Countdown, finish and results sounds, finish confetti.
+var race_audio: RaceAudio
 
 var _local_racer: Racer
 var _race_time := 0.0
@@ -58,6 +60,7 @@ var track: Track
 @onready var hud: Hud = $HUD
 @onready var pause_menu: PauseMenu = $PauseMenu
 @onready var racers: RacerManager = $RacerManager
+@onready var items: ItemManager = $Items
 @onready var race: RaceController = $RaceController
 @onready var results_screen: ResultsScreen = $ResultsScreen
 @onready var lobby_screen: LobbyScreen = $LobbyScreen
@@ -82,6 +85,11 @@ func _ready() -> void:
 		for i in mini(ai_racer_count, racers.max_racers - 1):
 			racers.add_ai_racer(_difficulty_for(i))
 
+	items.setup(racers, track)
+	items.local_racer_id = _local_racer.id if _local_racer else -1
+	items.item_changed.connect(_on_item_changed)
+	items.feedback.connect(_on_item_feedback)
+
 	trike.respawned.connect(follow_camera.snap_to_target)
 	racers.racer_respawned.connect(_on_racer_respawned)
 	pause_menu.restart_requested.connect(restart)
@@ -96,6 +104,9 @@ func _ready() -> void:
 
 	follow_camera.target = trike
 	follow_camera.snap_to_target()
+	# Camera feedback from the local trike: hits shake, landings dip.
+	trike.impact.connect(func(strength: float, _v: Vector3) -> void: follow_camera.add_impact_shake(strength))
+	(trike.get_node("Visuals") as TrikeVisuals).landed.connect(follow_camera.add_landing)
 	hud.set_vehicle(trike)
 
 	race.finish_timeout = track.finish_timeout
@@ -105,6 +116,11 @@ func _ready() -> void:
 	race.countdown_step.connect(hud.show_countdown)
 	race.state_changed.connect(_on_race_state_changed)
 	race.race_reset.connect(_on_race_reset)
+	race.race_reset.connect(items.reset_for_new_race)
+	race_audio = RaceAudio.new()
+	race_audio.name = "RaceAudio"
+	add_child(race_audio)
+	race_audio.setup(self)
 	results_screen.race_again_pressed.connect(race_again)
 	results_screen.lobby_pressed.connect(return_to_lobby)
 	lobby_screen.start_pressed.connect(start_from_lobby)
@@ -122,6 +138,9 @@ func _load_track() -> void:
 	track = track_scene.instantiate()
 	add_child(track)
 	move_child(track, 0)
+	# The map's sky, fog and sun (themes that ask for it; forest keeps the scene's).
+	track.theme.apply_to_world(get_node_or_null(^"WorldEnvironment") as WorldEnvironment,
+			get_node_or_null(^"Sun") as DirectionalLight3D)
 
 
 func _physics_process(_delta: float) -> void:
@@ -200,6 +219,10 @@ func _start_online() -> void:
 	net_sync.name = "NetRaceSync"
 	add_child(net_sync)
 	net_sync.setup(racers)
+	items.authoritative = Net.is_host()
+	items.send_request = Net.send_item_request
+	if Net.is_host():
+		items.broadcast = Net.send_item_event
 	pause_menu.set_online(Net.is_host())
 	results_screen.set_online(Net.is_host())
 	if Net.is_host():
@@ -231,6 +254,16 @@ func net_apply_race_state(state: int, race_time: float, results: Array, duration
 ## Clients: positions, checkpoints and finishes from the host.
 func net_apply_status(status: Array) -> void:
 	racers.apply_remote_status(status)
+
+
+## Host: an item request from the client that owns `racer_id`.
+func net_item_request(racer_id: int, req_id: int, kind: int, data: Array) -> void:
+	items.handle_request(racer_id, req_id, kind, data)
+
+
+## Clients: an item decision from the host.
+func net_apply_item_event(event: Array) -> void:
+	items.apply_remote_event(event)
 
 
 ## A player left mid-race: their racer is DNF and leaves the track.
@@ -336,6 +369,16 @@ func _on_rider_ejected(_strength: float) -> void:
 	hud.show_message(wipeout_messages[randi() % wipeout_messages.size()], 1.2)
 
 
+func _on_item_changed(racer: Racer, kind: ItemKind.Kind) -> void:
+	if racer == _local_racer:
+		hud.set_item(ItemKind.display_name(kind), ItemKind.color_of(kind))
+
+
+func _on_item_feedback(racer: Racer, text: String) -> void:
+	if racer == _local_racer:
+		hud.show_message(text, 1.0)
+
+
 func _on_finish_pending(racer: Racer) -> void:
 	if racer == _local_racer:
 		hud.show_message("Get back on to finish!", 2.5)
@@ -346,6 +389,10 @@ func _on_racer_finished(racer: Racer) -> void:
 		return
 	_race_finished = true
 	_race_time = racer.finish_time
+	# Cool-down: the finished trike brakes gently to a stop (controls locked,
+	# like before GO) instead of rolling on into the wall at the end of the
+	# road. Race Again / the lobby unlock it again.
+	trike.input_locked = true
 	_show_race_state(race.get_state())
 	hud.set_race_time(racer.finish_time)
 	hud.show_message("FINISH!  %s  %s" % [ordinal(racer.finish_position), Hud.format_time(racer.finish_time)], 6.0)

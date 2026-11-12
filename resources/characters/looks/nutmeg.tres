@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="RiderLook" format=3]
+
+[ext_resource type="Script" path="res://scripts/characters/rider_look.gd" id="1_look"]
+
+[resource]
+script = ExtResource("1_look")
+look_name = "Nutmeg"
+helmet_style = 3
+accessory = 3
+face = 4
+goggles = true
+head_scale = 1.1
+helmet_color = Color(1, 0.84, 0.2, 1)
+accent_color = Color(0.92, 0.25, 0.75, 1)
+jacket_color = Color(1, 0.55, 0.15, 1)
+jacket_dark_color = Color(0.78, 0.35, 0.1, 1)
+pants_color = Color(0.25, 0.55, 0.62, 1)
+glove_color = Color(0.92, 0.25, 0.75, 1)
+boot_color = Color(0.25, 0.55, 0.62, 1)
+skin_color = Color(1, 0.86, 0.74, 1)
+lens_color = Color(0.85, 0.4, 1, 1)

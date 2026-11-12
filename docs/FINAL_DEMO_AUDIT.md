@@ -109,29 +109,29 @@ presets), audio (none exists), networking (none exists), human feel.
 | # | System | Status | Evidence / notes |
 |---|---|---|---|
 | 1 | Vehicle physics | **COMPLETE** | 40+ automated checks (accel, top speed, brakes, reverse, steering, drift, boost, handbrake, collisions, recovery), identical numbers since milestone 1. Not yet tuned by a human player |
-| 2 | Rider character & animation | **PARTIAL** | Procedural rider with IK riding pose (tested < 2 cm), flail/get-up/run/mount poses, verified in screenshots. Missing: skinned/skeletal model, per-player look (all 5 riders identical), victory/idle/throw/hit animations |
+| 2 | Rider character & animation | **MOSTLY COMPLETE** (milestone 09) | Five distinct looks (helmet style, accessory, face, colors, head size), reactive faces, seated finish celebration; IK error 0 for every look. Still procedural (no skinned model); no item-throw/hit-flinch animation |
 | 3 | Rider ejection & recovery | **COMPLETE** | 44 rider checks plus a real-track corner crash. The threshold (11) makes wipeouts rare (glancing barrier hits read 1.6–5.2); needs playtest tuning |
 | 4 | On-foot movement & mounting | **COMPLETE** | Camera-relative WASD, mount distance, mounting, righting a flipped trike all tested. Gaps: the real **E key** isn't covered by a key-event test (only `interact_pressed`); gamepad X unverified; no jump |
 | 5 | Camera | **COMPLETE** | Chase framing, slope aim, collision, blended transitions (max 0.27 m/frame) tested. Local single view only |
 | 6 | Race countdown & management | **PARTIAL** | Timer starts on first throttle; out-of-bounds/emergency respawn work. **No countdown**, no race states (pre-race, racing, finished, results), single racer only |
 | 7 | Checkpoints & progress | **PARTIAL** | `VehicleProgress` tracks the nearest sample and the last safe sample (respawn point). No checkpoints, no ordered validation, no positions/ranking |
 | 8 | Finish line & results | **BROKEN** | Finish is an `Area3D` entry event that's ignored while riderless → verified: the race never finishes if the trike crosses riderless. No results screen; the race just continues after "FINISH!" |
-| 9 | Item boxes | **MISSING** | — |
-| 10 | Item usage & projectiles | **MISSING** | — (no input action reserved) |
+| 9 | Item boxes | **COMPLETE** (milestone 07) | 45 respawning boxes on Forest Rush, position-weighted roll, one held item, HUD slot, Q; host-validated. See `docs/TECHNICAL_ARCHITECTURE.md` "Items" |
+| 10 | Item usage & projectiles | **COMPLETE** (milestone 07) | Mud bomb (projectile + puddle), spring punch (knockback, point-blank ejection), turbo bottle, banana peel; host-authoritative events; AI uses items. Needs a human balance playtest |
 | 11 | Vehicle-to-vehicle collisions | **PARTIAL** | Physical collisions work (layer 2 masks layer 2) and feed the ejection system (probe). No dedicated bump/knockback tuning or design; a stopped victim of a rear-end is also ejected; no automated test |
 | 12 | Multiplayer architecture | **MISSING** | Groundwork only: `TrikeInput` abstraction, `RiderController.get_sync_state()`, seeded fling RNG. No networking code; `RaceSession` is single-player |
 | 13 | Five-player synchronization | **MISSING** | — (5 local racers render at 120 fps on M4, see §6) |
 | 14 | Forest Rush map | **PARTIAL** | The test track is forest-themed and production quality, but ~1.2 km / ~49 s (target 5–10 min races), not named or data-driven |
-| 15 | Rocky Canyon map | **MISSING** | — |
-| 16 | Snow Slide map | **MISSING** | — |
+| 15 | Rocky Canyon map | **COMPLETE** (milestone 08) | 7.34 km, cliff roads, rockfall hazards, 14 hairpins, 2 bridges, 2 jumps; all map checks + timed races pass. Human playtest open |
+| 16 | Snow Slide map | **COMPLETE** (milestone 08) | 7.49 km, snow/ice grip, frozen bridges, crosswind, snowmen; all map checks + timed races pass. Human playtest open |
 | 17 | Main menu | **MISSING** | Game boots straight into the race |
 | 18 | Host / Join lobby | **MISSING** | — |
 | 19 | Map selection | **MISSING** | — |
 | 20 | HUD & pause menu | **PARTIAL** | Timer, speed gauge, drift meter, boost, messages, [E] prompt, pause (Resume/Restart/Quit) verified at 720p/1080p. Missing for the demo: countdown, position, item slot, racer list/name tags, results, "leave race" |
-| 21 | Audio & SFX | **MISSING** | No audio files, no AudioStreamPlayers, no bus layout |
+| 21 | Audio & SFX | **COMPLETE except music** (milestone 09) | All vehicle, rider, item, race and UI sounds, synthesized in code (original, no files); Master/Music/SFX/UI volumes. No music yet |
 | 22 | Graphics & performance | **PARTIAL** | Verified 120 fps on M4 with 1 and 5 racers. Unverified on Windows and weaker GPUs; draw calls grow ~66 per racer; no quality settings; Metal reports no GPU timings |
-| 23 | Mac export | **MISSING** | No `export_presets.cfg`, no export templates installed, no signing/notarization plan, default Godot icon |
-| 24 | Windows export | **MISSING** | Same as Mac; `rendering_device/driver.windows="d3d12"` is set but never run on Windows |
+| 23 | Mac export | **DONE, partly verified** (milestone 10) | Universal, ad-hoc signed, not notarized; ran on the M4 (arm64); x86_64 slice and the Gatekeeper flow on a downloaded copy not tested |
+| 24 | Windows export | **BUILT, UNVERIFIED** (milestone 10) | x86_64 exe exported cleanly; never run on Windows |
 
 ### Completed systems
 Vehicle physics, rider ejection & recovery, on-foot movement & mounting,

@@ -12,7 +12,7 @@ var continue_button: Button
 
 
 func build() -> void:
-	var column := make_page("CHOOSE A MAP", "Forest Rush is playable now. Rocky Canyon and Snow Slide are on the way.")
+	var column := make_page("CHOOSE A MAP", "Three downhill races: pick one. The route map shows each course from start to finish.")
 	var row := UiKit.hbox(24)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL

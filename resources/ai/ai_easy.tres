@@ -28,3 +28,7 @@ start_delay = 0.7
 mount_delay = 0.8
 stuck_time = 1.8
 reverse_time = 1.3
+item_reaction = 1.5
+item_max_hold = 15.0
+item_punch_range = 5.0
+item_throw_range = 26.0

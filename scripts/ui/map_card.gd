@@ -54,6 +54,11 @@ func is_placeholder_preview() -> bool:
 	return _preview.is_placeholder()
 
 
+## True when the card shows a route map drawn from the map's track data.
+func is_route_preview() -> bool:
+	return _preview.is_route_map()
+
+
 func _gui_input(event: InputEvent) -> void:
 	if not selectable:
 		return

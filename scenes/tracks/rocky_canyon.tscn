@@ -1,0 +1,47 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/track/track.gd" id="1_track"]
+[ext_resource type="Script" path="res://scripts/track/track_props.gd" id="2_props"]
+[ext_resource type="Script" path="res://scripts/track/track_decorator.gd" id="3_decor"]
+[ext_resource type="Script" path="res://scripts/track/track_landmarks.gd" id="4_landmarks"]
+[ext_resource type="Script" path="res://scripts/track/track_backdrop.gd" id="5_backdrop"]
+[ext_resource type="Script" path="res://scripts/track/track_structures.gd" id="6_structures"]
+[ext_resource type="Resource" path="res://resources/maps/themes/rocky_canyon_theme.tres" id="7_theme"]
+
+[node name="RockyCanyon" type="Node3D"]
+script = ExtResource("1_track")
+route_segments = PackedVector3Array(100, 0, 2, 120, -30, 5, 100, 25, 8, 160, -45, 9, 90, 0, 8, 140, 60, 10, 120, -40, 9, 100, 0, 8, 130, 50, 10, 110, -35, 9, 120, 30, 9, 90, 0, 8, 140, -50, 10, 100, 40, 9, 120, 0, 8, 110, -30, 9, 40, 0, 7, 50, 140, 6, 35, 0, 7, 55, -150, 6, 35, 0, 7, 50, 145, 6, 35, 0, 7, 55, -150, 6, 40, 0, 7, 45, 120, 6, 40, 0, 7, 55, -140, 6, 50, 0, 7, 120, 20, 5, 90, 0, 3, 110, -35, 5, 80, 0, 3, 120, 30, 6, 100, -20, 7, 90, 0, 12, 120, 0, 9, 80, 70, 12, 60, 0, 13, 70, -80, 12, 60, 0, 12, 75, 75, 12, 80, -60, 11, 100, 0, 10, 90, 45, 10, 120, -35, 9, 110, 30, 9, 90, -55, 10, 100, 0, 9, 100, 30, 8, 80, -30, 8, 90, 35, 8, 80, -40, 8, 110, 0, 7, 40, 0, 8, 55, -145, 6, 35, 0, 7, 50, 150, 6, 35, 0, 7, 55, -140, 6, 40, 0, 7, 50, 130, 6, 60, 0, 7, 130, -25, 9, 100, 40, 10, 120, -30, 9, 100, 0, 8, 90, -40, 9, 70, 55, 10, 80, -60, 10, 60, 0, 9, 40, 0, 8, 55, 145, 6, 35, 0, 7, 50, -150, 6, 35, 0, 7, 55, 140, 6, 35, 0, 7, 50, -145, 6, 50, 0, 7, 110, 35, 9, 90, -45, 10, 100, 30, 9, 120, -25, 8, 100, 0, 7, 140, 25, 8, 110, 0, 5, 100, -20, 4, 110, 0, 2)
+route_start = Vector3(0, 480, 0)
+width_profile = PackedVector2Array(0, 18, 250, 18, 330, 13, 1840, 13, 1880, 11, 2420, 11, 2460, 13, 2560, 12, 2860, 12, 2900, 13, 2970, 13, 2985, 9.5, 3040, 9.5, 3055, 13, 4790, 13, 4815, 11, 5200, 11, 5230, 13, 5940, 13, 5965, 11, 6340, 11, 6365, 13, 7131, 13, 7191, 18, 7361, 18)
+zones = [[0.0, 80.0, "clearing"], [330.0, 1180.0, "cliff", -1], [590.0, 690.0, "overlook", 1], [1300.0, 1740.0, "cliff", 1], [2578.0, 2648.0, "bridge"], [2776.0, 2842.0, "bridge"], [2985.0, 3040.0, "rocks"], [3120.0, 3132.0, "gap"], [3380.0, 3800.0, "cliff", -1], [4330.0, 4775.0, "cliff", 1], [5210.0, 5540.0, "cliff", -1], [5600.0, 5611.0, "gap"], [7191.0, 7361.0, "clearing"]]
+theme = ExtResource("7_theme")
+checkpoint_spacing = 250.0
+finish_distance_from_end = 90.0
+finish_timeout = 120.0
+item_box_rows = PackedFloat32Array(340, 650, 970, 1270, 1550, 1800, 2470, 2720, 2950, 3330, 3820, 4180, 4480, 4790, 5150, 5390, 5800, 6450, 6750, 6931, 7131)
+
+[node name="Props" type="Node3D" parent="."]
+script = ExtResource("2_props")
+layout = [[150.0, 3.5, "crate_stack"], [260.0, 0.0, "ramp"], [420.0, -3.0, "rock"], [540.0, 3.5, "boulder", {"radius": 1.6}], [760.0, -1.0, "falling_rock", {"period": 8.0, "phase": 0.0}], [880.0, 0.0, "ramp"], [1060.0, -1.0, "falling_rock", {"period": 7.5, "phase": 3.0}], [1200.0, 3.0, "crate_stack"], [1340.0, 0.0, "ramp"], [1450.0, 1.0, "falling_rock", {"period": 8.0, "phase": 5.0}], [1610.0, -3.5, "boulder", {"radius": 1.6}], [1700.0, 1.0, "falling_rock", {"period": 9.0, "phase": 1.5}], [2510.0, 1.0, "rolling_rock", {"period": 9.0, "phase": 2.0}], [2890.0, -3.0, "crate"], [3120.0, 0.0, "big_ramp", {"length": 10.0, "height": 2.4}], [3240.0, 1.0, "rolling_rock", {"period": 9.0, "phase": 6.0}], [3450.0, -1.0, "falling_rock", {"period": 7.0, "phase": 2.0}], [3600.0, 3.2, "boulder", {"radius": 1.5}], [3740.0, -1.0, "falling_rock", {"period": 8.5, "phase": 4.5}], [3900.0, 0.0, "ramp"], [4100.0, -1.0, "rolling_rock", {"period": 10.0, "phase": 1.0}], [4250.0, 3.5, "crate_stack"], [4400.0, 1.0, "falling_rock", {"period": 7.5, "phase": 0.5}], [4560.0, -3.5, "boulder", {"radius": 1.6}], [4660.0, 1.0, "falling_rock", {"period": 8.0, "phase": 6.0}], [5290.0, -1.0, "falling_rock", {"period": 8.0, "phase": 2.5}], [5450.0, 0.0, "ramp"], [5500.0, -1.0, "falling_rock", {"period": 7.0, "phase": 5.0}], [5600.0, 0.0, "big_ramp", {"length": 10.0, "height": 2.4}], [5880.0, -3.5, "boulder", {"radius": 1.5}], [6120.0, 0.0, "cone_line"], [6560.0, 1.0, "rolling_rock", {"period": 9.5, "phase": 4.0}], [6650.0, 0.0, "ramp"], [6850.0, -3.0, "rock"], [6991.0, 3.5, "crate_stack"], [7081.0, -4.0, "rock"]]
+
+[node name="Decor" type="Node3D" parent="."]
+script = ExtResource("3_decor")
+tree_spacing_samples = 2
+tree_chance = 0.55
+pine_share = 0.5
+tree_scale = Vector2(0.9, 1.8)
+bush_chance = 0.4
+boulder_chance = 0.6
+flowers_per_sample = 1
+
+[node name="Landmarks" type="Node3D" parent="."]
+script = ExtResource("4_landmarks")
+
+[node name="Backdrop" type="Node3D" parent="."]
+script = ExtResource("5_backdrop")
+terrain_cell = 20.0
+terrain_margin = 750.0
+terrain_edge_blend = 400.0
+
+[node name="Structures" type="Node3D" parent="."]
+script = ExtResource("6_structures")

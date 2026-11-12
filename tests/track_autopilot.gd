@@ -34,3 +34,29 @@ func drive() -> void:
 	trike.input.throttle = 0.0 if too_fast else 1.0
 	trike.input.brake = 0.6 if too_fast else 0.0
 	trike.input.drift = false
+
+
+## Like a person: picks a line around obstacles seen up to 40 m ahead
+## (`obstacles`: RacerManager.get_obstacles()) and sets `lateral_offset`;
+## drifts back to `home_offset` when the road is clear. Call before drive().
+func dodge(obstacles: Array[Dictionary], home_offset := 0.0) -> void:
+	var index := track.path.find_nearest(trike.global_position, _index)
+	var half := track.half_width_at(index) - 1.6
+	var forward := track.path.forwards[index]
+	for obstacle: Dictionary in obstacles:
+		var node: Node3D = obstacle["node"]
+		if not is_instance_valid(node) or (node.has_method(&"is_active") and not node.call(&"is_active")):
+			continue
+		var along := (node.global_position - trike.global_position).dot(forward)
+		if along < -2.0 or along > 40.0:
+			continue
+		var at := track.path.find_nearest(node.global_position, index)
+		var lateral := (node.global_position - track.path.points[at]).dot(track.path.rights[at])
+		var clearance: float = obstacle["radius"] + 2.0
+		if absf(lateral_offset - lateral) < clearance:
+			# Pass on the side with more room.
+			lateral_offset = clampf(lateral + clearance if lateral < 0.0 else lateral - clearance, -half, half)
+			return
+		if absf(lateral_offset - lateral) < clearance + 1.0:
+			return
+	lateral_offset = move_toward(lateral_offset, clampf(home_offset, -half, half), 0.05)
