@@ -1026,3 +1026,62 @@ at 120 m.
 | `scripts/track/track_landmarks.gd`, `track_backdrop.gd` | Built set dressing; distant scenery and terrain |
 | `scripts/ui/speed_gauge.gd` | Arc speedometer control |
 | `resources/ui/trike_theme.tres` | UI theme: system rounded font with fallbacks, buttons, panels |
+
+## Fun-First Gameplay V2 (2026-11-13/14)
+
+Design: `docs/FUN_FIRST_GAMEPLAY_V2.md`. Skills: `docs/SKILL_DESIGN.md`.
+Maps: `docs/MAP_GAMEPLAY_V2.md`. Audio: `docs/AUDIO_DESIGN_V2.md`.
+
+### Trike (`scripts/vehicles/trike_controller.gd`)
+- **Surfaces:** per wheel as before; the combined grip is
+  `lerp(average, slipperiest wheel, surface_grip_min_bias = 0.6)`, so one
+  wheel on ice is felt. Ice also scales cornering force
+  (`ice_lateral_accel_factor`) and brakes (`ice_brake_factor`).
+  `get_surface_report()` / `format_surface_report()` show wheel surfaces,
+  effective grip, speed, cornering and brake factors, sideways speed and
+  slide angle (HUD readout when `GameSettings.surface_debug`).
+- **Perfect drift:** `perfect_tier(charge)`; `_end_drift` adds
+  `drift_perfect_bonus` inside `drift_perfect_window` after a tier;
+  `drift_perfect` signal.
+- **Slipstream:** `draft_factor` (0..1, set each tick by SkillManager, fades
+  by itself) adds `draft_acceleration` and `draft_top_speed_bonus`.
+- **Air tricks:** `input.trick` in the air starts a spin (A/D direction) or a
+  flip (with S); `_update_trick` sets the angular velocity for one rotation
+  (`trick_duration`) — the trike's own forces, so never an impact.
+- **Landings:** `_touch_down` grades the first contact after
+  `landing_min_air_time` from tilt vs ground and slide angle:
+  PERFECT / GOOD / POOR / BAD (`Trike.Landing`), applies boost or penalty
+  in `_integrate_forces`, emits `landing_graded`. Ejection is still only
+  the rider's impact / overturn rule; a trick in progress doesn't count as
+  overturned (`RiderController._physics_riding`).
+- Air nose lean (W/S) only leans nose-down once falling
+  (`air_nose_down_fall_speed`), so throttle over a gap never dips the nose.
+
+### Skills (`scripts/skills/`)
+`SkillKind` (ids, names, per character), `SkillConfig` (all values),
+`SkillRules` (pure target/strength/slipstream rules), `SkillManager`
+(requests, events, cooldowns, shields, traps, slipstream, near misses,
+style, taunts, seed, awards), `SkillTrap` (snare / fake box node),
+`SkillVisuals` (meshes and bursts). `RaceStats` (`scripts/race/`) records
+per-racer counters and builds awards. `AISkillTactics` (`scripts/ai/`).
+
+Hooks into existing systems (no rewrites):
+- `ItemManager.block_hit`, `eject_allowed`, `prank_landed`, `set_immune`.
+- `RiderController.impact_guard` / `impact_absorbed` (shield), `character`.
+- `Rider.react(kind)`, reaction faces appended to `Rider.Face`,
+  `Rider.character` (taunt style), blink; `RiderAudio.bark(kind)`.
+- `Racer.character`, `RacerManager.character_order`, `RacerManager.skills`;
+  wide hazards publish several AI avoidance points
+  (`get_ai_obstacles()` → `HazardMarker`).
+- `TrackProps` kinds `falling_tree`, `rockslide`, `barricade`;
+  `RollingRock.rest_time`, `landing_share`, `track_distance`;
+  `FallingLog.track_distance`; `Track.hazard_seed`, `hazard_phase()`.
+- `TrackTheme.music_pitch`, `music_db`; `MusicPlayer.set_variation()`.
+
+### Falling tree (`scripts/props/falling_tree.gd`)
+An `AnimatableBody3D` whose pose is a pure function of
+`Track.hazard_time` + seed: STANDING → SHAKE (birds, rustle, red strip) →
+LEAN (crack) → FALL → DOWN → CLEAR. The trunk pivots at its base behind the
+barrier; only the visual child is scaled (a physics body is never scaled).
+The warning strip and AI markers live in a top-level `Landing` node fixed
+on the road.

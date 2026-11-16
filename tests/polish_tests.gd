@@ -184,7 +184,7 @@ func _test_vehicle_audio_and_effects() -> void:
 	trike.input.throttle = 1.0
 	await _wait(0.2)
 	var fast_pitch := visuals.audio.engine.pitch_scale
-	_check(visuals.audio.engine.playing and fast_pitch > idle_pitch + 0.4, "engine loop plays and its pitch rises with speed",
+	_check(visuals.audio.engine.playing and fast_pitch > idle_pitch + 0.4, "the wheel whirr plays and its pitch rises with speed",
 			"(%.2f → %.2f)" % [idle_pitch, fast_pitch])
 	_check(visuals.effects.sprays[0].emitting and visuals.effects.sprays[1].emitting, "dust sprays from the rear wheels at speed")
 	# Drift: skid sound and skid marks.
@@ -332,7 +332,7 @@ func _test_proxy_effects() -> void:
 	await _wait(0.3)
 	_check(visuals.effects.sprays[0].emitting and visuals.effects.skid_marks[0].emitting and visuals.effects.boost_trail.emitting,
 			"a remote drifting, boosting trike shows spray, skid marks and boost trail")
-	_check(visuals.audio.skid_amount > 0.5 and visuals.audio.engine.pitch_scale > 1.0, "and sounds like it (engine, skid)")
+	_check(visuals.audio.skid_amount > 0.5 and visuals.audio.engine.pitch_scale > 1.0, "and sounds like it (wheel whirr, skid)")
 	state["contact"] = 0
 	trike.apply_network_state(state)
 	await _wait(0.8)

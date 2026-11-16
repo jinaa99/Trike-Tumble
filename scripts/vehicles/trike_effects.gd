@@ -27,6 +27,8 @@ var trike: Trike
 var sprays: Array[CPUParticles3D] = []
 var skid_marks: Array[CPUParticles3D] = []
 var boost_trail: CPUParticles3D
+## Pale wind streaks past the trike while it rides a full slipstream.
+var draft_streaks: CPUParticles3D
 ## Bursts spawned so far (tests): "landing", "impact".
 var bursts: Array[String] = []
 
@@ -41,6 +43,7 @@ func setup(for_trike: Trike, visuals: TrikeVisuals) -> void:
 		sprays.append(_make_spray(at))
 		skid_marks.append(_make_skid(at))
 	boost_trail = _make_boost_trail()
+	draft_streaks = _make_draft_streaks()
 	_apply_surface(TrackSurface.Kind.ROAD)
 	if not trike.network_proxy:
 		trike.impact.connect(_on_impact)
@@ -61,6 +64,7 @@ func _process(_delta: float) -> void:
 		sprays[i].speed_scale = clampf(speed / 20.0, 0.6, 1.4)
 		skid_marks[i].emitting = trike.is_drifting and trike.wheel_contact[wheel]
 	boost_trail.emitting = trike.boost_time > 0.0
+	draft_streaks.emitting = trike.draft_factor > 0.5 and speed > spray_min_speed
 
 
 func _apply_surface(kind: int) -> void:
@@ -162,6 +166,32 @@ func _make_boost_trail() -> CPUParticles3D:
 	trail.color_ramp = ramp
 	trail.color = Color.WHITE
 	return trail
+
+
+func _make_draft_streaks() -> CPUParticles3D:
+	var streaks := CPUParticles3D.new()
+	streaks.name = "DraftStreaks"
+	var line := BoxMesh.new()
+	line.size = Vector3(0.03, 0.03, 1.1)
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.85, 0.96, 1.0, 0.55)
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	line.material = material
+	streaks.mesh = line
+	streaks.amount = 10
+	streaks.lifetime = 0.35
+	streaks.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	streaks.emission_box_extents = Vector3(1.1, 0.7, 0.3)
+	streaks.direction = Vector3(0, 0, 1)
+	streaks.spread = 3.0
+	streaks.initial_velocity_min = 12.0
+	streaks.initial_velocity_max = 18.0
+	streaks.gravity = Vector3.ZERO
+	streaks.position = Vector3(0.0, 0.9, -1.4)
+	streaks.emitting = false
+	add_child(streaks)
+	return streaks
 
 
 func _on_landed(airtime: float) -> void:

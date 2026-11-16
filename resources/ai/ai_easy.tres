@@ -32,3 +32,5 @@ item_reaction = 1.5
 item_max_hold = 15.0
 item_punch_range = 5.0
 item_throw_range = 26.0
+skill_use_chance = 0.25
+trick_chance = 0.15

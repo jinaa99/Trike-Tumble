@@ -103,6 +103,12 @@ cut, looped, layered and level-matched by
 | Cartoon_Spring_Bouncing 01.wav | `assets/audio/items/spring_bounce.wav` | Denis Chapon — <https://freesound.org/people/Denis%20Chapon/sounds/109435/> | CC0 1.0 | 2026-11-12 | Spring punch (take 2) |
 | Awawawaw - cartoon-like slip vocal sfx | `assets/audio/items/banana_slip.wav` | A_kn — <https://freesound.org/people/A_kn/sounds/711794/> | CC0 1.0 | 2026-11-12 | Banana peel slip |
 
+> **2026-11-13 (Fun-First V2):** the five engine recordings above
+> (`assets/audio/engine/*`) and `assets/audio/items/turbo_boost.wav` are **no
+> longer used** by the game: the trike sound is now wheel-based and the
+> turbo is synthesized (`docs/AUDIO_DESIGN_V2.md`). The files and their
+> credits are kept until the owner decides to delete them.
+
 ### Considered and not used
 
 Blender is not installed on the build machine, so no Blender-made models

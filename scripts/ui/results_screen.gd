@@ -14,6 +14,9 @@ signal lobby_pressed
 
 var _rows: GridContainer
 var _duration_label: Label
+var _awards_box: VBoxContainer
+## Text of each award as shown: "PRANK MASTER|Pip|3 pranks landed" (tests).
+var award_texts: Array[String] = []
 var _again_button: Button
 var _lobby_button: Button
 ## Text of each row as shown: "1st|Pip|00:49.50" (tests, debugging).
@@ -32,6 +35,10 @@ func _ready() -> void:
 	_duration_label = _label("", 18, RaceMenuBase.DIM_TEXT_COLOR)
 	_duration_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(_duration_label)
+	_awards_box = UiKit.vbox(2)
+	_awards_box.name = "Awards"
+	_awards_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_child(_awards_box)
 	_again_button = _button("Race Again")
 	_lobby_button = _button("Return to Lobby")
 	box.add_child(_again_button)
@@ -65,6 +72,24 @@ func show_results(results: Array[Dictionary], race_duration: float, local_id: in
 	_duration_label.text = "Race duration  %s" % Hud.format_time(race_duration)
 	root.visible = true
 	_again_button.grab_focus()
+
+
+## Funny awards under the table, from RaceStats (real recorded events):
+## [[racer id, title, detail], ...]. An empty list shows nothing.
+func show_awards(awards: Array, racers: RacerManager) -> void:
+	for child in _awards_box.get_children():
+		_awards_box.remove_child(child)
+		child.queue_free()
+	award_texts.clear()
+	for i in awards.size():
+		var award: Array = awards[i]
+		var racer := racers.get_racer(int(award[0])) if racers else null
+		var who := racer.display_name if racer else "?"
+		var line := _label("%s   %s  ·  %s" % [award[1], who, award[2]], 18, UiKit.SUN)
+		line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_awards_box.add_child(line)
+		_pop_in(line, 0.6 + i * ROW_DELAY)
+		award_texts.append("%s|%s|%s" % [award[1], who, award[2]])
 
 
 ## Fades and slides a cell in after `delay` seconds.

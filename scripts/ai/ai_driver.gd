@@ -90,6 +90,8 @@ var _rng := RandomNumberGenerator.new()
 var _noise_phase := Vector2.ZERO
 var _time := 0.0
 var _active_time := 0.0
+var _trick_decided := false
+var _trick_wanted := false
 var _steer := 0.0
 var _stuck_timer := 0.0
 var _reverse_timer := 0.0
@@ -219,6 +221,11 @@ func _poll_riding(into: TrikeInput, dt: float) -> void:
 	if manager and not finished and AIItemTactics.wants_use(manager.get_racer(racer_id), manager.get_racers(), config,
 			absf(corner)):
 		into.use_item_pressed = true
+	into.trick = false
+	_trick_decided = false
+	if manager and manager.skills and not finished and _rng.randf() < config.skill_use_chance * dt * 2.0 \
+			and AISkillTactics.wants_use(manager.get_racer(racer_id), manager, config, absf(corner)):
+		into.skill_pressed = true
 
 
 func _hold_still(into: TrikeInput) -> void:
@@ -258,6 +265,15 @@ func _poll_airborne(into: TrikeInput, dt: float) -> void:
 	into.throttle = 0.0 if finished else 1.0
 	into.brake = 0.0
 	into.drift = false
+	# One decision per jump; a trick only when the remaining air clearly fits it.
+	if not _trick_decided:
+		_trick_decided = true
+		_trick_wanted = not finished and _rng.randf() < config.trick_chance
+	into.trick = _trick_wanted and trike.trick_kind == Trike.Trick.NONE and trike.tricks_this_jump == 0 \
+			and trike.air_time < 0.3 \
+			and trike.estimate_air_time_left(8.0) > trike.config.trick_duration * config.trick_safety
+	if into.trick:
+		into.steer = 0.0
 
 
 ## Planned speed: the trike's top speed (scaled by difficulty), lowered so the
@@ -268,12 +284,29 @@ func _plan_speed(speed: float) -> float:
 	var decel := config.planning_deceleration
 	var scan := speed * speed / (2.0 * decel) + config.lookahead_min * 2.0
 	var count := mini(ceili(scan / path.spacing), path.size() - 1 - path_index)
+	# Braking on ice is weak: once our line reaches ice, plan the rest of the
+	# braking with less deceleration (the distance already covered on grip
+	# counts in full).
+	var grip_distance := INF
+	var on_ice := trike.surface == TrackSurface.Kind.ICE
+	if on_ice:
+		grip_distance = 0.0
 	for k in count + 1:
+		if grip_distance == INF and track.surface_at(path_index + k, planned_lateral) == TrackSurface.Kind.ICE:
+			grip_distance = k * path.spacing
 		var c := absf(_curvature[path_index + k])
 		if c < 1e-4:
 			continue
-		var corner_speed := sqrt(config.corner_lateral_accel / c)
-		limit = minf(limit, sqrt(corner_speed * corner_speed + 2.0 * decel * k * path.spacing))
+		var lateral_accel := config.corner_lateral_accel
+		# Ice ahead on our line: there is far less cornering force to plan with.
+		if track.surface_at(path_index + k, planned_lateral) == TrackSurface.Kind.ICE:
+			lateral_accel *= config.ice_corner_factor
+		var corner_speed := sqrt(lateral_accel / c)
+		var distance := k * path.spacing
+		var stopping := 2.0 * decel * distance
+		if distance > grip_distance:
+			stopping = 2.0 * decel * grip_distance + 2.0 * decel * config.ice_brake_factor * (distance - grip_distance)
+		limit = minf(limit, sqrt(corner_speed * corner_speed + stopping))
 	return maxf(limit, min_planned_speed)
 
 
@@ -285,7 +318,7 @@ func _want_drift(corner: float, speed: float, desired_steer: float) -> bool:
 	elif absf(corner) < config.drift_min_curvature * 0.5:
 		_in_corner = false
 		_drift_this_corner = false
-	if not _drift_this_corner or dodging or lining_up_ramp or finished:
+	if not _drift_this_corner or dodging or lining_up_ramp or finished or trike.surface == TrackSurface.Kind.ICE:
 		return false
 	var half := track.half_width_at(path_index) - config.edge_margin
 	var lateral := _lateral_of(trike.global_position, path_index)

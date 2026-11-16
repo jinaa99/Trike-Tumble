@@ -6,6 +6,8 @@ extends Node
 ##   chase:<name>:<distance>:<seconds>           player view after driving
 ##   cam:<name>:<distance>:<ex,ey,ez>:<lx,ly,lz>[:fov]   fixed camera in the road frame
 ##   over:<name>                                  aerial overview (fog off)
+##   time:<seconds>                               race clock for timed hazards from here on
+##                                                (falling trees, rocks, logs; seed 0)
 
 const SCENES := {
 	"test": "res://scenes/main/main.tscn",
@@ -46,6 +48,12 @@ func _run() -> void:
 		match p[0]:
 			"chase":
 				await _chase(main, p[1], float(p[2]), float(p[3]))
+			"time":
+				main.track.hazard_seed = 0
+				main.track.hazard_time = float(p[1])
+				main.racers.set_physics_process(false)  # hold the clock there
+				await get_tree().physics_frame
+				await get_tree().physics_frame
 			"cam":
 				await _cam(main, p[1], float(p[2]), _v(p[3]), _v(p[4]), float(p[5]) if p.size() > 5 else 60.0)
 			"over":

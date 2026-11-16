@@ -103,6 +103,11 @@ func _process(delta: float) -> void:
 		lean = float(_trike.drift_direction) * 1.2
 	# Off the trike the rider is posed by RiderController instead.
 	if _trike.has_rider and not _rider.top_level:
+		# Arms flung wide for as long as an air trick turns.
+		if _trike.trick_kind != Trike.Trick.NONE and _rider.reaction_kind != &"trick":
+			_rider.react(&"trick", 0.25)
+		elif _trike.trick_kind != Trike.Trick.NONE:
+			_rider.reaction_time = 0.25
 		_rider.update_pose(lean, speed_ratio, delta)
 
 	var tier := _trike.get_drift_tier()
@@ -113,7 +118,9 @@ func _process(delta: float) -> void:
 		particles.emitting = sliding
 		particles.color = DRIFT_TIER_COLORS[tier]
 		_drift_sparks[i].emitting = sliding and tier > 0
-		_drift_sparks[i].color = DRIFT_TIER_COLORS[tier]
+		# White-hot inside a PERFECT release window.
+		_drift_sparks[i].color = Color(1.0, 1.0, 0.95) if _trike.perfect_tier(_trike.drift_charge) > 0 \
+				else DRIFT_TIER_COLORS[tier]
 	_boost_flame.visible = _trike.boost_time > 0.0
 	if _boost_flame.visible:
 		_boost_flame.scale = Vector3(1.0, 1.0, randf_range(0.75, 1.3))

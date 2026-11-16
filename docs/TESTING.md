@@ -556,3 +556,63 @@ Record tuning feedback in terms of `TrikeConfig` values where possible.
 - [ ] Repeat with 3 and 5 computers; then a Mac ↔ Windows pair
 - [ ] Internet only with UDP port forwarding on the host's router (or a virtual LAN tool, needs approval)
 
+## 1c. Fun-First Gameplay V2 tests (2026-11-13/14)
+
+New group `fun` (`-- --only=fun`, `tests/fun_tests.gd`, ~3 min):
+
+- Skill rules: one skill per rider, cooldowns 10–18 s, position-scaled
+  cooldown, bonk weaker than the punch item, malformed requests and events
+  rejected.
+- Each skill in a real race scene: Zip's slingshot (needs a target, no
+  free boost, cooldown, duplicate request ignored), Pip's bonk (hit, shove
+  direction, no ejection from range, immunity, whiff, cone, point-blank
+  ejection, eject guard), Bramble's snare (placement, arm time, hit,
+  avoidable from the side, one at a time, expiry), Nutmeg's fake box (tell,
+  hit, held item untouched), Rusty's shield (blocks an item, pads one
+  moderate crash, not a big one, expires).
+- Perfect drift window and boosts; air tricks (spin, flip, completion,
+  cut short), landing grades (GOOD, PERFECT, POOR/BAD, sideways = BAD, no
+  ejection from a graded landing alone).
+- Ice measured wheel by wheel: 0–3 wheels on ice, effective grip, speed,
+  cornering and brake factors, measured turning, slide angle, sideways
+  speed and stopping distance on road, snow and ice; one wheel in mud.
+- Slipstream (fills behind, not beside, fades), near miss (pays once, not
+  for a wide berth, not slowly, host rate limit), taunts and reactions
+  (rate limit, IK back on the grips), client requests and host events,
+  hazard seed, awards (only from real stats, one per racer, on the results
+  screen), the falling tree (stages, warning, strip, AI points, determinism,
+  free lane, hits a parked trike, seed shift).
+
+Changed tests (intended behaviour changes, owner request of 2026-11-13):
+
+- `overhaul_tests.gd`: the four-layer engine test was replaced by
+  `_test_wheel_audio` (no engine recordings, silent at rest, hub whirr and
+  freewheel). The seamless-loop check now uses `roll_dirt`.
+- `polish_tests.gd`: two labels say "wheel whirr" instead of "engine"
+  (same assertions).
+- `map_tests.gd`, Snow Slide: the ice share limit changed from "< 8 %" to
+  "12–18 % of the drivable surface"; up to three full-width frozen
+  crossings are allowed (partial bands still ≤ 60 % of the width).
+- `map_tests.gd`, Rocky Canyon cliff road: the blind test autopilot gets
+  90 s instead of 60 s (tighter corners and a resting rockslide).
+- `map_tests.gd` race scenes pin the hazard seed to 0 (authored phases).
+- New Forest checks: 5–8 tree-falls, mud 8–12 % with clean lines, 18+
+  corners of R ≤ 50 m, side-lane mud trap measured at the wheels.
+
+New tool: `tests/tools/ai_probe.tscn -- forest|canyon|snow [easy|medium|hard] [seed]`
+drives one AI over a whole map and prints every wipeout, reset and respawn.
+
+Network: new scenario `skills` in `tests/net/net_test_runner.gd` (three
+peers on Forest Rush using skills and taunts): identical skill events in
+order, identical hazard seed and hazard timing, identical characters, a
+forged skill request refused.
+
+Results 2026-11-14: see `docs/DEVELOPMENT_PROGRESS.md`.
+
+Later additions (2026-11-14): lobby rider tests in `net_unit_tests.gd`
+(unique riders, bot swap and rename, another human's rider can't be taken,
+sync to clients, preferred rider) and `ui_tests.gd` (Rider button, swap,
+the race uses the lobby's riders). `overhaul_tests.gd` detail label now
+says "bottle, canisters" (same nine parts). Performance re-measured with
+`visual_capture.tscn -- <dir> perfmap perfcanyon perfsnow`: 120 fps on all
+sections, worst frame 34 ms.

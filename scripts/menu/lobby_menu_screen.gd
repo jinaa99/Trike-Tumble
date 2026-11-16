@@ -125,6 +125,23 @@ func _player_row(player: LobbyPlayer) -> Control:
 	row.add_child(player_name)
 	if player.is_host:
 		row.add_child(UiKit.chip("HOST", UiKit.SUN))
+	# Rider: your own, or (host) a bot's, can be changed; a taken rider swaps.
+	var me_now := GameSession.lobby.get_local_player()
+	var rider := Button.new()
+	rider.name = "Rider%d" % player.id
+	rider.text = "%s · %s" % [SkillKind.character_name(player.character),
+			SkillKind.display_name(SkillKind.for_character(player.character))]
+	rider.tooltip_text = "%s. %s" % [SkillKind.CHARACTER_TAGLINES[player.character],
+			SkillKind.HELP[SkillKind.for_character(player.character)]]
+	rider.add_theme_font_size_override(&"font_size", UiKit.SIZE_SMALL)
+	rider.custom_minimum_size = Vector2(210, 34)
+	rider.disabled = not (player.is_local or (player.is_ai and me_now != null and me_now.is_host))
+	rider.pressed.connect(func() -> void:
+		if player.is_local:
+			GameSession.set_local_character(_next_free_rider(player))
+		else:
+			GameSession.lobby.cycle_character(player.id))
+	row.add_child(rider)
 	if player.is_ai:
 		var difficulty := Button.new()
 		difficulty.text = "AI · " + ["Easy", "Medium", "Hard"][player.ai_difficulty]
@@ -138,6 +155,18 @@ func _player_row(player: LobbyPlayer) -> Control:
 		row.add_child(difficulty)
 	row.add_child(UiKit.chip("READY" if player.is_ready else "NOT READY", UiKit.MINT if player.is_ready else UiKit.BERRY))
 	return row
+
+
+## The next rider after `player`'s that no other human rides.
+func _next_free_rider(player: LobbyPlayer) -> int:
+	for step in range(1, SkillKind.CHARACTER_NAMES.size()):
+		var candidate := (player.character + step) % SkillKind.CHARACTER_NAMES.size()
+		var human_has_it := false
+		for other in GameSession.lobby.players:
+			human_has_it = human_has_it or (other != player and not other.is_ai and other.character == candidate)
+		if not human_has_it:
+			return candidate
+	return player.character
 
 
 func _show_map(map_id: String) -> void:

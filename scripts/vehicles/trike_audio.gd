@@ -1,43 +1,43 @@
 class_name TrikeAudio
 extends Node3D
 ## Trike sounds (positional, SFX bus), from the trike's state only, so a
-## network proxy sounds like the real thing. Recorded CC0 audio (see
-## docs/AUDIO_DESIGN.md):
-## - Engine: four recordings of small petrol engines (idle, low, mid, high)
-##   crossfaded by a simulated RPM. RPM follows road speed, rises with
-##   throttle and boost and free-revs in the air; each layer is pitched only
-##   inside its own narrow band, so the motor changes character with revs
-##   instead of being one sample pitched up. Lifting off fades in an
-##   overrun burble; a throttle stab adds a rev blip.
-## - Tyres: a rolling loop per surface (gravel, mud, planks, snow, ice), a
-##   chassis rattle, a skid loop for slides and drifts, wind at speed.
-## - One-shots: brake skid, soft/hard hits, landing thumps, mud splashes.
+## network proxy sounds like the real thing. A drift trike is a big bicycle
+## wheel, two small rear wheels in plastic sleeves and a rider: there is no
+## engine here (docs/AUDIO_DESIGN_V2.md). Everything is driven by wheel
+## speed, the ground and what the tyres are doing:
+## - Hub whirr: bearings and the wind in the spokes; pitch and level follow
+##   wheel speed. Silent at standstill (no idle sound of any kind).
+## - Freewheel: the ratchet ticking while coasting, faster with speed; it
+##   stops while the rider pushes (throttle) and clatters louder in the air.
+## - Rolling: one recorded loop per surface (gravel, mud, planks, snow,
+##   ice): the main bed of the sound.
+## - Sleeve slide: the rear sleeves skating sideways in slides and drifts
+##   (a recorded skid plus a plastic hiss that rises as a drift charges).
+## - Frame rattle on rough ground, wind by speed and in the air.
+## - One-shots: a push-off scuff, foot-brake skid, soft/hard hits, landing
+##   thumps, mud splashes.
 ## Created by TrikeVisuals.
 
-@export_group("Engine")
-## Firing-rate equivalent (Hz) at idle and at full revs.
-@export var engine_idle_hz := 84.0
-@export var engine_top_hz := 250.0
-@export var engine_idle_db := -15.0
-@export var engine_full_db := -4.0
-## How fast revs rise and fall (1/s).
-@export var rev_rise := 7.0
-@export var rev_fall := 3.2
-## Extra revs (0..1 scale) from an open throttle, a boost and airtime.
-@export var throttle_revs := 0.1
-@export var boost_revs := 0.14
-@export var air_revs := 0.16
-## Volume (dB) of the overrun burble when coasting at speed.
-@export var overrun_db := -9.0
+@export_group("Wheels")
+## Hub whirr level (dB) at full speed and its pitch at rest / full speed.
+@export var hub_db := -13.0
+@export var hub_pitch := Vector2(0.55, 1.8)
+## Freewheel tick level (dB) while coasting and its pitch range.
+@export var freewheel_db := -12.0
+@export var freewheel_pitch := Vector2(0.6, 1.9)
+## How fast the heard wheel speed follows the real one (1/s).
+@export var wheel_response := 9.0
 
 @export_group("Tyres and wind")
 ## Sideways slip (m/s) that gives a full skid; below `skid_min_slip` silence.
 @export var skid_full_slip := 6.0
 @export var skid_min_slip := 1.4
 @export var skid_db := -5.0
-@export var roll_db := -8.0
-@export var rattle_db := -17.0
-@export var wind_db := -9.0
+## Plastic sleeve hiss on top of the skid while drifting.
+@export var sleeve_db := -12.0
+@export var roll_db := -4.0
+@export var rattle_db := -15.0
+@export var wind_db := -8.0
 
 @export_group("Impacts")
 ## Impact strengths (m/s) for a soft and a hard hit sound.
@@ -47,30 +47,26 @@ extends Node3D
 ## Shortest airtime (s) that thumps on landing.
 @export var landing_min_air := 0.3
 
-## Layer name, the recording's own pitch (Hz), pitch limits, and the RPM band
-## (0..1): silent below [0], full from [1] to [2], silent above [3].
-const LAYERS := [
-	[&"engine_idle", 90.0, 0.85, 1.25, [-1.0, 0.0, 0.12, 0.3]],
-	[&"engine_low", 93.0, 0.9, 1.75, [0.1, 0.28, 0.36, 0.58]],
-	[&"engine_mid", 138.0, 0.5, 1.9, [0.34, 0.56, 0.68, 0.88]],
-	[&"engine_high", 200.0, 0.8, 1.45, [0.64, 0.88, 2.0, 3.0]],
-]
 const ROLL_SOUNDS := {
 	TrackSurface.Kind.ROAD: &"roll_dirt", TrackSurface.Kind.GRASS: &"roll_dirt", TrackSurface.Kind.MUD: &"roll_mud",
 	TrackSurface.Kind.WOOD: &"roll_wood", TrackSurface.Kind.SNOW: &"roll_snow", TrackSurface.Kind.ICE: &"roll_ice",
 }
 
 var trike: Trike
-## The mid-range engine layer (always running; tests read its pitch).
+## The hub whirr (always running, silent at standstill).
+var hub: AudioStreamPlayer3D
+## Kept under its old name for callers and tests that read "the speed-pitched
+## loop": it is the hub whirr now, not an engine.
 var engine: AudioStreamPlayer3D
+var freewheel: AudioStreamPlayer3D
 var skid: AudioStreamPlayer3D
+var sleeve: AudioStreamPlayer3D
 ## Current skid intensity 0..1 (tests).
 var skid_amount := 0.0
-## Simulated revs 0..1.2 (idle to flat out; tests and docs).
-var revs := 0.1
-## Engine layer players, in LAYERS order, and the overrun layer.
-var layers: Array[AudioStreamPlayer3D] = []
-var overrun: AudioStreamPlayer3D
+## Heard wheel speed as a share of top speed, 0..1.3 (tests and docs).
+var wheel_speed := 0.0
+## Freewheel loudness 0..1 right now (tests).
+var freewheel_amount := 0.0
 var wind: AudioStreamPlayer3D
 var rattle: AudioStreamPlayer3D
 ## Surface kind -> rolling loop player (created on first use).
@@ -78,20 +74,19 @@ var rolls := {}
 
 var _hit_timer := 0.0
 var _brake_timer := 0.0
-var _blip_timer := 0.0
-var _load := 0.0
+var _push_timer := 0.0
 var _last_throttle := 0.0
 var _last_surface := TrackSurface.Kind.ROAD
-var _engine_gain := 0.0
+var _rider_gain := 0.0
 
 
 func setup(for_trike: Trike, visuals: TrikeVisuals) -> void:
 	trike = for_trike
-	for layer: Array in LAYERS:
-		layers.append(_loop(layer[0], String(layer[0]).capitalize().replace(" ", "")))
-	engine = layers[2]
-	overrun = _loop(&"engine_overrun", "EngineOverrun")
+	hub = _loop(&"hub_whirr", "HubWhirr")
+	engine = hub
+	freewheel = _loop(&"freewheel_tick", "Freewheel")
 	skid = _loop(&"skid_loop", "Skid")
+	sleeve = _loop(&"sleeve_slide", "SleeveSlide")
 	rattle = _loop(&"roll_rattle", "Rattle")
 	wind = _loop(&"wind_loop", "Wind")
 	if not trike.network_proxy:
@@ -119,66 +114,45 @@ func _process(delta: float) -> void:
 		return
 	_hit_timer = maxf(_hit_timer - delta, 0.0)
 	_brake_timer = maxf(_brake_timer - delta, 0.0)
-	_blip_timer = maxf(_blip_timer - delta, 0.0)
+	_push_timer = maxf(_push_timer - delta, 0.0)
 	var speed_ratio := clampf(absf(trike.forward_speed) / trike.config.max_speed, 0.0, 1.3)
-	var throttle := trike.input.throttle if not trike.network_proxy else clampf(speed_ratio * 1.2, 0.0, 1.0)
-	_update_engine(delta, speed_ratio, throttle)
+	# Proxies have no input: assume the rider pushes while the trike gains speed.
+	var throttle := trike.input.throttle if not trike.network_proxy else (0.0 if speed_ratio > 0.5 else 1.0)
+	_update_wheels(delta, speed_ratio, throttle)
 	_update_tyres(delta, speed_ratio)
-	# Brake skid: hard braking at speed (local trikes know the input).
+	# Foot brake: hard braking at speed (local trikes know the input).
 	if not trike.network_proxy and trike.input.brake > 0.6 and trike.forward_speed > 9.0 and _brake_timer <= 0.0 \
 			and trike.is_grounded():
 		_brake_timer = 1.2
 		SoundPlayer.play_at(self, &"brake", global_position, -8.0, randf_range(0.92, 1.08))
 
 
-func _update_engine(delta: float, speed_ratio: float, throttle: float) -> void:
-	var grounded := trike.is_grounded()
-	var boosting := trike.boost_time > 0.0
-	# Revs: road speed, plus throttle, boost and free-revving in the air.
-	var target := lerpf(0.06, 0.9, minf(speed_ratio, 1.0)) + throttle * throttle_revs
-	if boosting:
-		target += boost_revs
-	if not grounded and throttle > 0.1:
-		target += air_revs
-	var rate := rev_rise if target > revs else rev_fall
-	revs = lerpf(revs, target, 1.0 - exp(-rate * delta))
-	_load = lerpf(_load, maxf(throttle, 1.0 if boosting else 0.0), 1.0 - exp(-9.0 * delta))
-	# A throttle stab from coasting: a short rev blip on top (local trikes).
-	if not trike.network_proxy and throttle > 0.7 and _last_throttle < 0.2 and _blip_timer <= 0.0 and trike.has_rider:
-		_blip_timer = 1.5
-		SoundPlayer.play_at(self, &"engine_blip", global_position, -10.0, lerpf(0.9, 1.3, minf(revs, 1.0)))
+## Hub whirr and freewheel tick from wheel speed. Nothing here simulates an
+## engine: no revs, no idle, no gears.
+func _update_wheels(delta: float, speed_ratio: float, throttle: float) -> void:
+	wheel_speed = lerpf(wheel_speed, speed_ratio, 1.0 - exp(-wheel_response * delta))
+	_rider_gain = lerpf(_rider_gain, 1.0 if trike.has_rider else 0.35, 1.0 - exp(-5.0 * delta))
+	var turning := clampf(wheel_speed, 0.0, 1.0)
+	# Hub: nothing at rest, a soft whirr that rises with the wheels.
+	# A crawl under ~1 km/h (a trike settling on its springs) makes no sound.
+	var hub_gain := pow(clampf((turning - 0.012) / 0.988, 0.0, 1.0), 0.7) * _rider_gain
+	hub.volume_db = lerpf(hub.volume_db, maxf(linear_to_db(maxf(hub_gain, 0.0001)) + hub_db, -80.0), 1.0 - exp(-12.0 * delta))
+	hub.pitch_scale = clampf(lerpf(hub_pitch.x, hub_pitch.y, wheel_speed), hub_pitch.x, hub_pitch.y * 1.25)
+	# Freewheel: ticks while coasting or airborne, quiet while the rider pushes.
+	var coasting := clampf(1.0 - throttle * 1.5, 0.0, 1.0)
+	if not trike.is_grounded():
+		coasting = 1.0
+	var target := coasting * clampf(turning * 4.0, 0.0, 1.0) * lerpf(0.55, 1.0, turning)
+	freewheel_amount = lerpf(freewheel_amount, target, 1.0 - exp(-8.0 * delta))
+	freewheel.volume_db = lerpf(freewheel.volume_db,
+			maxf(linear_to_db(maxf(freewheel_amount * _rider_gain, 0.0001)) + freewheel_db, -80.0), 1.0 - exp(-12.0 * delta))
+	freewheel.pitch_scale = clampf(lerpf(freewheel_pitch.x, freewheel_pitch.y, wheel_speed), freewheel_pitch.x, freewheel_pitch.y * 1.2)
+	# Pushing off from a crawl: a foot scuff (local trikes).
+	if not trike.network_proxy and throttle > 0.7 and _last_throttle < 0.2 and _push_timer <= 0.0 and trike.has_rider \
+			and trike.is_grounded() and speed_ratio < 0.5:
+		_push_timer = 1.5
+		SoundPlayer.play_at(self, &"push_kick", global_position, -9.0, randf_range(0.9, 1.15))
 	_last_throttle = throttle
-
-	var hz := lerpf(engine_idle_hz, engine_top_hz, clampf(revs, 0.0, 1.2))
-	var master_db := lerpf(engine_idle_db, engine_full_db, clampf(maxf(_load, minf(speed_ratio, 1.0) * 0.55), 0.0, 1.0))
-	# Coasting at speed: the main layers duck and the overrun burble comes in.
-	var coast := (1.0 - _load) * clampf(speed_ratio * 1.6 - 0.15, 0.0, 1.0)
-	master_db -= coast * 5.0
-	_engine_gain = lerpf(_engine_gain, 1.0 if trike.has_rider else 0.0, 1.0 - exp(-5.0 * delta))
-	var fade_db := linear_to_db(maxf(_engine_gain, 0.0001))
-	for i in layers.size():
-		var layer: Array = LAYERS[i]
-		var band: Array = layer[4]
-		var gain := _band_gain(revs, band[0], band[1], band[2], band[3])
-		var player := layers[i]
-		player.pitch_scale = clampf(hz / float(layer[1]), layer[2], layer[3])
-		# Equal-power crossfade between neighbouring layers.
-		var layer_db := linear_to_db(maxf(sqrt(gain), 0.0001)) + master_db + fade_db
-		player.volume_db = lerpf(player.volume_db, maxf(layer_db, -80.0), 1.0 - exp(-14.0 * delta))
-	overrun.pitch_scale = clampf(lerpf(0.75, 1.35, minf(revs, 1.0)), 0.7, 1.4)
-	var overrun_target := linear_to_db(maxf(coast, 0.0001)) + overrun_db + fade_db
-	overrun.volume_db = lerpf(overrun.volume_db, maxf(overrun_target, -80.0), 1.0 - exp(-8.0 * delta))
-
-
-## Trapezoid: 0 below `a`, rises to 1 at `b`, holds to `c`, falls to 0 at `d`.
-static func _band_gain(x: float, a: float, b: float, c: float, d: float) -> float:
-	if x <= a or x >= d:
-		return 0.0
-	if x < b:
-		return (x - a) / (b - a)
-	if x <= c:
-		return 1.0
-	return (d - x) / (d - c)
 
 
 func _update_tyres(delta: float, speed_ratio: float) -> void:
@@ -197,6 +171,12 @@ func _update_tyres(delta: float, speed_ratio: float) -> void:
 	skid_amount = lerpf(skid_amount, target, 1.0 - exp(-10.0 * delta))
 	skid.volume_db = linear_to_db(maxf(skid_amount, 0.0001)) + skid_db
 	skid.pitch_scale = 1.35 if surface == TrackSurface.Kind.ICE else (0.75 if surface == TrackSurface.Kind.SNOW else 1.0)
+	# Plastic sleeves skating: only in a real drift, rising as it charges; a
+	# clear, higher scrape on ice.
+	var sleeve_gain := skid_amount if (trike.is_drifting or surface == TrackSurface.Kind.ICE) else 0.0
+	var charge := clampf(trike.drift_charge / maxf(trike.config.drift_boost_tier_times.y, 0.1), 0.0, 1.2)
+	sleeve.volume_db = lerpf(sleeve.volume_db, maxf(linear_to_db(maxf(sleeve_gain, 0.0001)) + sleeve_db, -80.0), 1.0 - exp(-10.0 * delta))
+	sleeve.pitch_scale = (1.3 if surface == TrackSurface.Kind.ICE else 0.9) + charge * 0.35
 
 	# Rolling loop of the surface under the wheels; the others fade out.
 	var rolling := clampf(speed_ratio * 1.25, 0.0, 1.0) if grounded else 0.0
@@ -230,6 +210,8 @@ func _update_tyres(delta: float, speed_ratio: float) -> void:
 		wind_gain = clampf(speed_ratio * speed_ratio * 1.1, 0.0, 1.0)
 		if not grounded:
 			wind_gain = minf(wind_gain * 1.5 + 0.1, 1.0)
+		if trike.boost_time > 0.0 or trike.draft_factor > 0.5:
+			wind_gain = minf(wind_gain * 1.35 + 0.08, 1.0)
 	wind.volume_db = lerpf(wind.volume_db, maxf(linear_to_db(maxf(wind_gain, 0.0001)) + wind_db, -80.0), 1.0 - exp(-4.0 * delta))
 	wind.pitch_scale = lerpf(0.85, 1.25, minf(speed_ratio, 1.0))
 

@@ -47,3 +47,5 @@ ambient_energy = 0.7
 fill_color = Color(0.55, 0.75, 0.8, 1)
 fill_energy = 0.25
 exposure = 1.0
+music_pitch = 1.04
+music_db = 0.0

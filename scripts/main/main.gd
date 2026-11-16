@@ -18,6 +18,7 @@ extends Node3D
 
 ## Player id of the local racer.
 const LOCAL_PLAYER_ID := 1
+const SKILL_CONFIG := preload("res://resources/skills/default_skill_config.tres")
 ## Difficulty order used by "mixed".
 const MIXED_DIFFICULTIES: Array[AIDriverConfig.Difficulty] = [
 	AIDriverConfig.Difficulty.HARD, AIDriverConfig.Difficulty.MEDIUM,
@@ -49,6 +50,11 @@ var net_sync: NetRaceSync
 ## Countdown, finish and results sounds, finish confetti.
 var race_audio: RaceAudio
 
+## Signature skills, slipstream, style events and awards (created here).
+var skills: SkillManager
+## Seed for this race's timed hazards; 0 keeps the authored phases. Picked
+## fresh at every countdown unless a test or tool pins it (>= 0).
+var fixed_hazard_seed := -1
 var _local_racer: Racer
 var _race_time := 0.0
 var _race_finished := false
@@ -73,6 +79,10 @@ func _ready() -> void:
 	racers.setup(track)
 	from_lobby = GameSession.race_active and GameSession.has_lobby()
 	online = from_lobby and GameSession.is_online()
+	if from_lobby:
+		_apply_lobby_riders(GameSession.get_race_setup()["racers"])
+	else:
+		_apply_rider_choice()
 	if online:
 		_build_online_racers(GameSession.get_race_setup()["racers"])
 	elif from_lobby:
@@ -89,6 +99,15 @@ func _ready() -> void:
 	items.local_racer_id = _local_racer.id if _local_racer else -1
 	items.item_changed.connect(_on_item_changed)
 	items.feedback.connect(_on_item_feedback)
+
+	skills = SkillManager.new()
+	skills.name = "Skills"
+	skills.config = SKILL_CONFIG
+	add_child(skills)
+	skills.setup(racers, track, items)
+	skills.local_racer_id = items.local_racer_id
+	skills.feedback.connect(_on_item_feedback)
+	hud.set_skills(skills, _local_racer)
 
 	trike.respawned.connect(follow_camera.snap_to_target)
 	racers.racer_respawned.connect(_on_racer_respawned)
@@ -117,6 +136,9 @@ func _ready() -> void:
 	race.state_changed.connect(_on_race_state_changed)
 	race.race_reset.connect(_on_race_reset)
 	race.race_reset.connect(items.reset_for_new_race)
+	race.race_reset.connect(skills.reset_for_new_race)
+	race.race_finished.connect(func(_results: Array[Dictionary]) -> void: skills.finish_race())
+	race.state_changed.connect(_on_state_for_seed)
 	race_audio = RaceAudio.new()
 	race_audio.name = "RaceAudio"
 	add_child(race_audio)
@@ -221,8 +243,11 @@ func _start_online() -> void:
 	net_sync.setup(racers)
 	items.authoritative = Net.is_host()
 	items.send_request = Net.send_item_request
+	skills.authoritative = Net.is_host()
+	skills.send_request = Net.send_skill_request
 	if Net.is_host():
 		items.broadcast = Net.send_item_event
+		skills.broadcast = Net.send_skill_event
 	pause_menu.set_online(Net.is_host())
 	results_screen.set_online(Net.is_host())
 	if Net.is_host():
@@ -264,6 +289,16 @@ func net_item_request(racer_id: int, req_id: int, kind: int, data: Array) -> voi
 ## Clients: an item decision from the host.
 func net_apply_item_event(event: Array) -> void:
 	items.apply_remote_event(event)
+
+
+## Host: a skill request from the client that owns `racer_id`.
+func net_skill_request(racer_id: int, req_id: int, kind: int, data: Array) -> void:
+	skills.handle_request(racer_id, req_id, kind, data)
+
+
+## Clients: a skill decision from the host.
+func net_apply_skill_event(event: Array) -> void:
+	skills.apply_remote_event(event)
 
 
 ## A player left mid-race: their racer is DNF and leaves the track.
@@ -331,6 +366,7 @@ func _on_race_state_changed(_old: RaceStateMachine.State, new_state: RaceStateMa
 				hud.show_message("RACE OVER", 2.0)
 		RaceStateMachine.State.RESULTS:
 			results_screen.show_results(race.results, race.race_duration, _local_racer.id)
+			results_screen.show_awards(skills.stats.awards, racers)
 
 
 const STATE_CHIPS := {
@@ -348,6 +384,38 @@ func _show_race_state(state: RaceStateMachine.State) -> void:
 	if state == RaceStateMachine.State.RACING and _race_finished:
 		text = "FINISHED · WAITING FOR OTHERS"
 	hud.set_race_state(text, chip[1])
+
+
+## The host (or the offline game) picks a new hazard seed for every
+## countdown, so tree-falls and rockslides differ from race to race but are
+## the same for everyone in it. Tools that skip the countdown keep seed 0.
+func _on_state_for_seed(_old: RaceStateMachine.State, new_state: RaceStateMachine.State) -> void:
+	if new_state != RaceStateMachine.State.COUNTDOWN or not skills.authoritative or skip_countdown:
+		return
+	skills.announce_hazard_seed(fixed_hazard_seed if fixed_hazard_seed >= 0 else randi_range(1, 1 << 30))
+
+
+## From a lobby: every racer rides the rider picked there. Racers are added
+## in the setup's order (online: grid order; offline: you, then the bots),
+## the same order on every computer.
+func _apply_lobby_riders(list: Array) -> void:
+	var order: Array[int] = []
+	for entry: Dictionary in list:
+		order.append(clampi(int(entry.get("character", order.size())), 0, SkillKind.CHARACTER_NAMES.size() - 1))
+	if order.size() == list.size() and not order.is_empty():
+		racers.character_order = order
+
+
+## Launched directly (editor, tools): the local player rides the character
+## picked in Settings; whoever had it takes the player's old one.
+func _apply_rider_choice() -> void:
+	var choice := GameSettings.character
+	var order := racers.character_order.duplicate()
+	var at := order.find(choice)
+	if at > 0:
+		order[at] = order[0]
+		order[0] = choice
+	racers.character_order = order
 
 
 ## Race Again / Return to Lobby put everyone back on the grid.

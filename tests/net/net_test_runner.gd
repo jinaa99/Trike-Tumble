@@ -7,7 +7,7 @@ extends Node
 ## Optional: -- duo rules drop five forest items maps   (scenarios to run; default all)
 
 const PEER_SCENE := "res://tests/net/net_peer.tscn"
-const ALL_SCENARIOS: Array[String] = ["duo", "rules", "drop", "five", "forest", "items", "maps"]
+const ALL_SCENARIOS: Array[String] = ["duo", "rules", "drop", "five", "forest", "items", "skills", "maps"]
 ## Not in the default run (a whole real race, ~8 minutes): `-- e2e5`.
 const LONG_SCENARIOS: Array[String] = ["e2e5"]
 
@@ -47,6 +47,8 @@ func _run() -> void:
 				await _scenario_forest()
 			"items":
 				await _scenario_items()
+			"skills":
+				await _scenario_skills()
 			"e2e5":
 				await _scenario_e2e5()
 			"maps":
@@ -356,6 +358,50 @@ func _scenario_items() -> void:
 			"(%d)" % int(host.get("item_duplicate_requests", 0)))
 	_check(int(client.get("item_duplicate_events", 0)) == 0 and int(client.get("item_invalid_events", 0)) == 0,
 			"the client got every event once, well-formed")
+
+
+## Three instances on Forest Rush using signature skills and taunts as often
+## as they can: the host decides every skill, everyone applies the same skill
+## events in the same order, the hazard seed (and so every tree-fall) is the
+## same on all three, and riders are the same characters everywhere.
+func _scenario_skills() -> void:
+	print("\n[Network: signature skills, hazard seed]")
+	var common: Array[String] = ["--real-map", "--dodge", "--skills", "--stop-at=45", "--max-time=110"]
+	var host_args: Array[String] = ["--expect=3"]
+	host_args.append_array(common)
+	var paths := {"host": _launch("Hosty", "host", host_args)}
+	await _wait_seconds(1.5)
+	paths["a"] = _launch("Ann", "client", common)
+	await _wait_seconds(0.5)
+	var b_args: Array[String] = ["--skill-spoof-at=8"]
+	b_args.append_array(common)
+	paths["b"] = _launch("Bob", "client", b_args)
+	var r := await _collect(paths, 140.0)
+	var host: Dictionary = r["host"]
+	var ok := not host.has("missing") and not (r["a"] as Dictionary).has("missing") and not (r["b"] as Dictionary).has("missing")
+	var host_events: Array = host.get("skill_events", [])
+	_check(ok and host_events.size() >= 4, "three peers raced and used skills", "(%d skill events on the host)" % host_events.size())
+	var uses := 0
+	for text: String in host_events:
+		for name: String in ["SLINGSHOT", "BONK", "TRAP_PLACED", "SHIELD_UP"]:
+			if text.contains(" %s " % name):
+				uses += 1
+	_check(uses >= 2, "skills were activated (host-approved)", "(%d activations)" % uses)
+	for key: String in ["a", "b"]:
+		var peer: Dictionary = r[key]
+		var events: Array = peer.get("skill_events", [])
+		var n := mini(events.size(), host_events.size())
+		_check(n >= 4 and events.slice(0, n) == host_events.slice(0, n), "client %s applied exactly the host's skill events, in order" % key,
+				"(%d of %d)" % [events.size(), host_events.size()])
+		_check(int(peer.get("skill_duplicate_events", 0)) == 0 and int(peer.get("skill_invalid_events", 0)) == 0,
+				"client %s got every skill event once, well-formed" % key)
+		_check(int(peer.get("hazard_seed", 0)) != 0 and int(peer.get("hazard_seed", 0)) == int(host.get("hazard_seed", -1))
+				and String(peer.get("hazard_probe", "")) == String(host.get("hazard_probe", "x")),
+				"client %s has the host's hazard seed, so every tree-fall and rockslide happens at the same moment" % key,
+				"(seed %s)" % str(peer.get("hazard_seed")))
+		_check(str(peer.get("characters", [])) == str(host.get("characters", ["x"])), "client %s sees every racer as the same rider" % key)
+	_check(int(host.get("rejected_skill_requests", 0)) >= 1, "a skill request for someone else's racer was refused",
+			"(%d)" % int(host.get("rejected_skill_requests", 0)))
 
 
 ## Two instances racing on the real map (Forest Rush) for a minute.

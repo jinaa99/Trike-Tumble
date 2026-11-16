@@ -11,7 +11,8 @@ signal lobby_requested
 const CONTROL_ROWS: Array[Array] = [
 	[[&"accelerate"], "Accelerate"], [[&"brake"], "Brake / reverse"],
 	[[&"steer_left", &"steer_right"], "Steer"], [[&"drift"], "Drift (hold + steer)"],
-	[[&"use_item"], "Use item"], [[&"interact"], "Get back on"],
+	[[&"use_item"], "Use item"], [[&"use_skill"], "Signature skill"],
+	[[&"trick"], "Air trick (in the air)"], [[&"emote"], "Taunt"], [[&"interact"], "Get back on"],
 	[[&"reset"], "Reset trike"], [[&"pause"], "Pause"],
 ]
 

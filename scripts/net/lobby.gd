@@ -22,10 +22,11 @@ var _next_id := 1
 
 
 ## `id` = network peer id for online players (-1 = next free id).
-func add_human(player_name: String, is_local: bool, is_host: bool, id := -1) -> LobbyPlayer:
+func add_human(player_name: String, is_local: bool, is_host: bool, id := -1, preferred_character := -1) -> LobbyPlayer:
 	if is_full() or (id >= 0 and get_player(id) != null):
 		return null
 	var player := _new_player(_unique_name(player_name), id)
+	player.character = _free_character(preferred_character)
 	player.is_local = is_local
 	player.is_host = is_host
 	players.append(player)
@@ -36,7 +37,9 @@ func add_human(player_name: String, is_local: bool, is_host: bool, id := -1) -> 
 func add_ai(difficulty := AIDriverConfig.Difficulty.MEDIUM) -> LobbyPlayer:
 	if is_full():
 		return null
-	var player := _new_player(_free_ai_name())
+	var player := _new_player("")
+	player.character = _free_character()
+	player.display_name = _ai_name_for(player.character)
 	player.is_ai = true
 	player.is_ready = true
 	player.ai_difficulty = difficulty
@@ -68,6 +71,38 @@ func set_ready(id: int, ready: bool) -> void:
 	if player and player.is_ready != ready:
 		player.is_ready = ready
 		changed.emit()
+
+
+## Gives player `id` the rider `character`. A bot riding it takes this
+## player's old rider (and is renamed); a rider another human rides can't be
+## taken. Returns true if it changed.
+func set_character(id: int, character: int) -> bool:
+	var player := get_player(id)
+	if player == null or character < 0 or character >= SkillKind.CHARACTER_NAMES.size() or player.character == character:
+		return false
+	for other in players:
+		if other != player and other.character == character and not other.is_ai:
+			return false
+	for other in players:
+		if other.character == character:
+			other.character = player.character
+			if other.is_ai:
+				other.display_name = _ai_name_for(other.character)
+	player.character = character
+	if player.is_ai:
+		player.display_name = _ai_name_for(character)
+	changed.emit()
+	return true
+
+
+## Next rider player `id` may take (skips riders other humans ride).
+func cycle_character(id: int) -> void:
+	var player := get_player(id)
+	if player == null:
+		return
+	for step in range(1, SkillKind.CHARACTER_NAMES.size()):
+		if set_character(id, (player.character + step) % SkillKind.CHARACTER_NAMES.size()):
+			return
 
 
 func cycle_ai_difficulty(id: int) -> void:
@@ -156,7 +191,7 @@ func to_dict() -> Dictionary:
 	var list: Array[Dictionary] = []
 	for player in players:
 		list.append({"id": player.id, "name": player.display_name, "host": player.is_host, "ai": player.is_ai,
-				"ready": player.is_ready, "difficulty": int(player.ai_difficulty)})
+				"ready": player.is_ready, "difficulty": int(player.ai_difficulty), "character": player.character})
 	return {"max": max_players, "map": map_id, "players": list}
 
 
@@ -174,6 +209,7 @@ func apply_dict(data: Dictionary, local_id: int) -> void:
 		player.is_ai = bool(entry["ai"])
 		player.is_ready = bool(entry["ready"])
 		player.ai_difficulty = clampi(int(entry["difficulty"]), 0, 2) as AIDriverConfig.Difficulty
+		player.character = clampi(int(entry.get("character", 0)), 0, SkillKind.CHARACTER_NAMES.size() - 1)
 		player.is_local = player.id == local_id and not player.is_ai
 		players.append(player)
 	_recolor()
@@ -195,6 +231,28 @@ func _name_taken(candidate: String) -> bool:
 		if player.display_name == candidate:
 			return true
 	return false
+
+
+## `preferred` if nobody rides it yet, else the first free rider.
+func _free_character(preferred := -1) -> int:
+	var taken := {}
+	for player in players:
+		taken[player.character] = true
+	if preferred >= 0 and preferred < SkillKind.CHARACTER_NAMES.size() and not taken.has(preferred):
+		return preferred
+	for character in SkillKind.CHARACTER_NAMES.size():
+		if not taken.has(character):
+			return character
+	return 0
+
+
+## A bot is called after the rider it rides (unless a human has that name).
+func _ai_name_for(character: int) -> String:
+	var wanted := SkillKind.character_name(character)
+	for player in players:
+		if not player.is_ai and player.display_name == wanted:
+			return "%s Bot" % wanted
+	return wanted
 
 
 func _free_ai_name() -> String:

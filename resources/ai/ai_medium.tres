@@ -8,3 +8,5 @@ difficulty = 1
 display_name = "Medium"
 drift_min_curvature = 0.01
 drift_chance = 0.35
+skill_use_chance = 0.5
+trick_chance = 0.35

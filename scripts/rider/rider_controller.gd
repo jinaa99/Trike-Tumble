@@ -26,6 +26,9 @@ signal focus_changed(node: Node3D)
 ## R pressed while off the trike. Race logic should put trike + rider back on
 ## the road. Without a listener the controller handles it itself.
 signal emergency_recovery_requested
+## A crash that would have thrown the rider off was soaked up by
+## `impact_guard` (Rusty's pillow shield).
+signal impact_absorbed(strength: float)
 
 enum State { RIDING, EJECTED, RAGDOLL, GETTING_UP, ON_FOOT, MOUNTING }
 const STATE_NAMES: Array[String] = ["RIDING", "EJECTED", "RAGDOLL", "GETTING_UP", "ON_FOOT", "MOUNTING"]
@@ -43,6 +46,13 @@ var state := State.RIDING
 var state_time := 0.0
 var can_mount := false
 var eject_count := 0
+## Extra crash protection as a share of the eject threshold (0.4 = crashes
+## up to 1.4x the threshold are absorbed once, then the guard is gone).
+## Set by SkillManager while a pillow shield is up. Stronger crashes and
+## overturning throw the rider off as always.
+var impact_guard := 0.0
+## Which of the five riders this is (0 Zip .. 4 Rusty): the voice.
+var character := 0
 
 var _rider: Rider
 var _grace_time := 0.0
@@ -358,14 +368,19 @@ func _physics_riding(delta: float) -> void:
 	var impact := _pending_impact
 	var impact_velocity := _pending_impact_velocity
 	_pending_impact = 0.0
-	if trike.global_basis.y.y < config.eject_tilt_up:
+	# Upside down on purpose (an air trick) is not falling over.
+	if trike.global_basis.y.y < config.eject_tilt_up and trike.trick_kind == Trike.Trick.NONE:
 		_tilt_time += delta
 	else:
 		_tilt_time = 0.0
 	if _grace_time > 0.0:
 		return
 	if impact >= config.eject_impact_strength:
-		eject(impact, impact_velocity)
+		if impact_guard > 0.0 and impact < config.eject_impact_strength * (1.0 + impact_guard):
+			impact_guard = 0.0
+			impact_absorbed.emit(impact)
+		else:
+			eject(impact, impact_velocity)
 	elif _tilt_time >= config.eject_tilt_time:
 		eject(0.0, trike.linear_velocity)
 

@@ -85,6 +85,11 @@ enum SceneryStyle {
 @export_group("Sky and light")
 ## False: the race scene keeps its own WorldEnvironment and sun (forest).
 @export var apply_environment := false
+## Music mood of the map: the race track is played at this speed/pitch
+## (forest a touch brighter, snow slower and calmer) and this many dB louder
+## or softer. 1 / 0 = as recorded.
+@export_range(0.8, 1.2) var music_pitch := 1.0
+@export var music_db := 0.0
 @export var sky_top_color := Color(0.26, 0.53, 0.95)
 @export var sky_horizon_color := Color(0.74, 0.87, 0.98)
 @export var ground_bottom_color := Color(0.33, 0.5, 0.4)

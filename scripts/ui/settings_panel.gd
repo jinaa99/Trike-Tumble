@@ -12,6 +12,9 @@ var resolution_option: OptionButton
 var fullscreen_check: CheckButton
 var quality_option: OptionButton
 var name_edit: LineEdit
+var rider_option: OptionButton
+var rider_help: Label
+var surface_debug_check: CheckBox
 var key_buttons := {}
 var controls_message: Label
 var reset_controls_button: Button
@@ -68,6 +71,9 @@ func refresh() -> void:
 	fullscreen_check.set_pressed_no_signal(GameSettings.fullscreen)
 	quality_option.select(GameSettings.quality)
 	name_edit.text = GameSettings.player_name
+	rider_option.select(GameSettings.character)
+	surface_debug_check.set_pressed_no_signal(GameSettings.surface_debug)
+	_show_rider_help()
 	for action: StringName in key_buttons:
 		(key_buttons[action] as Button).text = "Press a key…" if action == listening_action else UiKit.action_keys(action)
 
@@ -167,6 +173,31 @@ func _build_player(page: Control) -> void:
 	name_edit.text_changed.connect(func(text: String) -> void: GameSettings.set_player_name(text))
 	_row(page, "Player name", name_edit)
 	page.add_child(UiKit.label("Shown in lobbies and on the results screen.", UiKit.SIZE_SMALL, UiKit.TEXT_DIM))
+	rider_option = OptionButton.new()
+	for i in SkillKind.CHARACTER_NAMES.size():
+		rider_option.add_item("%s  ·  %s" % [SkillKind.CHARACTER_NAMES[i], SkillKind.display_name(SkillKind.for_character(i))], i)
+	rider_option.custom_minimum_size = Vector2(320, 0)
+	rider_option.item_selected.connect(func(index: int) -> void:
+		GameSettings.set_character(index)
+		_show_rider_help())
+	_row(page, "Rider", rider_option)
+	rider_help = UiKit.label("", UiKit.SIZE_SMALL, UiKit.TEXT_DIM)
+	rider_help.custom_minimum_size = Vector2(520, 0)
+	rider_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	page.add_child(rider_help)
+	surface_debug_check = CheckBox.new()
+	surface_debug_check.text = "Show wheel surfaces and grip (testing aid)"
+	surface_debug_check.toggled.connect(func(on: bool) -> void: GameSettings.set_surface_debug(on))
+	page.add_child(surface_debug_check)
+	_show_rider_help()
+
+
+func _show_rider_help() -> void:
+	var character := GameSettings.character
+	var skill := SkillKind.for_character(character)
+	rider_help.text = "%s, %s. Signature skill [%s] %s: %s Offline races; online, riders follow the grid order." % [
+		SkillKind.CHARACTER_NAMES[character], SkillKind.CHARACTER_TAGLINES[character].to_lower(),
+		UiKit.key_name(GameSettings.primary_key(&"use_skill")), SkillKind.display_name(skill), SkillKind.HELP[skill]]
 
 
 func start_listening(action: StringName) -> void:

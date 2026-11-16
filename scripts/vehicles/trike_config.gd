@@ -83,6 +83,12 @@ extends Resource
 @export var drift_boost_tier_times := Vector2(0.9, 2.0)
 ## Boost duration awarded for tier 1 and tier 2.
 @export var drift_boost_durations := Vector2(0.5, 1.0)
+## Perfect release (drift mastery): letting go within this many seconds of
+## charge after a boost tier is reached is a PERFECT release...
+@export var drift_perfect_window := 0.35
+## ...which adds this much boost time (s) on top of the tier's normal boost.
+## Releasing later still pays the normal tier boost.
+@export var drift_perfect_bonus := 0.4
 @export var boost_acceleration := 14.0
 @export var boost_max_speed := 34.0
 ## Handbrake (drift held without steering) deceleration and grip.
@@ -98,6 +104,56 @@ extends Resource
 @export var air_upright_damping := 1.5
 ## Yaw rate the player can add while airborne (rad/s).
 @export var air_turn_rate := 1.2
+
+@export_group("Slipstream")
+## Extra acceleration (m/s²) and top speed (m/s) at a full draft
+## (Trike.draft_factor = 1, set by SkillManager while tucked in behind a rival).
+@export var draft_acceleration := 5.0
+@export var draft_top_speed_bonus := 3.0
+
+@export_group("Air tricks")
+## Seconds one trick rotation (360° spin or flip) takes.
+@export var trick_duration := 0.72
+## Airtime needed before a trick can start (no tricks off small bumps).
+@export var trick_min_air_time := 0.12
+## A trick this far through (0..1) when the wheels touch counts as landed.
+@export_range(0.5, 1.0) var trick_complete_ratio := 0.9
+## Nose up/down lean (deg) from brake/throttle while airborne.
+@export var air_pitch_lean_deg := 9.0
+## The nose-down lean only starts once the trike falls faster than this (m/s).
+@export var air_nose_down_fall_speed := 3.0
+
+@export_group("Landing")
+## Jumps shorter than this (s) are not graded.
+@export var landing_min_air_time := 0.6
+## Clean landing: body tilt against the ground and slide angle (heading vs
+## direction of travel) both under these (deg).
+@export var landing_clean_tilt_deg := 17.0
+@export var landing_clean_slip_deg := 17.0
+## Beyond these it is a BAD landing; in between, a POOR one.
+@export var landing_bad_tilt_deg := 38.0
+@export var landing_bad_slip_deg := 42.0
+## Airtime (s) from which a clean landing without a trick is PERFECT too.
+@export var landing_big_air_time := 1.15
+## Tighter limits (deg) a no-trick big-air landing must meet to be PERFECT.
+@export var landing_perfect_tilt_deg := 9.0
+@export var landing_perfect_slip_deg := 9.0
+## PERFECT: boost seconds, plus this much per landed trick after the first.
+@export var landing_perfect_boost := 0.55
+@export var landing_trick_boost := 0.25
+@export var landing_max_boost := 1.2
+## POOR: share of speed kept, hop (m/s) and wobble (seconds of low grip).
+@export_range(0.0, 1.0) var landing_poor_speed_keep := 0.9
+@export var landing_poor_bounce := 1.4
+@export var landing_poor_slip_time := 0.45
+@export_range(0.1, 1.0) var landing_poor_grip := 0.55
+## BAD: bigger speed loss, a hop, a spin (rad/s) and a longer wobble. Whether
+## the rider comes off is still the normal impact / overturn rule.
+@export_range(0.0, 1.0) var landing_bad_speed_keep := 0.72
+@export var landing_bad_bounce := 2.6
+@export var landing_bad_spin := 3.2
+@export var landing_bad_slip_time := 0.9
+@export_range(0.1, 1.0) var landing_bad_grip := 0.35
 
 @export_group("Riderless")
 ## Deceleration while nobody is aboard (feet off, nobody pedaling), so an
@@ -121,10 +177,19 @@ extends Resource
 @export_range(0.1, 1.0) var snow_speed_factor := 0.96
 @export var snow_drag := 2.0
 @export_range(0.1, 1.0) var snow_grip_factor := 0.8
-## Ice: full speed but little sideways grip (the trike slides wide).
+## Ice: full speed but little sideways grip (the trike slides wide), a low
+## cap on cornering force and weak brakes.
 @export_range(0.1, 1.0) var ice_speed_factor := 1.0
 @export var ice_drag := 0.0
-@export_range(0.1, 1.0) var ice_grip_factor := 0.32
+@export_range(0.05, 1.0) var ice_grip_factor := 0.22
+## Share of max_lateral_accel available on ice (how hard it can corner at all).
+@export_range(0.1, 1.0) var ice_lateral_accel_factor := 0.5
+## Share of the brake and handbrake deceleration that works on ice.
+@export_range(0.1, 1.0) var ice_brake_factor := 0.4
+## How far the combined grip of mixed ground leans to the slipperiest wheel
+## (0 = plain average of the wheels, 1 = the worst wheel decides). One wheel
+## on an ice or mud band is felt at once instead of being averaged away.
+@export_range(0.0, 1.0) var surface_grip_min_bias := 0.6
 
 @export_group("Recovery")
 ## Body up·world up below this counts as overturned.

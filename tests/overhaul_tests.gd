@@ -21,7 +21,7 @@ func run() -> void:
 	_test_scenery_models()
 	_test_sound_files()
 	await _test_trike_and_rider_detail()
-	await _test_engine_layers()
+	await _test_wheel_audio()
 	await _test_music()
 	_test_fonts()
 
@@ -110,10 +110,10 @@ func _test_sound_files() -> void:
 			if not ResourceLoader.exists("%s%s.wav" % [SoundBank.AUDIO, file]):
 				missing.append(file)
 	_check(missing.is_empty(), "every recorded sound file exists", "(%d takes) %s" % [takes, str(missing)])
-	var loop := SoundBank.get_loop(&"engine_idle")
-	_check(loop.loop_mode == AudioStreamWAV.LOOP_FORWARD and loop.loop_end > 44100, "engine layers are seamless loops",
+	var loop := SoundBank.get_loop(&"roll_dirt")
+	_check(loop.loop_mode == AudioStreamWAV.LOOP_FORWARD and loop.loop_end > 44100, "tyre recordings are seamless loops",
 			"(%.1f s)" % loop.get_length())
-	_check(SoundBank.get_stream(&"engine_idle").loop_mode == AudioStreamWAV.LOOP_DISABLED, "one-shot use of a recording never loops")
+	_check(SoundBank.get_stream(&"roll_dirt").loop_mode == AudioStreamWAV.LOOP_DISABLED, "one-shot use of a recording never loops")
 	var seen := {}
 	for i in 40:
 		seen[SoundBank.use(&"step")] = true
@@ -132,7 +132,7 @@ func _test_trike_and_rider_detail() -> void:
 			"RearWheelLeft/Spin/LugNuts", "RearWheelRight/Spin/Grooves"]:
 		if visuals.get_node_or_null(path) is MeshInstance3D:
 			added.append(path)
-	_check(added.size() == 9, "trike detail parts are added (tread, brake, engine, exhausts, bolts...)", "(%d of 9)" % added.size())
+	_check(added.size() == 9, "trike detail parts are added (tread, brake, bottle, canisters, bolts...)", "(%d of 9)" % added.size())
 	# Detail never moves the wheels or adds collision.
 	var front := visuals.get_node("FrontPivot/FrontWheel") as Node3D
 	var mount := trike.get_wheel_mount(Trike.Wheel.FRONT)
@@ -176,55 +176,68 @@ func _test_trike_and_rider_detail() -> void:
 			"(%.3f m)" % model.get_max_ik_error())
 
 
-func _test_engine_layers() -> void:
+## Fun-First V2 (2026-11-13, owner request): the trike sounds like a
+## human-ridden drift trike, not a petrol engine. This replaces the old
+## four-layer engine test.
+func _test_wheel_audio() -> void:
 	var main := await _load()
 	var trike := main.trike
 	var audio := (trike.get_node("Visuals") as TrikeVisuals).audio
 	await runner._wait(0.8)
-	_check(audio.layers.size() == 4 and audio.overrun != null and audio.wind != null and audio.rattle != null,
-			"engine has four RPM layers plus overrun, rattle and wind")
-	var all_playing := true
-	for player in audio.layers:
-		all_playing = all_playing and player.playing and player.stream is AudioStreamWAV
-	_check(all_playing, "every engine layer runs (silent ones at -80 dB)")
-	var idle_revs := audio.revs
-	_check(audio.layers[0].volume_db > audio.layers[3].volume_db + 30.0, "at idle the idle layer is heard and the high layer is silent",
-			"(idle %.0f dB, high %.0f dB)" % [audio.layers[0].volume_db, audio.layers[3].volume_db])
-	# Flat out down the track.
+	_check(audio.hub != null and audio.freewheel != null and audio.sleeve != null and audio.wind != null and audio.rattle != null
+			and audio.engine == audio.hub, "the trike has wheel layers: hub whirr, freewheel, sleeve slide, rattle and wind")
+	var no_engine := true
+	for child in audio.get_children():
+		var player := child as AudioStreamPlayer3D
+		if player and String(player.name).to_lower().contains("engine"):
+			no_engine = false
+	for sound: StringName in SoundBank.FILES:
+		for file: String in SoundBank.FILES[sound]:
+			no_engine = no_engine and not file.begins_with("engine/") and not String(sound).begins_with("engine")
+	_check(no_engine and not "revs" in audio and not "layers" in audio, "no combustion engine recordings or RPM model are used")
+	_check(audio.hub.volume_db < -60.0 and audio.freewheel.volume_db < -60.0, "standing still the trike is silent (no idle loop)",
+			"(hub %.0f dB, freewheel %.0f dB)" % [audio.hub.volume_db, audio.freewheel.volume_db])
+	var rest_pitch := audio.hub.pitch_scale
+	# Flat out down the track (the rider pushing).
 	var pilot := TrackAutopilot.new(main.track, trike)
-	var peak := 0.0
 	var jump := 0.0
-	var previous := -80.0
-	for i in 60 * 7:
+	var previous := audio.hub.volume_db
+	var loudest := -80.0
+	for i in 60 * 6:
 		pilot.drive()
 		await runner.get_tree().physics_frame
 		if i % 6 == 0:
-			var loudest := -80.0
-			for player in audio.layers:
-				loudest = maxf(loudest, player.volume_db)
 			if i > 30:
-				jump = maxf(jump, absf(loudest - previous))
-			previous = loudest
-		peak = maxf(peak, audio.revs)
-	_check(peak > idle_revs + 0.5, "revs climb with speed and throttle", "(%.2f → %.2f)" % [idle_revs, peak])
-	_check(audio.layers[3].volume_db > audio.layers[0].volume_db + 30.0, "at speed the high layer has taken over from idle",
-			"(idle %.0f dB, high %.0f dB)" % [audio.layers[0].volume_db, audio.layers[3].volume_db])
-	_check(jump < 4.0, "layers crossfade without volume jumps", "(largest step %.1f dB per 0.1 s)" % jump)
-	var pitches_ok := true
-	for i in audio.layers.size():
-		var layer: Array = TrikeAudio.LAYERS[i]
-		pitches_ok = pitches_ok and audio.layers[i].pitch_scale >= float(layer[2]) - 0.001 and audio.layers[i].pitch_scale <= float(layer[3]) + 0.001
-	_check(pitches_ok, "each layer stays inside its own pitch band (no single sample pitched across the range)")
-	_check(audio.rolls.has(TrackSurface.Kind.ROAD) and (audio.rolls[TrackSurface.Kind.ROAD] as AudioStreamPlayer3D).volume_db > -30.0,
-			"the gravel rolling loop plays while driving on dirt")
-	# Lift off at speed: the overrun burble comes in.
+				jump = maxf(jump, absf(audio.hub.volume_db - previous))
+			previous = audio.hub.volume_db
+		loudest = maxf(loudest, audio.hub.volume_db)
+	_check(audio.hub.volume_db > -24.0 and audio.hub.pitch_scale > rest_pitch + 0.5, "the hub whirr rises in level and pitch with wheel speed",
+			"(%.0f dB, pitch %.2f → %.2f)" % [audio.hub.volume_db, rest_pitch, audio.hub.pitch_scale])
+	_check(jump < 4.0 and loudest < -6.0, "it changes smoothly and stays under the rolling noise",
+			"(largest step %.1f dB per 0.1 s, loudest %.0f dB)" % [jump, loudest])
+	var pushing := audio.freewheel_amount
+	_check(audio.rolls.has(TrackSurface.Kind.ROAD) and (audio.rolls[TrackSurface.Kind.ROAD] as AudioStreamPlayer3D).volume_db > -16.0,
+			"the gravel rolling loop is the main bed while driving on dirt",
+			"(%.0f dB)" % (audio.rolls[TrackSurface.Kind.ROAD] as AudioStreamPlayer3D).volume_db)
+	# Stop pushing at speed: the freewheel ratchet ticks.
 	for i in 60:
 		trike.input.throttle = 0.0
 		trike.input.steer = 0.0
 		await runner.get_tree().physics_frame
-	_check(audio.overrun.volume_db > -30.0, "lifting off at speed brings in the overrun layer", "(%.0f dB)" % audio.overrun.volume_db)
-	_check(TrikeAudio._band_gain(0.2, 0.1, 0.3, 0.4, 0.6) > 0.49 and TrikeAudio._band_gain(0.7, 0.1, 0.3, 0.4, 0.6) == 0.0,
-			"layer bands fade in and out")
+	_check(audio.freewheel_amount > 0.5 and audio.freewheel_amount > pushing + 0.3 and audio.freewheel.volume_db > -30.0,
+			"coasting brings in the freewheel tick; pushing quiets it",
+			"(%.2f coasting vs %.2f pushing, %.0f dB)" % [audio.freewheel_amount, pushing, audio.freewheel.volume_db])
+	var tick := SoundBank.get_loop(&"freewheel_tick")
+	_check(tick.loop_mode == AudioStreamWAV.LOOP_FORWARD and tick.get_length() > 1.0, "the freewheel tick is a seamless loop",
+			"(%.1f s)" % tick.get_length())
+	# Peak level of every synthesized wheel loop stays below full scale (no clipping).
+	var peak := 0.0
+	for sound: StringName in [&"hub_whirr", &"freewheel_tick", &"sleeve_slide"]:
+		var data := SoundBank.get_stream(sound).data
+		for k in range(0, data.size(), 2):
+			peak = maxf(peak, absf(float(data.decode_s16(k))) / 32767.0)
+	_check(peak < 0.98, "wheel loops never clip", "(peak %.2f of full scale)" % peak)
+	_check(audio.hub is AudioStreamPlayer3D and audio.hub.max_distance > 30.0, "trike sounds are positioned in the world")
 
 
 func _test_music() -> void:

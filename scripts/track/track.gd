@@ -87,6 +87,10 @@ var builder := TrackMeshBuilder.new()
 ## Race clock for timed hazards (falling logs); RacerManager sets it each
 ## tick, so every computer sees hazards at the same race time.
 var hazard_time := 0.0
+## Per-race number shared by every computer (the host picks it and sends it
+## before the countdown): shifts each timed hazard's cycle so no two races
+## have the same pattern. 0 = the authored phases (tests, tools).
+var hazard_seed := 0
 ## Milliseconds per build stage (profiling, map tests).
 var build_timings := {}
 
@@ -236,6 +240,15 @@ func wind_at(index: int) -> Vector3:
 		var gust := 0.35 + 0.65 * maxf(sin(TAU * hazard_time / maxf(wind_gust_period, 0.1) + float(zone[0]) * 0.01), 0.0)
 		return path.rights[index] * signf(float(zone[3])) * float(zone[4]) * gust * fade
 	return Vector3.ZERO
+
+
+## Seconds to add to a timed hazard's clock: 0 with no seed, else a fixed
+## pseudo-random share of its `period`, the same on every computer.
+func hazard_phase(distance: float, period: float) -> float:
+	if hazard_seed == 0 or period <= 0.0:
+		return 0.0
+	var mixed := hash(Vector2i(hazard_seed, roundi(distance)))
+	return float(posmod(mixed, 10007)) / 10007.0 * period
 
 
 ## Zones of one kind: [start m, end m, kind, ...] entries.

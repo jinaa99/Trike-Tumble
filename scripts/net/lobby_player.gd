@@ -10,3 +10,6 @@ var is_ai := false
 var is_ready := false
 var ai_difficulty := AIDriverConfig.Difficulty.MEDIUM
 var color := Color.WHITE
+## Rider (0 Zip .. 4 Rusty, SkillKind.CHARACTER_NAMES): look, voice, skill.
+## Unique within a lobby.
+var character := 0

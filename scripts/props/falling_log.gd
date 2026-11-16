@@ -24,6 +24,8 @@ extends AnimatableBody3D
 @export var from_side := -1
 ## Set by TrackProps: half the road width here (m).
 @export var half_width := 7.0
+## Set by TrackProps: distance along the track (seeds the cycle).
+@export var track_distance := 0.0
 ## Bank height and distance beyond the barrier the log starts from (m).
 @export var bank_height := 3.5
 @export var bank_out := 4.0
@@ -34,6 +36,7 @@ var phase_state := 0
 
 var _rest := Transform3D.IDENTITY
 var _mesh: MeshInstance3D
+var _dropping := false
 
 
 func _ready() -> void:
@@ -63,8 +66,14 @@ func _ready() -> void:
 
 func _physics_process(_delta: float) -> void:
 	var clock := track.hazard_time if track else 0.0
-	var t := -1.0 if clock <= 0.0 else fposmod(clock + phase, period)
+	var shift := track.hazard_phase(track_distance, period) if track else 0.0
+	var t := -1.0 if clock <= 0.0 else fposmod(clock + phase + shift, period)
 	transform = _rest * _pose(t)
+	# A rumble as the log tips off the bank.
+	var dropping := t >= 0.0 and t < 0.4
+	if dropping and not _dropping and is_inside_tree():
+		SoundPlayer.play_at(self, &"log_rumble", global_position, 3.0, randf_range(0.9, 1.1), 24.0)
+	_dropping = dropping
 
 
 ## Log transform in road space at cycle time t (t < 0: waiting).

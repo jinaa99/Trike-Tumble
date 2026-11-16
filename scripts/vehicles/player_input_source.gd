@@ -14,3 +14,8 @@ func poll(into: TrikeInput) -> void:
 		into.interact_pressed = true
 	if Input.is_action_just_pressed(&"use_item"):
 		into.use_item_pressed = true
+	if Input.is_action_just_pressed(&"use_skill"):
+		into.skill_pressed = true
+	if Input.is_action_just_pressed(&"emote"):
+		into.emote_pressed = true
+	into.trick = Input.is_action_pressed(&"trick")

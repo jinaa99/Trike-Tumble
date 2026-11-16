@@ -19,6 +19,8 @@ func setup(race_session: RaceSession) -> void:
 	session.race.countdown_step.connect(_on_countdown_step)
 	session.racers.racer_finished.connect(_on_racer_finished)
 	session.race.state_changed.connect(_on_state_changed)
+	if session.track and session.track.theme:
+		MusicPlayer.set_variation(session.track.theme.music_pitch, session.track.theme.music_db)
 	_update_music(session.race.get_state())
 
 

@@ -92,6 +92,34 @@ static func loop(hz: float, cycles: int, buzz: float, noise: float, brightness :
 	return stream
 
 
+## A seamless loop of `count` ratchet clicks at `rate_hz` clicks per second:
+## each click is a few milliseconds of bright noise with a short metallic
+## ping (a freewheel pawl). Slightly uneven levels so it doesn't sound like a
+## machine.
+static func ticks(rate_hz: float, count: int, ping_hz := 3100.0, volume := 0.5, seed := 4) -> AudioStreamWAV:
+	var period := roundi(MIX_RATE / rate_hz)
+	var total := period * count
+	var samples := PackedFloat32Array()
+	samples.resize(total)
+	samples.fill(0.0)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var click := mini(roundi(MIX_RATE * 0.006), period - 2)
+	for c in count:
+		var level := rng.randf_range(0.7, 1.0)
+		var tone := ping_hz * rng.randf_range(0.94, 1.06)
+		for i in click:
+			var k := float(i) / click
+			var envelope := pow(1.0 - k, 3.0)
+			var value := rng.randf_range(-1.0, 1.0) * 0.6 + sin(TAU * tone * i / MIX_RATE) * 0.6
+			samples[c * period + i] = value * envelope * level * volume
+	var stream := to_wav(samples)
+	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	stream.loop_begin = 0
+	stream.loop_end = total
+	return stream
+
+
 ## Several streams mixed into one (e.g. a thud under a boing).
 static func mix(streams: Array[AudioStreamWAV]) -> AudioStreamWAV:
 	var longest := 0

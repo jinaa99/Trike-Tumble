@@ -15,7 +15,8 @@ extends Node3D
 enum PoseMode { RIDE, FLAIL, GET_UP, STAND }
 ## Faces. The first five are the looks' resting faces (RiderLook.Face);
 ## SHOCKED, DIZZY and CHEER are shown for falls, get-ups and celebrations.
-enum Face { CHEERFUL, DETERMINED, GRINNING, SLEEPY, CHEEKY, SHOCKED, DIZZY, CHEER }
+## The rest are reaction faces (appended: RiderLook.Face mirrors the first five).
+enum Face { CHEERFUL, DETERMINED, GRINNING, SLEEPY, CHEEKY, SHOCKED, DIZZY, CHEER, LAUGH, SMUG, OUCH, FOCUS, CONFUSED, GRUMPY }
 ## Per expression: [brow tilt (rad, + = inner ends down), brow lift (m),
 ## mouth scale (width, height), eye open L, eye open R, pupil scale].
 const FACES := {
@@ -27,6 +28,34 @@ const FACES := {
 	Face.SHOCKED: [-0.35, 0.035, Vector2(0.6, 1.9), 1.2, 1.2, 0.6],
 	Face.DIZZY: [-0.2, 0.0, Vector2(1.0, 0.45), 0.3, 0.3, 1.0],
 	Face.CHEER: [-0.2, 0.03, Vector2(1.6, 1.7), 0.55, 0.55, 1.0],
+	Face.LAUGH: [-0.28, 0.03, Vector2(1.7, 2.0), 0.25, 0.25, 1.0],
+	Face.SMUG: [0.22, 0.004, Vector2(1.5, 0.7), 0.6, 0.6, 1.0],
+	Face.OUCH: [-0.4, 0.03, Vector2(1.3, 1.6), 0.2, 0.2, 0.8],
+	Face.FOCUS: [0.45, -0.014, Vector2(0.8, 0.45), 0.7, 0.7, 0.85],
+	Face.CONFUSED: [-0.3, 0.03, Vector2(0.55, 0.9), 1.25, 0.7, 0.7],
+	Face.GRUMPY: [0.5, -0.016, Vector2(0.9, 0.4), 0.75, 0.75, 1.0],
+}
+
+## Riding personality per character (Zip, Pip, Bramble, Nutmeg, Rusty):
+## [extra forward tuck (deg), how much the lean is exaggerated, head tilt
+## (deg, + = toward the right shoulder), head nod (deg, + = chin down),
+## bob amplitude (deg), bob speed (rad/s)]. Spine and neck only: the IK
+## keeps hands on the grips and feet on the pegs.
+const RIDING_STYLE: Array[Array] = [
+	[2.0, 1.15, 0.0, -4.0, 2.2, 7.0],   # Zip: chin up, bouncy
+	[7.0, 1.3, 0.0, 6.0, 0.6, 9.0],     # Pip: hunched forward, glaring, leans hard
+	[-1.0, 0.85, 4.0, 2.0, 0.4, 2.0],   # Bramble: upright, calm, head cocked
+	[1.0, 1.0, -3.0, 0.0, 3.0, 11.0],   # Nutmeg: fidgety wiggle
+	[-4.0, 0.7, 7.0, 8.0, 0.8, 1.6],    # Rusty: laid back, head lolling
+]
+
+## Seated reactions: [face, seconds, arms leave the grips]. Feet always stay
+## on the pegs; hands go back to the grips when the reaction ends.
+const REACTIONS := {
+	&"laugh": [Face.LAUGH, 1.3, true], &"yelp": [Face.OUCH, 0.8, false], &"cheer": [Face.CHEER, 1.4, true],
+	&"taunt": [Face.SMUG, 1.4, true], &"smug": [Face.SMUG, 1.0, false], &"focus": [Face.FOCUS, 0.9, false],
+	&"confused": [Face.CONFUSED, 1.3, false], &"grumble": [Face.GRUMPY, 1.2, false], &"skill": [Face.FOCUS, 0.7, true],
+	&"trick": [Face.CHEER, 0.5, true], &"dizzy": [Face.DIZZY, 1.4, false],
 }
 
 ## Rider-root position relative to the feet when standing (rider space is
@@ -79,6 +108,14 @@ var expression := Face.CHEERFUL
 var base_face := Face.CHEERFUL
 ## Seconds of finish celebration left (arms up while seated).
 var celebrate_time := 0.0
+## Which of the five riders this is (0 Zip .. 4 Rusty): picks the taunt.
+var character := 0
+## Reaction playing on top of the riding pose (REACTIONS key) and seconds left.
+var reaction_kind := &""
+var reaction_time := 0.0
+var _reaction_arms := false
+var _blink_in := 2.0
+var _blink_time := 0.0
 var _face_rest := {}
 var _time := 0.0
 var _run_phase := 0.0
@@ -114,6 +151,9 @@ func _ready() -> void:
 
 func set_pose_mode(mode: PoseMode) -> void:
 	pose_mode = mode
+	reaction_time = 0.0
+	reaction_kind = &""
+	_reaction_arms = false
 	_chest.rotation = Vector3.ZERO
 	_neck.rotation = Vector3.ZERO
 	_hips.position = HIPS_REST
@@ -178,6 +218,39 @@ func is_celebrating() -> bool:
 	return celebrate_time > 0.0
 
 
+## Plays a short reaction (see REACTIONS): a face, and for some a gesture
+## with the arms off the grips. Seated or standing only; a fall, a get-up or
+## the finish celebration always wins. Returns false if it was not shown.
+func react(kind: StringName, seconds := -1.0) -> bool:
+	if not REACTIONS.has(kind) or celebrate_time > 0.0:
+		return false
+	if pose_mode != PoseMode.RIDE and pose_mode != PoseMode.STAND:
+		return false
+	var spec: Array = REACTIONS[kind]
+	reaction_kind = kind
+	reaction_time = float(spec[1]) if seconds < 0.0 else seconds
+	_reaction_arms = bool(spec[2]) and pose_mode == PoseMode.RIDE
+	set_expression(spec[0])
+	return true
+
+
+func is_reacting() -> bool:
+	return reaction_time > 0.0
+
+
+func _end_reaction() -> void:
+	reaction_time = 0.0
+	reaction_kind = &""
+	_reaction_arms = false
+	if pose_mode == PoseMode.RIDE or pose_mode == PoseMode.STAND:
+		set_expression(base_face)
+
+
+## True while the arms are off the grips (celebration or an arm gesture).
+func _arms_free() -> bool:
+	return celebrate_time > 0.0 or (reaction_time > 0.0 and _reaction_arms)
+
+
 func get_head_global_position() -> Vector3:
 	return _head.global_position
 
@@ -210,17 +283,30 @@ func update_pose(lean: float, speed_ratio: float, delta: float) -> void:
 				Vector3(0.36 + sin(_time * 9.0) * 0.08, 1.38, 0.08), Vector3.ZERO, Vector3.ZERO)
 		if celebrate_time <= 0.0:
 			set_expression(base_face)
+	elif reaction_time > 0.0:
+		reaction_time -= delta
+		if _reaction_arms:
+			_pose_reaction_arms()
+		if reaction_time <= 0.0:
+			_end_reaction()
+	else:
+		_update_blink(delta)
 	var weight := 1.0 - exp(-pose_smoothing * delta)
-	var target_roll := -clampf(lean, -1.5, 1.5) * deg_to_rad(max_side_lean_deg)
-	var target_pitch := -speed_ratio * deg_to_rad(max_forward_tuck_deg)
+	var style: Array = RIDING_STYLE[posmod(character, RIDING_STYLE.size())]
+	var bob := sin(_time * float(style[5])) * deg_to_rad(float(style[4]))
+	var target_roll := -clampf(lean * float(style[1]), -1.5, 1.5) * deg_to_rad(max_side_lean_deg) + bob * 0.4
+	var target_pitch := -speed_ratio * deg_to_rad(max_forward_tuck_deg) - deg_to_rad(float(style[0])) + bob * 0.3
 	_spine.rotation.z = lerpf(_spine.rotation.z, target_roll, weight)
 	_spine.rotation.x = lerpf(_spine.rotation.x, target_pitch, weight)
 	if celebrate_time > 0.0:
 		_chest.rotation.y = lerpf(_chest.rotation.y, 0.0, weight)
 		_neck.rotation = Vector3(-0.25, sin(_time * 3.0) * 0.2, 0.0)
 	else:
-		_neck.rotation.x = lerpf(_neck.rotation.x, 0.0, weight)
+		_neck.rotation.x = lerpf(_neck.rotation.x, deg_to_rad(float(style[3])), weight)
+		_neck.rotation.z = lerpf(_neck.rotation.z, -deg_to_rad(float(style[2])), weight)
 		_twist_with_handlebar()
+		if reaction_time > 0.0:
+			_pose_reaction_head()
 	var flutter := sin(_time * (6.0 + speed_ratio * 14.0)) * (0.2 + speed_ratio)
 	_scarf_tail.rotation.x = deg_to_rad(10.0 + speed_ratio * scarf_sway_deg + flutter * 6.0)
 	_scarf_tail.rotation.y = -lean * 0.25 + flutter * 0.08
@@ -247,7 +333,7 @@ func solve_limbs() -> void:
 		var root: Node3D = limb["root"]
 		var start := to_local(root.global_position)
 		var goal := to_local(target.global_position)
-		var free: bool = pose_mode != PoseMode.RIDE or (celebrate_time > 0.0 and limb["is_arm"])
+		var free: bool = pose_mode != PoseMode.RIDE or (_arms_free() and limb["is_arm"])
 		var pole: Vector3 = limb["free_pole"] if free else limb["pole"]
 		var l1: float = limb["l1"]
 		var l2: float = limb["l2"]
@@ -313,7 +399,7 @@ func _limb(root: Node3D, upper: Node3D, lower: Node3D, tip: Node3D, side: float,
 
 func _target_for(limb: Dictionary) -> Node3D:
 	var left: bool = limb["side"] < 0.0
-	var celebrating_arm: bool = celebrate_time > 0.0 and limb["is_arm"] and pose_mode == PoseMode.RIDE
+	var celebrating_arm: bool = _arms_free() and limb["is_arm"] and pose_mode == PoseMode.RIDE
 	if (pose_mode != PoseMode.RIDE or celebrating_arm) and _free_targets.size() == 4:
 		var index := (0 if left else 1) + (0 if limb["is_arm"] else 2)
 		return _free_targets[index]
@@ -330,6 +416,94 @@ func _segment(from: Vector3, to: Vector3, pole: Vector3) -> Transform3D:
 		x = y.cross(Vector3.FORWARD)
 	x = x.normalized()
 	return Transform3D(Basis(x, y, x.cross(y)), from)
+
+
+# --- Reactions (seated) ---------------------------------------------------------
+
+## Arm gestures in rider space. Each rider taunts in their own way.
+func _pose_reaction_arms() -> void:
+	var t := _time
+	var left := Vector3(-0.3, 0.98, -0.28)
+	var right := Vector3(0.3, 0.98, -0.28)
+	match reaction_kind:
+		&"laugh":  # holding the belly, shaking
+			var shake := absf(sin(t * 15.0)) * 0.07
+			left = Vector3(-0.2, 0.86 + shake, -0.12)
+			right = Vector3(0.2, 0.86 + shake, -0.12)
+		&"cheer":  # both fists up
+			var pump := absf(sin(t * 9.0)) * 0.16
+			left = Vector3(-0.36, 1.3 + pump, 0.05)
+			right = Vector3(0.36, 1.3 + pump, 0.05)
+		&"trick":  # arms flung wide
+			left = Vector3(-0.72, 1.12 + sin(t * 11.0) * 0.05, 0.08)
+			right = Vector3(0.72, 1.12 + sin(t * 11.0 + 1.0) * 0.05, 0.08)
+		&"skill":  # one arm thrown forward, the other steadies the bar
+			right = Vector3(0.22, 1.12, -0.62)
+		&"taunt":
+			match character:
+				1:  # Pip: shakes a fist
+					right = Vector3(0.3, 1.28 + sin(t * 18.0) * 0.07, -0.25)
+				2:  # Bramble: slow finger wag
+					right = Vector3(0.18 + sin(t * 5.0) * 0.14, 1.26, -0.2)
+				3:  # Nutmeg: hands by the ears, wiggling
+					left = Vector3(-0.3, 1.36 + sin(t * 16.0) * 0.06, 0.12)
+					right = Vector3(0.3, 1.36 + sin(t * 16.0 + PI) * 0.06, 0.12)
+				4:  # Rusty: one lazy salute
+					right = Vector3(0.24, 1.36, 0.02)
+				_:  # Zip: big wave over the head
+					right = Vector3(0.34 + sin(t * 10.0) * 0.16, 1.42, 0.05)
+	_set_free_targets(left, right, Vector3.ZERO, Vector3.ZERO)
+
+
+## Head acting for the current reaction, on top of the riding head pose.
+func _pose_reaction_head() -> void:
+	var t := _time
+	match reaction_kind:
+		&"laugh":
+			_neck.rotation.x = -0.32 + sin(t * 15.0) * 0.08
+		&"yelp":
+			_neck.rotation.x = -0.4 * clampf(reaction_time / 0.4, 0.0, 1.0)
+		&"cheer", &"trick":
+			_neck.rotation.x = -0.22
+		&"taunt":
+			_neck.rotation.y += 0.55 if character != 4 else 0.3
+			_neck.rotation.z = sin(t * 6.0) * 0.14
+		&"smug":
+			_neck.rotation.z = 0.2
+			_neck.rotation.x = 0.06 + sin(t * 9.0) * 0.05
+		&"confused":
+			_neck.rotation.z = 0.36
+			_neck.rotation.y += sin(t * 4.0) * 0.3
+		&"grumble":
+			_neck.rotation.y += sin(t * 16.0) * 0.22
+			_neck.rotation.x = 0.14
+		&"dizzy":
+			_neck.rotation.z = sin(t * 5.0) * 0.3
+			_neck.rotation.x = cos(t * 5.0) * 0.2
+		&"focus", &"skill":
+			_neck.rotation.x = 0.12
+
+
+## An occasional blink while nothing else is going on.
+func _update_blink(delta: float) -> void:
+	if _face_rest.is_empty() or expression != base_face:
+		return
+	if _blink_time > 0.0:
+		_blink_time -= delta
+		if _blink_time <= 0.0:
+			set_expression(base_face)
+		return
+	_blink_in -= delta
+	if _blink_in > 0.0:
+		return
+	_blink_in = 2.2 + fmod(_time * 7.31 + character, 2.6)
+	_blink_time = 0.11
+	for side: String in ["L", "R"]:
+		for part: String in ["Eye", "Pupil", "EyeShine"]:
+			var node := _head.get_node_or_null(part + side) as Node3D
+			if node:
+				var rest: Transform3D = _face_rest[part + side]
+				node.transform = Transform3D(Basis.from_scale(Vector3(1.0, 0.08, 1.0)) * rest.basis, rest.origin)
 
 
 # --- Off-trike poses (rider space; seated hips at HIPS_REST) ----------------

@@ -13,6 +13,7 @@ const FALLING_LOG := preload("res://scenes/props/falling_log.tscn")
 const FALLING_ROCK := preload("res://scenes/props/falling_rock.tscn")
 const ROLLING_ROCK := preload("res://scenes/props/rolling_rock.tscn")
 const SNOWMAN := preload("res://scenes/props/snowman.tscn")
+const FALLING_TREE := preload("res://scenes/props/falling_tree.tscn")
 
 ## Overridable per track in the inspector. Kinds:
 ##   crate, crate_stack, cone_line, rock
@@ -26,6 +27,11 @@ const SNOWMAN := preload("res://scenes/props/snowman.tscn")
 ##   falling_rock   timed rock dropping off a cliff on the lateral sign's side
 ##                  ({"period", "phase", "height"} optional)
 ##   rolling_rock   timed boulder rolling diagonally across ({"period", "phase"})
+##   falling_tree   timed pine that falls across the road from the side of
+##                  the lateral sign ({"period", "phase", "reach", "down"})
+##   rockslide      three falling rocks landing in different lanes, one of
+##                  which rests on the road ({"period", "phase", "rest"})
+##   barricade      a breakable wall of crates across most of the road
 ##   snowman        knockable snowman (like crates)
 ##   snowman_group  three snowmen in a row across part of the road
 ## Boulders take the theme's `road_boulder_color` ({"color"} overrides it).
@@ -105,6 +111,7 @@ func build_for_track(track: Track) -> void:
 				hazard.half_width = track.half_width_at(track.path.index_at_distance(distance))
 				hazard.period = params.get("period", hazard.period)
 				hazard.phase = params.get("phase", hazard.phase)
+				hazard.track_distance = distance
 				# Road space: centered on the road, whatever the lateral sign.
 				_place(hazard, frame.translated_local(Vector3(-lateral, 0.0, 0.0)))
 				track.mark_unsafe(distance - unsafe_margin, distance + unsafe_margin)
@@ -117,11 +124,58 @@ func build_for_track(track: Track) -> void:
 				rock.phase = params.get("phase", rock.phase)
 				rock.drop_height = params.get("height", rock.drop_height)
 				rock.random_seed = roundi(distance)
+				rock.track_distance = distance
+				rock.rest_time = params.get("rest", rock.rest_time)
+				rock.landing_share = params.get("land", rock.landing_share)
 				if track.theme:
 					rock.color = track.theme.road_boulder_color
 				_place(rock, frame.translated_local(Vector3(-lateral, 0.0, 0.0)))
 				track.mark_unsafe(distance - unsafe_margin - (rock.downhill_drift if kind == "rolling_rock" else 0.0),
 						distance + unsafe_margin + (rock.downhill_drift if kind == "rolling_rock" else 0.0))
+			"falling_tree":
+				var tree: FallingTree = FALLING_TREE.instantiate()
+				tree.track = track
+				tree.from_side = -1 if lateral < 0.0 else 1
+				tree.half_width = track.half_width_at(track.path.index_at_distance(distance))
+				tree.track_distance = distance
+				tree.period = params.get("period", tree.period)
+				tree.phase = params.get("phase", tree.phase)
+				tree.reach = params.get("reach", tree.reach)
+				tree.down_time = params.get("down", tree.down_time)
+				if track.theme and not track.theme.pine_greens.is_empty():
+					tree.leaf_color = track.theme.pine_greens[0]
+				_place(tree, frame.translated_local(Vector3(-lateral, 0.0, 0.0)))
+				track.mark_unsafe(distance - unsafe_margin - 4.0, distance + unsafe_margin + 4.0)
+			"rockslide":
+				# Three rocks 9 m apart along the road, half a second apart,
+				# landing in different lanes; the middle one stays a while.
+				var slide_side := -1 if lateral < 0.0 else 1
+				var lanes: Array[float] = [0.7, 0.1, 0.4]
+				for k in 3:
+					var along := distance + (k - 1) * 9.0
+					var slide: RollingRock = FALLING_ROCK.instantiate()
+					slide.track = track
+					slide.from_side = slide_side
+					slide.half_width = track.half_width_at(track.path.index_at_distance(along))
+					slide.period = params.get("period", 11.0)
+					slide.phase = float(params.get("phase", 0.0)) - k * 0.5
+					slide.track_distance = distance
+					slide.landing_share = lanes[k]
+					slide.rest_time = float(params.get("rest", 3.0)) if k == 1 else 0.0
+					slide.radius = 1.05 if k == 1 else 0.85
+					slide.random_seed = roundi(along)
+					slide.rumble = k == 0
+					if track.theme:
+						slide.color = track.theme.road_boulder_color
+					_place(slide, track.path.get_frame(track.path.index_at_distance(along)))
+				track.mark_unsafe(distance - unsafe_margin - 9.0, distance + unsafe_margin + 9.0)
+			"barricade":
+				var usable := track.half_width_at(track.path.index_at_distance(distance)) - 2.6
+				var across := -usable
+				while across <= usable + 0.01:
+					_spawn(CRATE, frame, Vector3(across - lateral, 0.55, 0.0))
+					_spawn(CRATE, frame, Vector3(across - lateral, 1.6, 0.0))
+					across += 1.08
 			"snowman":
 				_spawn(SNOWMAN, frame, Vector3(0.0, 0.6, 0.0))
 			"snowman_group":

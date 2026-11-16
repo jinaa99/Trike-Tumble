@@ -15,6 +15,45 @@ nobody has tried it, not that it is broken.
 | **Human playtests** | No human has timed or judged the three maps, the items balance, the sounds or the controls on a real keyboard/gamepad. |
 | **Weaker GPUs** | Only measured on an Apple M4 (120 fps). Snow Slide draws ~1 M primitives. |
 
+## Fun-First Gameplay V2 (2026-11-13/14): unverified or unfinished
+
+Everything listed as built in `docs/DEVELOPMENT_PROGRESS.md` has automated
+tests. What those tests cannot show:
+
+- **Fun is unverified.** No human has played the skills, tricks, slipstream,
+  tree-falls, the new mud and ice, or read the awards. Checklist:
+  `docs/FUN_FIRST_PLAYTEST.md`.
+- **The new sounds have not been listened to.** Hub whirr, freewheel tick,
+  sleeve hiss, hazard, skill and voice sounds are synthesized and only
+  checked for timing, level and clipping in headless tests.
+- **Characters are the same code-sculpted rigs.** Blender is not installed
+  on this Mac; no new models or rigs were made. Added instead: reaction
+  faces and gestures (laugh, yelp, cheer, smug, confused, grumble, focus,
+  trick pose), a blink, one taunt per rider, a voice pitch per rider, and a
+  riding posture per rider (`Rider.RIDING_STYLE`: Pip hunched and glaring,
+  Rusty laid back with a lolling head, Nutmeg fidgety, Zip bouncy, Bramble
+  calm and upright).
+  Silhouettes and accessories are unchanged from Visual Overhaul V2.
+- **Rider choice in the lobby** works offline and online (each seat picks a
+  rider; bots swap, another human's rider can't be taken). Tested with
+  unit tests and the multi-process network suite, not by people on two
+  machines.
+- **Per-map music** is the same race track played at a different speed and
+  level per map, not separate tracks.
+- **Unused audio files:** the engine recordings and `turbo_boost.wav` stay
+  in `assets/audio` (credited) but are no longer used. Safe to delete if
+  nothing else wants them.
+- **Hazards and AI:** the hard AI finishes every map with no resets at the
+  authored hazard phases (seed 0) and with the seeds tried in
+  `tests/tools/ai_probe.tscn`; a random seed can still line up a tree-fall
+  with an AI badly (it then falls off and recovers, which is allowed, not a
+  reset).
+- **Performance** (re-measured 2026-11-14, Apple M4, 5 racers): 120 fps
+  average on every measured section of all three maps; worst single frame
+  34 ms (Forest start, all five racers together). Primitive counts are
+  higher than the Visual Overhaul note (Snow Slide start 2.8 M, Forest
+  2.0 M); weaker GPUs are still untested.
+
 ## Visual Overhaul V2 (2026-11-12): what is unverified or unfinished
 
 - **Audio has not been listened to.** The recorded engine, surface, rider

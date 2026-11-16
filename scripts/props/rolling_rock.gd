@@ -35,6 +35,17 @@ enum Mode { FALL, ROLL }
 @export var warning_time := 1.6
 ## ROLL: how far (m) the boulder drifts downhill while crossing.
 @export var downhill_drift := 9.0
+## FALL: where it lands, as a share of the half width from its own side
+## (0.35 = a third of the way in; 0 = the middle; negative = the far lane).
+@export var landing_share := 0.35
+## FALL: seconds the rock sits where it landed before rolling off (rubble
+## that blocks a lane for a while). 0 = it rolls on at once.
+@export var rest_time := 0.0
+## Set by TrackProps: distance along the track (seeds the cycle).
+@export var track_distance := 0.0
+## Plays the warning crack and dust when the cycle starts (one rock of a
+## rockslide does it for the group).
+@export var rumble := true
 @export var color := Color(0.74, 0.42, 0.3)
 @export var random_seed := 5
 
@@ -45,6 +56,8 @@ var phase_state := 0
 var _rest := Transform3D.IDENTITY
 var _mesh: MeshInstance3D
 var _shadow: MeshInstance3D
+var _warned := false
+var _landed := false
 
 
 func _ready() -> void:
@@ -82,7 +95,23 @@ func _ready() -> void:
 
 func _physics_process(_delta: float) -> void:
 	var clock := track.hazard_time if track else 0.0
-	_apply(-1.0 if clock <= 0.0 else fposmod(clock + phase, period))
+	var shift := track.hazard_phase(track_distance, period) if track else 0.0
+	var t := -1.0 if clock <= 0.0 else fposmod(clock + phase + shift, period)
+	_apply(t)
+	# Warning: a crack and dust from the cliff when the cycle starts, a thud
+	# when the rock lands (from the shared clock: the same everywhere).
+	var warned := t >= 0.0 and t < 0.5
+	if warned and not _warned and rumble and is_inside_tree():
+		var from := global_transform.origin
+		SoundPlayer.play_at(self, &"rock_crack", from, 4.0, randf_range(0.9, 1.1), 26.0)
+		if mode == Mode.FALL:
+			ItemVisuals.burst(get_parent(), from, Color(0.8, 0.62, 0.48, 0.7), 10, 2.6, 0.9)
+	_warned = warned
+	var landed := mode == Mode.FALL and t >= _lead_time() and t < _lead_time() + 0.5
+	if landed and not _landed and is_inside_tree():
+		SoundPlayer.play_at(self, &"rock_thud", global_position, 4.0, randf_range(0.9, 1.1), 24.0)
+		ItemVisuals.burst(get_parent(), global_position - Vector3.UP * radius * 0.8, Color(0.8, 0.62, 0.48, 0.75), 10, 2.2, 0.5)
+	_landed = landed
 
 
 func _apply(t: float) -> void:
@@ -102,7 +131,7 @@ func _apply(t: float) -> void:
 
 ## Cycle length while the hazard is active (the rest of the period it waits).
 func active_time() -> float:
-	return _lead_time() + _cross_time() + 1.4
+	return _lead_time() + rest_time + _cross_time() + 1.4
 
 
 ## Rock transform in road space at cycle time t (t < 0: waiting).
@@ -112,8 +141,15 @@ func pose(t: float) -> Transform3D:
 	var lead := _lead_time()
 	var cross := _cross_time()
 	phase_state = 0
-	if t < 0.0 or t > lead + cross + 1.4:
+	if t < 0.0 or t > lead + rest_time + cross + 1.4:
 		return Transform3D(Basis.IDENTITY, Vector3(start_x, -6.0, 0.0))
+	if rest_time > 0.0 and t >= lead:
+		if t < lead + rest_time:
+			# Resting where it landed: one settling bounce, then still.
+			phase_state = 2
+			var settle := maxf(sin(clampf((t - lead) / 0.4, 0.0, 1.0) * PI), 0.0) * 0.5
+			return Transform3D(Basis(Vector3.FORWARD, (_landing_x() - start_x) / radius * side), Vector3(_landing_x(), radius + settle, 0.0))
+		t -= rest_time
 	var x := start_x
 	var y := radius
 	var z := 0.0
@@ -150,7 +186,7 @@ func pose(t: float) -> Transform3D:
 ## Cycle time at which the rock crosses the middle of the road (tests, tools).
 func mid_crossing_time() -> float:
 	var to_center := absf(_landing_x()) / roll_speed
-	return _lead_time() + to_center
+	return _lead_time() + rest_time + to_center
 
 
 ## True while the rock is on (or about to land on) the road.
@@ -169,7 +205,7 @@ func _cross_time() -> float:
 ## FALL: lands a third of the way into the road from its side.
 func _landing_x() -> float:
 	if mode == Mode.FALL:
-		return float(from_side) * half_width * 0.35
+		return float(from_side) * half_width * landing_share
 	return float(from_side) * half_width
 
 

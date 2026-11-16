@@ -3,7 +3,8 @@ extends RefCounted
 ## Every sound in the game by name. Vehicle, surface, rider and item sounds
 ## are recorded CC0 audio (res://assets/audio, see docs/ASSET_CREDITS.md and
 ## docs/AUDIO_DESIGN.md); a name can have several takes, picked at random.
-## Race jingles and UI clicks are synthesized once on first use (SoundSynth).
+## The trike's wheel sounds, skill and hazard sounds, voice barks, race
+## jingles and UI clicks are synthesized once on first use (SoundSynth).
 ## Components play these through their own AudioStreamPlayer(3D)s on the SFX
 ## or UI bus.
 ##
@@ -16,10 +17,8 @@ const UI_BUS := &"UI"
 const AUDIO := "res://assets/audio/"
 ## name -> recorded takes (paths under AUDIO, without ".wav").
 const FILES := {
-	# Engine layers (TrikeAudio crossfades them by RPM) and tyre/surface loops.
-	&"engine_idle": ["engine/engine_idle"], &"engine_low": ["engine/engine_low"], &"engine_mid": ["engine/engine_mid"],
-	&"engine_high": ["engine/engine_high"], &"engine_overrun": ["engine/engine_overrun"], &"engine_blip": ["engine/engine_blip"],
-	&"engine_loop": ["engine/engine_mid"],
+	# Tyre and surface loops (TrikeAudio). The wheel sounds themselves (hub
+	# whirr, freewheel tick, sleeve hiss) are synthesized below: no engine.
 	&"skid_loop": ["vehicles/skid_loop"], &"wind_loop": ["environment/wind_loop"],
 	&"roll_dirt": ["vehicles/roll_dirt"], &"roll_mud": ["vehicles/roll_mud"], &"roll_wood": ["vehicles/roll_wood"],
 	&"roll_snow": ["vehicles/roll_snow"], &"roll_ice": ["vehicles/roll_ice"], &"roll_rattle": ["vehicles/roll_rattle"],
@@ -36,7 +35,7 @@ const FILES := {
 	# Items.
 	&"item_pickup": ["items/item_pickup"], &"item_throw": ["items/item_throw"], &"item_splat": ["items/mud_bomb_splat"],
 	&"item_punch": ["items/spring_punch", "items/spring_bounce"], &"item_slip": ["items/banana_slip"],
-	&"item_turbo": ["items/turbo_boost"], &"item_denied": ["items/item_denied"],
+	&"item_denied": ["items/item_denied"],
 }
 
 static var _cache := {}
@@ -65,7 +64,7 @@ static func use(sound: StringName) -> AudioStreamWAV:
 	return stream
 
 
-## Seamlessly looping copy of a recorded sound (engine layers, tyre loops).
+## Seamlessly looping copy of a sound (tyre loops, wheel loops).
 static func get_loop(sound: StringName) -> AudioStreamWAV:
 	if not _loops.has(sound):
 		var loop := get_stream(sound).duplicate() as AudioStreamWAV
@@ -100,8 +99,14 @@ static func _build(sound: StringName) -> AudioStreamWAV:
 		push_warning("SoundBank: missing audio files for %s, using the synthesized fallback" % sound)
 	match sound:
 		# --- Vehicle -------------------------------------------------------
-		&"engine_loop":  # buzzy little motor; pitch follows speed
-			return SoundSynth.loop(92.0, 46, 0.9, 0.12, 0.25, 0.42, 11)
+		&"hub_whirr":  # bearings and spokes: an airy whirr, pitch follows wheel speed
+			return SoundSynth.loop(172.0, 344, 0.12, 0.6, 0.42, 0.3, 11)
+		&"freewheel_tick":  # ratchet pawls, 16 clicks a second at pitch 1
+			return SoundSynth.ticks(16.0, 32, 3100.0, 0.5, 31)
+		&"sleeve_slide":  # plastic rear sleeves skating sideways
+			return SoundSynth.loop(520.0, 1040, 0.05, 0.94, 0.5, 0.36, 32)
+		&"push_kick":  # a foot scuffing off the ground
+			return SoundSynth.mix([SoundSynth.burst(0.14, 0.45, 0.45, 95.0, 33), SoundSynth.burst(0.09, 0.8, 0.2, 0.0, 34)])
 		&"skid_loop":  # tyre scrub / drift hiss
 			return SoundSynth.loop(310.0, 155, 0.2, 0.85, 0.75, 0.45, 12)
 		&"wind_loop":  # speed rush
@@ -141,10 +146,73 @@ static func _build(sound: StringName) -> AudioStreamWAV:
 			return SoundSynth.sweep(160.0, 520.0, 0.22, 0.55, 0.15, 0.0, 27)
 		&"item_slip":
 			return SoundSynth.sweep(900.0, 250.0, 0.35, 0.4, 0.2, 6.0, 28)
-		&"item_turbo":
-			return SoundSynth.sweep(200.0, 1400.0, 0.5, 0.45, 0.5, 0.0, 29)
+		&"item_turbo":  # a bottle fizzing off: a rising whoosh, no engine
+			return SoundSynth.mix([SoundSynth.sweep(220.0, 1500.0, 0.55, 0.42, 0.72, 0.0, 29),
+					SoundSynth.burst(0.5, 0.85, 0.22, 0.0, 30)])
 		&"item_denied":
 			return SoundSynth.melody([[330.0, 0.08], [247.0, 0.12]], 0.4)
+		# --- Skills and style (Fun-First V2) -----------------------------------
+		&"skill_slingshot":  # a rising whoosh
+			return SoundSynth.mix([SoundSynth.sweep(180.0, 1500.0, 0.55, 0.4, 0.75, 0.0, 41),
+					SoundSynth.sweep(600.0, 1800.0, 0.3, 0.2, 0.1, 0.0, 42)])
+		&"skill_bonk":  # spring twang + thump
+			return SoundSynth.mix([SoundSynth.sweep(140.0, 620.0, 0.26, 0.5, 0.05, 22.0, 43),
+					SoundSynth.burst(0.2, 0.3, 0.6, 85.0, 44)])
+		&"skill_snare_drop":  # woody creak
+			return SoundSynth.sweep(210.0, 120.0, 0.32, 0.4, 0.35, 16.0, 45)
+		&"skill_snare_hit":  # roots snap shut
+			return SoundSynth.mix([SoundSynth.burst(0.18, 0.5, 0.6, 95.0, 46),
+					SoundSynth.sweep(520.0, 160.0, 0.3, 0.35, 0.3, 12.0, 47)])
+		&"skill_fake_drop":
+			return SoundSynth.melody([[784.0, 0.07], [659.0, 0.07], [523.0, 0.12]], 0.4)
+		&"skill_fake_hit":  # party horn
+			return SoundSynth.mix([SoundSynth.sweep(420.0, 880.0, 0.28, 0.4, 0.05, 30.0, 48),
+					SoundSynth.melody([[0.0, 0.2], [1319.0, 0.06], [1047.0, 0.06], [784.0, 0.14]], 0.3)])
+		&"skill_shield_up":  # soft fwoomp
+			return SoundSynth.mix([SoundSynth.sweep(120.0, 360.0, 0.3, 0.45, 0.25, 0.0, 49),
+					SoundSynth.melody([[0.0, 0.12], [659.0, 0.1], [988.0, 0.2]], 0.22, 0.1)])
+		&"skill_shield_pop":  # pillow thump and a boing
+			return SoundSynth.mix([SoundSynth.burst(0.22, 0.25, 0.7, 75.0, 50),
+					SoundSynth.sweep(260.0, 700.0, 0.28, 0.35, 0.0, 18.0, 51)])
+		&"style_near_miss":
+			return SoundSynth.melody([[1175.0, 0.05], [1568.0, 0.05], [2093.0, 0.14]], 0.34, 0.15, 1.2)
+		&"style_perfect":
+			return SoundSynth.melody([[1047.0, 0.06], [1319.0, 0.06], [1568.0, 0.06], [2093.0, 0.22]], 0.38, 0.2, 0.9)
+		&"style_trick":
+			return SoundSynth.melody([[1319.0, 0.05], [1760.0, 0.12]], 0.3, 0.15, 1.2)
+		&"style_rough":
+			return SoundSynth.melody([[294.0, 0.09], [220.0, 0.16]], 0.38, 0.4)
+		&"draft_on":
+			return SoundSynth.sweep(500.0, 1100.0, 0.3, 0.25, 0.7, 0.0, 52)
+		# --- Hazards -------------------------------------------------------------
+		&"tree_rustle":  # leaves and startled wings
+			return SoundSynth.mix([SoundSynth.burst(0.9, 0.75, 0.35, 0.0, 61), SoundSynth.burst(0.5, 0.9, 0.25, 0.0, 62),
+					SoundSynth.sweep(1800.0, 2600.0, 0.25, 0.12, 0.2, 30.0, 63)])
+		&"tree_crack":  # wood splitting
+			return SoundSynth.mix([SoundSynth.burst(0.12, 0.9, 0.9, 140.0, 64), SoundSynth.sweep(260.0, 90.0, 0.7, 0.45, 0.45, 34.0, 65),
+					SoundSynth.burst(0.5, 0.6, 0.4, 0.0, 66)])
+		&"tree_crash":  # trunk hits the road
+			return SoundSynth.mix([SoundSynth.burst(0.55, 0.22, 0.95, 48.0, 67), SoundSynth.burst(0.7, 0.8, 0.35, 0.0, 68)])
+		&"rock_crack":
+			return SoundSynth.mix([SoundSynth.burst(0.1, 0.85, 0.85, 180.0, 69), SoundSynth.burst(0.8, 0.35, 0.45, 60.0, 70)])
+		&"rock_thud":
+			return SoundSynth.mix([SoundSynth.burst(0.4, 0.2, 0.95, 42.0, 71), SoundSynth.burst(0.3, 0.6, 0.3, 0.0, 72)])
+		&"log_rumble":
+			return SoundSynth.mix([SoundSynth.burst(0.6, 0.18, 0.7, 70.0, 73), SoundSynth.sweep(180.0, 110.0, 0.5, 0.25, 0.3, 20.0, 74)])
+		# --- Voice barks (pitched per character by RiderAudio) -----------------
+		&"bark_laugh":  # "ha-ha-ha-ha"
+			return SoundSynth.mix([SoundSynth.melody([[620.0, 0.09], [0.0, 0.03], [700.0, 0.09], [0.0, 0.03], [640.0, 0.09],
+					[0.0, 0.03], [560.0, 0.14]], 0.4, 0.55, 1.6), SoundSynth.sweep(700.0, 520.0, 0.5, 0.12, 0.2, 9.0, 53)])
+		&"bark_taunt":  # "nyah-nyah"
+			return SoundSynth.melody([[660.0, 0.12], [520.0, 0.12], [700.0, 0.12], [520.0, 0.2]], 0.4, 0.6, 1.0)
+		&"bark_heh":
+			return SoundSynth.melody([[480.0, 0.08], [0.0, 0.03], [420.0, 0.14]], 0.34, 0.5, 1.4)
+		&"bark_huh":  # rising "huh?"
+			return SoundSynth.sweep(360.0, 760.0, 0.26, 0.4, 0.04, 6.0, 54)
+		&"bark_grr":
+			return SoundSynth.sweep(240.0, 200.0, 0.35, 0.34, 0.12, 26.0, 55)
+		&"bark_hup":
+			return SoundSynth.sweep(420.0, 620.0, 0.14, 0.4, 0.05, 0.0, 56)
 		# --- Race ------------------------------------------------------------
 		&"countdown":
 			return SoundSynth.melody([[440.0, 0.18]], 0.45, 0.4, 0.6)

@@ -8,8 +8,8 @@ extends RefCounted
 ##
 ## Adds: knobby front tread, wire spokes, hub flanges, valve stem, brake disc
 ## and caliper, fork brace, axle nuts, headlight bezel, plate bolts, brake
-## levers, bar ends, crossbar pad, a small finned engine with air filter and
-## pull-start cover, twin exhausts ending where the boost flames appear,
+## levers, bar ends, crossbar pad, a drink bottle in a cage, the freewheel
+## hub housing, two turbo-bottle canisters ending where the boost flames appear,
 ## chain guard and sprocket, axle bearing blocks, side pods, seat trim,
 ## footpeg treads, rear tyre grooves, lug nuts and frame bolts.
 
@@ -255,18 +255,22 @@ static func _rear_nuts() -> Array:
 	return parts
 
 
+## Fun-First V2: no engine on a downhill trike. The "DetailEngine" node
+## (name kept: scripts and tests reach for it) now holds a drink bottle in a
+## cage on the down tube, the freewheel hub housing and a chain tensioner.
 static func _engine() -> Array:
 	var parts := []
 	var lean := Vector3(-14, 0, 0)
-	# Crankcase, finned cylinder, head.
-	parts.append([MeshKit.rounded_box(Vector3(0.2, 0.15, 0.24), 0.03), MeshKit.at(Vector3(0, -0.04, 0.0))])
-	for k in 6:
-		parts.append([MeshKit.rounded_box(Vector3(0.17, 0.012, 0.16), 0.005), MeshKit.at(Vector3(0, 0.045 + k * 0.021, -0.02 - k * 0.005), lean)])
-	parts.append([MeshKit.cylinder(0.06, 0.062, 0.14, 10), MeshKit.at(Vector3(0, 0.1, -0.03), lean)])
-	parts.append([MeshKit.rounded_box(Vector3(0.15, 0.03, 0.14), 0.012), MeshKit.at(Vector3(0, 0.178, -0.05), lean)])
-	# Pull-start cover (right) and carburettor stub (left).
-	parts.append([MeshKit.cylinder(0.075, 0.085, 0.03, 14), MeshKit.at(Vector3(0.112, -0.04, 0.0), X_AXIS)])
-	parts.append([MeshKit.cylinder(0.022, 0.022, 0.07, 8), MeshKit.at(Vector3(-0.1, 0.09, 0.03), X_AXIS)])
+	# Bottle cage: two bent straps and a base.
+	parts.append([MeshKit.rounded_box(Vector3(0.12, 0.02, 0.1), 0.008), MeshKit.at(Vector3(0, -0.06, 0.0), lean)])
+	for k in 2:
+		parts.append([MeshKit.torus(0.052, 0.062, 14, 4), MeshKit.at(Vector3(0, 0.0 + k * 0.1, -0.012 - k * 0.025), Vector3(76, 0, 0))])
+	# The bottle itself and its cap.
+	parts.append([MeshKit.cylinder(0.048, 0.05, 0.2, 12), MeshKit.at(Vector3(0, 0.05, -0.02), lean)])
+	parts.append([MeshKit.cylinder(0.022, 0.03, 0.04, 10), MeshKit.at(Vector3(0, 0.17, -0.05), lean)])
+	# Freewheel hub housing on the right of the rear axle, chain tensioner.
+	parts.append([MeshKit.cylinder(0.07, 0.075, 0.05, 16), MeshKit.at(Vector3(0.112, -0.2, 0.6), X_AXIS)])
+	parts.append([MeshKit.cylinder(0.03, 0.03, 0.03, 10), MeshKit.at(Vector3(-0.17, -0.12, 0.42), X_AXIS)])
 	# Sprocket on the axle.
 	parts.append([MeshKit.cylinder(0.085, 0.085, 0.012, 16), MeshKit.at(Vector3(-0.2, -0.2, 0.6), X_AXIS)])
 	return parts
@@ -274,15 +278,16 @@ static func _engine() -> Array:
 
 static func _chassis_chrome() -> Array:
 	var parts := []
-	# Twin exhausts: down from the head, back under the seat, up to the
-	# megaphone tips where the boost flames appear.
+	# Twin "turbo bottle" canisters strapped behind the seat (Fun-First V2:
+	# replaced the exhaust pipes); their nozzles are where the boost flames
+	# appear.
 	for side: float in [-1.0, 1.0]:
 		var x := side * 0.16
-		parts.append([MeshKit.capsule(0.022, 0.2, 8), MeshKit.at(Vector3(side * 0.1, 0.07, -0.1), Vector3(40, 0, side * -35.0))])
-		parts.append([MeshKit.capsule(0.022, 0.78, 8), MeshKit.at(Vector3(x, -0.07, 0.3), Vector3(90, 0, 0))])
-		parts.append([MeshKit.capsule(0.024, 0.2, 8), MeshKit.at(Vector3(x, -0.045, 0.74), Vector3(72, 0, 0))])
-		parts.append([MeshKit.cylinder(0.04, 0.05, 0.22, 12), MeshKit.at(Vector3(x, -0.02, 0.9), Vector3(-90, 0, 0))])
-		parts.append([MeshKit.torus(0.035, 0.056, 12, 5), MeshKit.at(Vector3(x, -0.02, 1.01), Vector3(90, 0, 0))])
+		parts.append([MeshKit.capsule(0.05, 0.3, 10), MeshKit.at(Vector3(x, -0.02, 0.74), Vector3(90, 0, 0))])
+		parts.append([MeshKit.torus(0.05, 0.06, 12, 4), MeshKit.at(Vector3(x, -0.02, 0.68), Vector3(90, 0, 0))])
+		parts.append([MeshKit.torus(0.05, 0.06, 12, 4), MeshKit.at(Vector3(x, -0.02, 0.8), Vector3(90, 0, 0))])
+		parts.append([MeshKit.cylinder(0.025, 0.04, 0.12, 10), MeshKit.at(Vector3(x, -0.02, 0.95), Vector3(-90, 0, 0))])
+		parts.append([MeshKit.torus(0.03, 0.045, 12, 4), MeshKit.at(Vector3(x, -0.02, 1.01), Vector3(90, 0, 0))])
 	# Frame bolts.
 	for at: Vector3 in [Vector3(0.06, 0.6, -0.95), Vector3(-0.06, 0.6, -0.95), Vector3(0.06, 0.66, -0.95), Vector3(-0.06, 0.66, -0.95)]:
 		parts.append(_bolt(at, X_AXIS))

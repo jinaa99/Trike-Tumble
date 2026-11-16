@@ -65,6 +65,20 @@ func set_local_ready(ready: bool) -> void:
 			lobby.set_ready(me.id, ready)
 
 
+## Rider choice for the local player (clients ask the host). Also kept as
+## the preference for the next lobby.
+func set_local_character(character: int) -> void:
+	GameSettings.set_character(character)
+	if lobby == null:
+		return
+	if mode == Mode.CLIENT:
+		Net.request_set_character(character)
+	else:
+		var me := lobby.get_local_player()
+		if me:
+			lobby.set_character(me.id, character)
+
+
 ## Solo race: you plus AI, nothing networked.
 func create_solo_lobby(player_name: String) -> Lobby:
 	_new_lobby(Mode.SOLO, Lobby.ABSOLUTE_MAX_PLAYERS, player_name)
@@ -107,7 +121,7 @@ func has_lobby() -> bool:
 
 ## Everything the race scene needs: {"player_name", "map_id",
 ## "ai": [{"name", "difficulty"}], "online", "racers"} (lobby order).
-## "racers" (grid order): [{"id", "owner", "name", "ai", "difficulty"}];
+## "racers" (grid order): [{"id", "owner", "name", "ai", "difficulty", "character"}];
 ## online the host sends this list to everyone.
 func get_race_setup() -> Dictionary:
 	var ai: Array[Dictionary] = []
@@ -126,7 +140,7 @@ func build_racer_list() -> Array:
 	var list: Array = []
 	for player in lobby.players:
 		list.append({"id": player.id, "owner": 1 if player.is_ai else player.id, "name": player.display_name,
-				"ai": player.is_ai, "difficulty": int(player.ai_difficulty)})
+				"ai": player.is_ai, "difficulty": int(player.ai_difficulty), "character": player.character})
 	return list
 
 
@@ -158,6 +172,10 @@ func _on_joined() -> void:
 	lobby = Net.lobby
 	lobby.changed.connect(func() -> void: lobby_changed.emit())
 	lobby_changed.emit()
+	# Ask for the rider we like (the host swaps if someone already rides it).
+	var me := lobby.get_local_player()
+	if me and me.character != GameSettings.character:
+		Net.request_set_character(GameSettings.character)
 
 
 func _on_race_requested(scene_path: String) -> void:
@@ -180,6 +198,6 @@ func _new_lobby(new_mode: Mode, max_players: int, player_name: String) -> void:
 	lobby = Lobby.new()
 	lobby.max_players = max_players
 	lobby.map_id = MapCatalog.DEFAULT_MAP
-	lobby.add_human(player_name, true, true)
+	lobby.add_human(player_name, true, true, -1, GameSettings.character)
 	lobby.changed.connect(func() -> void: lobby_changed.emit())
 	lobby_changed.emit()

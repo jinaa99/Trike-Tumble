@@ -326,6 +326,18 @@ func _test_start_race_and_return_to_lobby() -> void:
 	await _frames()
 	GameSession.lobby.cycle_ai_difficulty(GameSession.lobby.players[1].id)  # Pip: Medium → Hard
 	var screen: LobbyMenuScreen = menu.get_screen(&"lobby")
+	await _frames()
+	var rider_button := screen.find_child("Rider%d" % GameSession.lobby.get_local_player().id, true, false) as Button
+	_check(rider_button != null and not rider_button.disabled and rider_button.text.begins_with("Zip"),
+			"the lobby shows each racer's rider; yours can be changed", "(%s)" % (rider_button.text if rider_button else "missing"))
+	# Ride Nutmeg (index 3): the bot that had Nutmeg takes Zip, and is renamed.
+	GameSession.set_local_character(3)
+	await _frames()
+	var lobby_names: Array[String] = []
+	for player in GameSession.lobby.players:
+		lobby_names.append(player.display_name)
+	_check(GameSession.lobby.get_local_player().character == 3 and lobby_names.slice(1) == ["Pip", "Bramble", "Zip"],
+			"picking a taken rider swaps it with that bot", "(%s)" % ", ".join(lobby_names))
 	_scene_requests.clear()
 	screen.start_button.pressed.emit()
 	_check(_scene_requests == ["res://scenes/main/forest_rush.tscn"] and GameSession.race_active,
@@ -340,9 +352,12 @@ func _test_start_race_and_return_to_lobby() -> void:
 	for racer in race.racers.get_racers():
 		names.append(racer.display_name)
 	var pip := race.racers.get_racer(2)
-	_check(race.from_lobby and names == [GameSettings.player_name, "Pip", "Bramble", "Nutmeg"]
+	_check(race.from_lobby and names == [GameSettings.player_name, "Pip", "Bramble", "Zip"]
 			and pip.get_ai_driver().config.difficulty == AIDriverConfig.Difficulty.HARD,
 			"the race uses the lobby's players, names and AI difficulties", "(%s)" % ", ".join(names))
+	_check(race.get_local_racer().character == 3 and race.racers.get_racer(4).character == 0
+			and race.hud.get_skill_text() == "FAKE BOX", "the race uses the lobby's riders (you ride Nutmeg, the last bot Zip)")
+	GameSettings.character = 0
 	_check(race.race.get_state() == RaceStateMachine.State.LOBBY and race.hud.get_race_state_text() == "GET READY",
 			"race starts in its LOBBY state with the countdown coming")
 	_scene_requests.clear()

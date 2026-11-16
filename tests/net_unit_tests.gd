@@ -53,6 +53,26 @@ func _test_lobby_sync_data() -> void:
 			"the mirror marks the client's own seat")
 	var ai := mirror.players[2]
 	_check(ai.is_ai and ai.ai_difficulty == AIDriverConfig.Difficulty.HARD and ai.is_ready, "AI seats sync with difficulty")
+	# Riders (Fun-First V2): unique per lobby, synced, swapped on request.
+	var riders := {}
+	for player in host.players:
+		riders[player.character] = true
+	_check(riders.size() == 3 and me.character == 0 and host.players[2].display_name == SkillKind.character_name(host.players[2].character),
+			"every seat rides a different rider; a bot is named after its rider", "(%s)" % str(riders.keys()))
+	host.set_character(friend.id, host.players[2].character)
+	var bot := host.players[2]
+	_check(friend.character == 2 and bot.character == 1 and bot.display_name == "Pip",
+			"picking a taken rider swaps with its rider (the bot is renamed)", "(friend %d, bot %d %s)" % [friend.character, bot.character, bot.display_name])
+	host.set_character(friend.id, 99)
+	_check(friend.character == 2, "an impossible rider is ignored")
+	_check(not host.set_character(friend.id, me.character) and friend.character == 2 and me.character == 0,
+			"a rider another player rides can't be taken (only bots swap)")
+	mirror.apply_dict(host.to_dict(), 123456)
+	_check(mirror.get_local_player().character == 2 and mirror.players[2].character == 1, "riders sync to the clients' mirror")
+	var preferred := Lobby.new()
+	var first := preferred.add_human("A", true, true, -1, 3)
+	var second := preferred.add_human("B", false, false, -1, 3)
+	_check(first.character == 3 and second.character != 3, "a preferred rider is used when free, else the next free one")
 
 
 func _snapshot(t: float, position := Vector3.ZERO, state := 0) -> Array:

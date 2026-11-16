@@ -99,3 +99,20 @@ enum Difficulty { EASY, MEDIUM, HARD }
 @export var item_punch_range := 6.5
 ## Uses a turbo when the road ahead is this straight (curvature, 1/m).
 @export var item_turbo_max_curvature := 0.012
+
+@export_group("Skills and tricks")
+## How eagerly the AI presses [skill] when its tactics say yes: roughly the
+## chance per half second.
+@export_range(0.0, 1.0) var skill_use_chance := 0.5
+## Traps are dropped for a rival this close behind (m); the shield goes up
+## for one this close behind (or closer beside).
+@export var skill_trap_range := 22.0
+@export var skill_shield_range := 10.0
+## Chance per jump of trying an air trick (only when the air time fits).
+@export_range(0.0, 1.0) var trick_chance := 0.4
+## Spare air time (x trick duration) the AI wants before it starts a trick.
+@export var trick_safety := 1.3
+## Share of the normal cornering force the AI plans with on ice.
+@export_range(0.1, 1.0) var ice_corner_factor := 0.4
+## Share of the planning deceleration the AI counts on while braking on ice.
+@export_range(0.1, 1.0) var ice_brake_factor := 0.45

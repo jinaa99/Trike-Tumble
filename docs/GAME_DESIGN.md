@@ -370,3 +370,25 @@ mounds, snowy boulders, white peaks, a frozen lake, a pale winter sky.
 | Turn at speed | ~70° per second |
 | Drift angle | 25–45° |
 | Test track run (autopilot) | ~49 s |
+
+## Fun-First Gameplay V2 (2026-11-13/14)
+
+The game now aims for "chaos + skill + pranks + personality". Full design:
+`docs/FUN_FIRST_GAMEPLAY_V2.md`. In short:
+
+- Every rider has a **signature skill on F**: Zip Slingshot, Pip Spring
+  Bonk, Bramble Root Snare, Nutmeg Fake Box, Rusty Pillow Shield
+  (`docs/SKILL_DESIGN.md`).
+- **Drift mastery:** a PERFECT release window after each boost tier.
+- **Slipstream** behind rivals, **near-miss** rewards.
+- **Air tricks on Shift**, graded **landings** (PERFECT / GOOD / POOR / BAD).
+- Maps: **falling trees** and much more mud on Forest Rush, **rockslides**
+  and resting rubble on Rocky Canyon, **real ice** (about 13 % of Snow Slide's surface)
+  with a frozen lake (`docs/MAP_GAMEPLAY_V2.md`).
+- Riders **react** (laugh, yelp, cheer, smug, confused), **taunt on C**,
+  have their own voice pitch.
+- The trike **sounds like wheels**, not an engine (`docs/AUDIO_DESIGN_V2.md`),
+  and no longer shows one: a drink bottle under the frame and two
+  "turbo bottle" canisters at the back (where the boost flames come out).
+- **Pick your rider** in the lobby; every seat rides someone different.
+- **Awards** on the results screen from what really happened.

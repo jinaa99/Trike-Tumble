@@ -118,6 +118,9 @@ func _load_race() -> RaceSession:
 		await _tree().process_frame
 	var main: RaceSession = (spec["race"] as PackedScene).instantiate()
 	main.auto_start = false
+	# The authored hazard phases, so every run of these tests sees the same
+	# rocks, logs and trees at the same race time.
+	main.fixed_hazard_seed = 0
 	runner.add_child(main)
 	main.trike.input_source = null
 	main.rider.input_source = null
@@ -152,7 +155,7 @@ func _solid_props(track: Track) -> Array[Node3D]:
 	var found: Array[Node3D] = []
 	for child in track.get_node("Props").get_children():
 		# Props a racer must not be put down next to.
-		if child is RoadBoulder or child is RoadTree or child is FallingLog or child is RollingRock or child is Ramp:
+		if child is RoadBoulder or child is RoadTree or child is FallingLog or child is RollingRock or child is Ramp or child is FallingTree:
 			found.append(child)
 	return found
 
@@ -335,6 +338,53 @@ func _test_forest_sections(track: Track) -> void:
 			func(n: Node) -> bool: return n.name.begins_with("Overlook")), "mountain overlooks", "(%d)" % overlooks.size())
 	var trees := _decor_count(track, "Trees_pine") + _decor_count(track, "FarForest")
 	_check(trees > 3000, "pine forests", "(%d pines)" % trees)
+	# Fun-First V2: tree-falls, more mud with a clean line beside it, more bends.
+	var falls: Array[FallingTree] = []
+	for child in track.get_node("Props").get_children():
+		if child is FallingTree:
+			falls.append(child)
+	var sides := {}
+	var partial := 0
+	var most := 0
+	var periods := {}
+	for tree in falls:
+		sides[tree.from_side] = true
+		periods[tree.period] = true
+		var share := tree.blocked_width / (tree.half_width * 2.0)
+		if share <= 0.55:
+			partial += 1
+		if share >= 0.65:
+			most += 1
+	_check(falls.size() >= 5 and falls.size() <= 8 and sides.size() == 2 and periods.size() >= 4,
+			"5-8 tree-fall events, from both sides, on different cycles", "(%d trees)" % falls.size())
+	_check(partial >= 1 and most >= 1, "some trees block one lane, others most of the road", "(%d and %d)" % [partial, most])
+	var free_ok := true
+	for tree in falls:
+		free_ok = free_ok and tree.half_width * 2.0 - tree.blocked_width >= 3.4
+	_check(free_ok, "every fallen tree leaves at least 3.4 m of road free")
+	var mud_area := 0.0
+	var mud_length := 0.0
+	var with_clean_line := 0
+	var full_width := 0
+	for mud: Array in muds:
+		var span := float(mud[1]) - float(mud[0])
+		var band := float(mud[4]) - float(mud[3])
+		mud_length += span
+		mud_area += span * band
+		var width := track.half_width_at(track.path.index_at_distance((float(mud[0]) + float(mud[1])) * 0.5)) * 2.0
+		if (1.0 - band) * width >= 3.0 + 0.1 * width:
+			with_clean_line += 1
+		if band >= 0.85:
+			full_width += 1
+	var exposure := mud_length / track.path.length
+	_check(exposure >= 0.08 and exposure <= 0.12, "8-12 % of the route has mud on it", "(%.0f m, %.1f %%)" % [mud_length, exposure * 100.0])
+	_check(with_clean_line >= 5 and full_width >= 2, "most mud leaves a clean line to choose; a few crossings are full width",
+			"(%d with a clean line, %d full width)" % [with_clean_line, full_width])
+	var tight := 0
+	for segment in track.route_segments:
+		if absf(segment.y) > 0.01 and segment.x / deg_to_rad(absf(segment.y)) <= 50.0:
+			tight += 1
+	_check(tight >= 18, "S-bends and hairpins are spread along the route", "(%d corners of 50 m radius or tighter)" % tight)
 
 
 # --- Spawns, checkpoints, item boxes, recovery --------------------------------
@@ -548,6 +598,33 @@ func _test_mud(main: RaceSession) -> void:
 	_check(before > 22.0 and late < cap + 2.5 and after > late + 4.0, "mud slows the trike, firm road gives the speed back",
 			"(%.1f m/s before, %.1f late in the mud (cap %.1f), %.1f after)" % [before, late, cap, after])
 	_check(run["respawns"] == 0 and main.rider.is_riding(), "driving through mud keeps the rider aboard")
+	# A side-lane mud trap: the surface under each lane is what the map says,
+	# so the clean line is a real choice.
+	var trap: Array = []
+	for zone: Array in main.track.get_zones("mud"):
+		if float(zone[4]) - float(zone[3]) < 0.7:
+			trap = zone
+			break
+	if trap.is_empty():
+		return
+	var middle := (float(trap[0]) + float(trap[1])) * 0.5
+	var index := main.track.path.index_at_distance(middle)
+	var width := main.track.half_width_at(index) * 2.0
+	var muddy_lateral := ((float(trap[3]) + float(trap[4])) * 0.5 - 0.5) * width
+	var clean_u := (float(trap[4]) + 1.0) * 0.5 if 1.0 - float(trap[4]) > float(trap[3]) else float(trap[3]) * 0.5
+	var clean_lateral := (clean_u - 0.5) * width
+	_check(main.track.surface_at(index, muddy_lateral) == TrackSurface.Kind.MUD
+			and main.track.surface_at(index, clean_lateral) == TrackSurface.Kind.ROAD,
+			"a side-lane mud trap has mud on one line and firm road on the other",
+			"(%.0f m: mud at %.1f m, clean at %.1f m)" % [middle, muddy_lateral, clean_lateral])
+	var seen := {}
+	for lateral: float in [muddy_lateral, clean_lateral]:
+		await _place(main, middle, lateral)
+		await _wait(0.5)
+		seen[lateral] = main.trike.surface
+	_check(seen[muddy_lateral] == TrackSurface.Kind.MUD and seen[clean_lateral] == TrackSurface.Kind.ROAD,
+			"the wheels feel the difference between the two lines",
+			"(%s vs %s)" % [TrackSurface.name_of(seen[muddy_lateral]), TrackSurface.name_of(seen[clean_lateral])])
 
 
 func _test_offroad(main: RaceSession) -> void:
@@ -645,6 +722,8 @@ func _test_bridges(main: RaceSession) -> void:
 ## hits a trike parked in its way.
 func _test_hazards(main: RaceSession) -> void:
 	var track := main.track
+	# The authored phases: this test works out each cycle from period and phase.
+	track.hazard_seed = 0
 	var kinds := {}
 	for child in track.get_node("Props").get_children():
 		if child.has_method(&"mid_crossing_time"):
@@ -758,17 +837,31 @@ func _test_canyon_sections(track: Track) -> void:
 func _test_snow_sections(track: Track) -> void:
 	print("\n[Snow Slide: sections and features]")
 	var counts := _prop_counts(track)
+	# Fun-First V2 (2026-11-13, owner request): ice went from ~6 % to 12-18 %
+	# of the drivable surface, and frozen crossings may be full width. Partial
+	# bands still leave a grippy lane (at most 60 % of the width).
 	var ice_length := 0.0
+	var ice_surface := 0.0
+	var full_width := 0
 	for zone: Array in track.get_zones("ice"):
-		ice_length += float(zone[1]) - float(zone[0])
-		_check(float(zone[4]) - float(zone[3]) <= 0.6, "ice at %.0f m covers part of the road (a grippy line stays)" % float(zone[0]),
-				"(%.0f %% of the width)" % ((float(zone[4]) - float(zone[3])) * 100.0))
+		var span := float(zone[1]) - float(zone[0])
+		var band := float(zone[4]) - float(zone[3])
+		ice_length += span
+		ice_surface += span * band
+		if band >= 0.95:
+			full_width += 1
+			_check(span >= 100.0, "the frozen crossing at %.0f m is a full-width set piece" % float(zone[0]), "(%.0f m long)" % span)
+		else:
+			_check(band <= 0.6, "ice at %.0f m covers part of the road (a grippy line stays)" % float(zone[0]),
+					"(%.0f %% of the width)" % (band * 100.0))
 	var bridge_length := 0.0
 	for zone: Array in track.get_zones("bridge"):
 		bridge_length += float(zone[1]) - float(zone[0])
-	var share := (ice_length * 0.5 + bridge_length) / track.path.length
-	_check(track.get_zones("ice").size() >= 4 and share < 0.08, "ice sections, but most of the map has grip",
-			"(%.0f m of ice bands + %.0f m frozen bridges ≈ %.1f %% of the route)" % [ice_length, bridge_length, share * 100.0])
+	var share := (ice_surface + bridge_length) / track.path.length
+	_check(track.get_zones("ice").size() >= 8 and share >= 0.12 and share <= 0.18,
+			"12-18 % of the drivable surface is ice, the rest has grip",
+			"(%.0f m of ice bands, %.0f m frozen bridges ≈ %.1f %% of the surface)" % [ice_length, bridge_length, share * 100.0])
+	_check(full_width >= 2 and full_width <= 3, "a frozen lake and an ice descent cross the whole road", "(%d full-width crossings)" % full_width)
 	_check(track.road_surface == TrackSurface.Kind.SNOW and track.bridge_surface == TrackSurface.Kind.ICE
 			and track.get_node_or_null("IceBody") != null, "snow roads, ice patches and frozen bridges")
 	_check(track.get_zones("wind").size() >= 2, "windy mountain turns", "(%d wind stretches)" % track.get_zones("wind").size())
@@ -817,7 +910,9 @@ func _test_cliff_walls(main: RaceSession) -> void:
 	_check(not hit.is_empty() and face < 3.0, "the cliff wall is solid right behind the barrier (collision matches the rock face)",
 			"(rock face %.1f m past the barrier)" % face)
 	await _place(main, float(zone[0]) - 60.0)
-	var run := await _drive(main, float(zone[1]) + 20.0, 60.0)
+	# 90 s (was 60): since Fun-First V2 this road has tighter corners and a
+	# rockslide whose rubble rests on the road, and this autopilot is blind.
+	var run := await _drive(main, float(zone[1]) + 20.0, 90.0)
 	_check(run["arrived"] and run["respawns"] == 0 and main.rider.is_riding(), "a whole cliff road can be driven cleanly",
 			"(%.0f m in %.1f s)" % [float(zone[1]) - float(zone[0]) + 80.0, run["time"]])
 

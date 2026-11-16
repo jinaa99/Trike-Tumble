@@ -40,6 +40,19 @@ var state_chip: Label
 var item_label: Label
 var item_hint: Label
 var _item_name := ""
+var skill_label: Label
+var skill_hint: Label
+var skill_bar: ProgressBar
+var skill_panel: PanelContainer
+var draft_box: Control
+var draft_bar: ProgressBar
+var debug_label: Label
+var _perfect_marks: Array[ColorRect] = []
+var _drift_scale := 2.35
+var _skills: SkillManager
+var _skill_racer: Racer
+var _skill_was_ready := false
+var _skill_key := ""
 
 
 func _ready() -> void:
@@ -50,6 +63,9 @@ func _ready() -> void:
 	set_race_time(0.0)
 	_build_state_chip()
 	_build_item_slot()
+	_build_skill_slot()
+	_build_draft_meter()
+	_build_debug_label()
 	_refresh_keys()
 	GameSettings.settings_changed.connect(_refresh_keys)
 	_hint_tween = create_tween()
@@ -60,9 +76,48 @@ func _ready() -> void:
 func set_vehicle(trike: Trike) -> void:
 	_trike = trike
 	var tiers := trike.config.drift_boost_tier_times
-	var ratio := clampf(tiers.x / tiers.y, 0.0, 1.0)
+	# The bar runs to the end of the second PERFECT window.
+	_drift_scale = tiers.y + trike.config.drift_perfect_window
+	var ratio := clampf(tiers.x / _drift_scale, 0.0, 1.0)
 	tier_mark.anchor_left = ratio
 	tier_mark.anchor_right = ratio
+	for mark in _perfect_marks:
+		mark.queue_free()
+	_perfect_marks.clear()
+	# Bright bands: let go inside one for a PERFECT release.
+	for start: float in [tiers.x, tiers.y]:
+		var band := ColorRect.new()
+		band.name = "PerfectBand"
+		band.color = Color(1.0, 1.0, 1.0, 0.55)
+		band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		band.anchor_left = clampf(start / _drift_scale, 0.0, 1.0)
+		band.anchor_right = clampf((start + trike.config.drift_perfect_window) / _drift_scale, 0.0, 1.0)
+		band.anchor_top = 0.0
+		band.anchor_bottom = 1.0
+		drift_bar.add_child(band)
+		_perfect_marks.append(band)
+
+
+## The local racer's signature skill (name, key, cooldown) and slipstream.
+func set_skills(skills: SkillManager, racer: Racer) -> void:
+	_skills = skills
+	_skill_racer = racer
+	if racer == null:
+		skill_panel.visible = false
+		return
+	var kind := racer.get_skill()
+	skill_label.text = SkillKind.display_name(kind)
+	skill_label.modulate = SkillKind.color_of(kind).lerp(Color.WHITE, 0.25)
+	skill_panel.visible = true
+	_refresh_keys()
+
+
+func get_skill_text() -> String:
+	return skill_label.text
+
+
+func get_skill_hint_text() -> String:
+	return skill_hint.text
 
 
 func set_race_time(seconds: float) -> void:
@@ -202,12 +257,104 @@ func _build_item_slot() -> void:
 	set_item("")
 
 
+func _build_skill_slot() -> void:
+	skill_panel = UiKit.panel(10)
+	skill_panel.name = "SkillPanel"
+	skill_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	skill_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	skill_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	$Root.add_child(skill_panel)
+	skill_panel.anchor_top = 1.0
+	skill_panel.anchor_bottom = 1.0
+	skill_panel.offset_left = 184
+	skill_panel.offset_bottom = -18
+	var box := UiKit.vbox(0)
+	skill_panel.add_child(box)
+	box.add_child(UiKit.label("SKILL", 12, UiKit.SKY))
+	skill_label = UiKit.title("", 22)
+	skill_label.custom_minimum_size = Vector2(150, 0)
+	box.add_child(skill_label)
+	skill_bar = ProgressBar.new()
+	skill_bar.name = "SkillBar"
+	skill_bar.min_value = 0.0
+	skill_bar.max_value = 1.0
+	skill_bar.show_percentage = false
+	skill_bar.custom_minimum_size = Vector2(150, 6)
+	box.add_child(skill_bar)
+	skill_hint = UiKit.label("", 12, UiKit.TEXT)
+	box.add_child(skill_hint)
+	skill_panel.visible = false
+
+
+func _build_draft_meter() -> void:
+	var box := UiKit.vbox(2)
+	box.name = "DraftMeter"
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	box.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	box.position.y = 64
+	var title := UiKit.label("SLIPSTREAM", 14, UiKit.SKY, 4)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+	draft_bar = ProgressBar.new()
+	draft_bar.min_value = 0.0
+	draft_bar.max_value = 1.0
+	draft_bar.show_percentage = false
+	draft_bar.custom_minimum_size = Vector2(160, 8)
+	draft_bar.self_modulate = UiKit.SKY
+	box.add_child(draft_bar)
+	box.modulate.a = 0.0
+	$Root.add_child(box)
+	draft_box = box
+
+
+func _build_debug_label() -> void:
+	debug_label = UiKit.label("", 14, UiKit.CREAM, 4)
+	debug_label.name = "SurfaceDebug"
+	debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	debug_label.set_anchors_preset(Control.PRESET_CENTER_LEFT)
+	debug_label.position = Vector2(24, -40)
+	debug_label.visible = false
+	$Root.add_child(debug_label)
+
+
+func _update_skill(delta: float) -> void:
+	if _skills == null or _skill_racer == null:
+		return
+	var id := _skill_racer.id
+	var ready := _skills.is_ready(id)
+	var left := _skills.get_cooldown(id)
+	skill_bar.value = 1.0 - _skills.get_cooldown_ratio(id) if _skills.cooldowns.has(id) else (1.0 if ready else 0.0)
+	skill_bar.self_modulate = UiKit.MINT if ready else UiKit.TEXT_DIM
+	if _skills.has_shield(id):
+		skill_hint.text = "SHIELD UP"
+	elif ready:
+		skill_hint.text = "[%s] READY" % _skill_key
+	elif left > 0.0:
+		skill_hint.text = "%d s" % ceili(left)
+	else:
+		skill_hint.text = "[%s]" % _skill_key
+	skill_label.modulate.a = 1.0 if ready else 0.5
+	if ready and not _skill_was_ready and is_inside_tree():
+		skill_panel.pivot_offset = skill_panel.size * 0.5
+		skill_panel.scale = Vector2.ONE * 1.18
+		create_tween().tween_property(skill_panel, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_skill_was_ready = ready
+	var meter := _skills.get_draft(id)
+	draft_bar.value = meter
+	draft_bar.self_modulate = UiKit.SUN if meter >= 0.999 else UiKit.SKY
+	draft_box.modulate.a = move_toward(draft_box.modulate.a, 1.0 if meter > 0.05 else 0.0, delta * 5.0)
+
+
 func _refresh_keys() -> void:
+	_skill_key = UiKit.key_name(GameSettings.primary_key(&"use_skill"))
 	var steer := "%s %s" % [UiKit.key_name(GameSettings.primary_key(&"steer_left")),
 			UiKit.key_name(GameSettings.primary_key(&"steer_right"))]
-	hint_label.text = "%s   Accelerate      %s   Brake\n%s   Steer\n%s + steer   Drift, release to BOOST\n%s   Reset        %s   Pause" % [
+	hint_label.text = "%s   Accelerate      %s   Brake\n%s   Steer\n%s + steer   Drift, release to BOOST\n%s   Skill      %s   Item      %s   Taunt\n%s   Trick in the air\n%s   Reset        %s   Pause" % [
 		UiKit.action_keys(&"accelerate"), UiKit.action_keys(&"brake"), steer,
-		UiKit.action_keys(&"drift"), UiKit.action_keys(&"reset"), UiKit.action_keys(&"pause")]
+		UiKit.action_keys(&"drift"), UiKit.action_keys(&"use_skill"), UiKit.action_keys(&"use_item"),
+		UiKit.action_keys(&"emote"), UiKit.action_keys(&"trick"),
+		UiKit.action_keys(&"reset"), UiKit.action_keys(&"pause")]
 	prompt_key.text = UiKit.key_name(GameSettings.primary_key(&"interact"))
 	item_hint.text = "[%s] USE ITEM" % UiKit.key_name(GameSettings.primary_key(&"use_item"))
 
@@ -242,11 +389,18 @@ func _process(delta: float) -> void:
 	drift_meter.modulate.a = _drift_alpha
 	if _trike.is_drifting:
 		var tier := _trike.get_drift_tier()
-		drift_bar.value = clampf(_trike.drift_charge / _trike.config.drift_boost_tier_times.y, 0.0, 1.0)
+		drift_bar.value = clampf(_trike.drift_charge / _drift_scale, 0.0, 1.0)
 		drift_bar.self_modulate = DRIFT_COLORS[tier]
-		drift_title.text = DRIFT_TITLES[tier]
+		var perfect := _trike.is_in_perfect_window()
+		drift_title.text = "RELEASE NOW!" if perfect else DRIFT_TITLES[tier]
+		for mark in _perfect_marks:
+			mark.color.a = 0.95 if perfect and sin(_time * 30.0) > 0.0 else 0.55
 		drift_title.add_theme_color_override("font_color", DRIFT_COLORS[tier])
 
+	_update_skill(delta)
+	debug_label.visible = GameSettings.surface_debug
+	if debug_label.visible:
+		debug_label.text = _trike.format_surface_report()
 	boost_label.visible = _trike.boost_time > 0.0
 	if boost_label.visible:
 		boost_label.scale = Vector2.ONE * (1.0 + sin(_time * 18.0) * 0.06)

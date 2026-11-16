@@ -9,8 +9,10 @@ extends RefCounted
 ##   12 has_rider  13 rider state  14 rider state_time  15 ragdoll position
 ##   16 ragdoll rotation  17 on-foot position  18 on-foot facing (yaw)
 ##   19 teleport counter (owner respawns: never interpolate across one)
+##   20 fx bits (cosmetic): 0-2 surface under the trike, 3-4 air trick in
+##      progress, 5 slipstream active
 
-const FIELD_COUNT := 20
+const FIELD_COUNT := 21
 ## Host sanity limits: anything beyond is dropped (corrupt or bogus data).
 const MAX_SPEED := 80.0
 const MAX_COORD := 20000.0
@@ -22,7 +24,7 @@ static func encode(t: float, trike: Dictionary, rider: Dictionary) -> Array:
 	return [t, xf.origin, xf.basis.get_rotation_quaternion(), trike["vel"], trike["steer_amount"], trike["steer_angle"],
 			trike["forward_speed"], trike["drift_dir"], trike["drift_charge"], trike["boost"], trike["susp"],
 			trike["contact"], trike["has_rider"], int(rider["state"]), rider["state_time"], rag.origin,
-			rag.basis.get_rotation_quaternion(), rider["foot"], rider["facing"], int(trike.get("teleports", 0))]
+			rag.basis.get_rotation_quaternion(), rider["foot"], rider["facing"], int(trike.get("teleports", 0)), int(trike.get("fx", 0))]
 
 
 ## "" if `data` is a well-formed, plausible snapshot, else why not.
@@ -32,7 +34,7 @@ static func validate(data: Variant) -> String:
 	var a := data as Array
 	var types := [TYPE_FLOAT, TYPE_VECTOR3, TYPE_QUATERNION, TYPE_VECTOR3, TYPE_FLOAT, TYPE_FLOAT, TYPE_FLOAT, TYPE_INT,
 			TYPE_FLOAT, TYPE_FLOAT, TYPE_PACKED_FLOAT32_ARRAY, TYPE_INT, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_VECTOR3,
-			TYPE_QUATERNION, TYPE_VECTOR3, TYPE_FLOAT, TYPE_INT]
+			TYPE_QUATERNION, TYPE_VECTOR3, TYPE_FLOAT, TYPE_INT, TYPE_INT]
 	for i in FIELD_COUNT:
 		if typeof(a[i]) != types[i]:
 			return "field %d has the wrong type" % i
@@ -46,6 +48,8 @@ static func validate(data: Variant) -> String:
 		return "bad rotation"
 	if (a[10] as PackedFloat32Array).size() != 3 or int(a[13]) < 0 or int(a[13]) > RiderController.State.MOUNTING:
 		return "bad rider/suspension data"
+	if int(a[20]) < 0 or int(a[20]) > 63:
+		return "bad fx bits"
 	return ""
 
 
@@ -72,7 +76,7 @@ static func blend(a: Array, b: Array, w: float) -> Dictionary:
 		"xf": Transform3D(Basis(rot), (a[1] as Vector3).lerp(b[1], w)), "vel": (a[3] as Vector3).lerp(b[3], w),
 		"steer_amount": lerpf(a[4], b[4], w), "steer_angle": lerpf(a[5], b[5], w), "forward_speed": lerpf(a[6], b[6], w),
 		"drift_dir": a[7], "drift_charge": lerpf(a[8], b[8], w), "boost": lerpf(a[9], b[9], w), "susp": susp,
-		"contact": a[11], "has_rider": a[12], "teleports": int(a[19]),
+		"contact": a[11], "has_rider": a[12], "teleports": int(a[19]), "fx": int(a[20]),
 	}
 	var rider := {
 		"state": int(a[13]), "state_time": lerpf(a[14], b[14], w) if same_rider_state else float(a[14]),

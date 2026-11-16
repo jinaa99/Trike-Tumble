@@ -21,7 +21,9 @@ signal lobby_return_requested
 signal peer_left(peer_id: int)
 
 ## 2: items (final demo milestone 07) added item RPCs.
-const PROTOCOL_VERSION := 2
+## 3: Fun-First V2: skill RPCs, snapshot field 20 (fx), "character" in the
+## lobby and the race setup, _c_set_character.
+const PROTOCOL_VERSION := 3
 const CONNECT_TIMEOUT := 6.0
 ## How long the host waits for every client to load the race scene.
 const LOAD_TIMEOUT := 15.0
@@ -52,6 +54,8 @@ var last_reason := ""
 var duplicate_hellos := 0
 ## Host diagnostics: item requests for a racer the sender doesn't own.
 var rejected_item_requests := 0
+## Host diagnostics: skill requests for a racer the sender doesn't own.
+var rejected_skill_requests := 0
 
 var _peer: ENetMultiplayerPeer
 var _connect_elapsed := -1.0
@@ -283,6 +287,19 @@ func request_set_ready(ready: bool) -> void:
 		_c_set_ready.rpc_id(1, ready)
 
 
+## Client: asks the host for another rider (swaps with whoever had it).
+func request_set_character(character: int) -> void:
+	if role == Role.CLIENT and is_connected_to_host():
+		_c_set_character.rpc_id(1, character)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _c_set_character(character: int) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if is_host() and lobby and lobby.get_player(sender) and not race_in_progress:
+		lobby.set_character(sender, character)  # range-checked there
+
+
 @rpc("any_peer", "call_remote", "reliable")
 func _c_set_ready(ready: bool) -> void:
 	var sender := multiplayer.get_remote_sender_id()
@@ -427,6 +444,35 @@ func send_item_event(event: Array) -> void:
 func _h_item_event(event: Array) -> void:
 	if race and race.has_method(&"net_apply_item_event"):
 		race.net_apply_item_event(event)
+
+
+## Owner → host: skill request (use, trap touched, style, taunt; see SkillManager).
+func send_skill_request(racer_id: int, req_id: int, kind: int, data: Array) -> void:
+	if role == Role.CLIENT and is_connected_to_host():
+		_c_skill_request.rpc_id(1, racer_id, req_id, kind, data)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _c_skill_request(racer_id: int, req_id: int, kind: int, data: Array) -> void:
+	if not is_host():
+		return
+	if owner_of(racer_id) != multiplayer.get_remote_sender_id():
+		rejected_skill_requests += 1  # someone else's racer (AI included)
+		return
+	if race and race.has_method(&"net_skill_request"):
+		race.net_skill_request(racer_id, req_id, kind, data)
+
+
+## Host: a skill decision for every client (reliable and ordered).
+func send_skill_event(event: Array) -> void:
+	if is_host():
+		_send_to_clients(&"_h_skill_event", [event])
+
+
+@rpc("authority", "call_remote", "reliable")
+func _h_skill_event(event: Array) -> void:
+	if race and race.has_method(&"net_apply_skill_event"):
+		race.net_apply_skill_event(event)
 
 
 @rpc("authority", "call_remote", "reliable")

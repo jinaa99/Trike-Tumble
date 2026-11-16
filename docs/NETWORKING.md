@@ -221,3 +221,35 @@ In-process unit tests in the main suite:
 - No reconnect into a running race; no host migration (if the host leaves,
   the game ends for everyone).
 - Online pause doesn't stop the race (by design).
+
+## Fun-First V2: skills, hazard seed, fx bits (protocol 3)
+
+- `Net.PROTOCOL_VERSION` is **3**. Older builds are refused at hello.
+- New RPC pair on `/root/Net`: `_c_skill_request(racer_id, req_id, kind,
+  data)` (any peer → host, ownership checked like items, counted in
+  `rejected_skill_requests`) and `_h_skill_event(event)` (host → clients,
+  reliable, ordered).
+- `SkillManager` (node `Skills`, created by `RaceSession`) follows the item
+  rules exactly: the owner requests, the host decides (cooldowns, targets,
+  ranges, rate limits, duplicate ids), numbered events are applied once
+  everywhere, only the victim's owner applies physics.
+- Host-decided: skill use and targets, trap hits, shield pops (also for item
+  hits: `ItemManager.block_hit`), style rewards (perfect drift, near miss,
+  trick, perfect landing; rate-limited per kind), overtake teasing, taunts,
+  the eject guard, the **hazard seed** and the **awards**.
+- Owner-measured (as before for all physics): drift release and landing
+  grade happen in the owner's simulation; the owner reports them and the
+  host only rate-limits the style events.
+- **Hazard seed**: at every countdown the host sends `SEED` (a skill
+  event). Every timed hazard's cycle is shifted by
+  `Track.hazard_phase(distance, period)`, a hash of seed and position, on
+  top of the shared race clock. Nothing else about hazards is sent.
+- `NetSnapshot` field 20 `fx` (int): bits 0–2 surface under the trike,
+  3–4 trick in progress, 5 full slipstream. Cosmetic only (proxy sounds,
+  spray, streaks, trick pose). `FIELD_COUNT` 21.
+- Riders: each lobby seat has a `character` (synced in the lobby dict);
+  clients request a change with `_c_set_character(character)` (the host
+  checks the range and that no other human rides it). The race setup
+  entries carry `"character"`, and `RaceSession` turns them into
+  `RacerManager.character_order` in grid order, so every peer builds the
+  same field. A joining client asks for its saved preference once.

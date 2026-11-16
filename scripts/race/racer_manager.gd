@@ -52,8 +52,13 @@ const RIDER_SCENE := preload("res://scenes/characters/rider_character.tscn")
 @export var position_swap_margin := 1.0
 ## Clearance (m) from props for AI avoidance, per prop kind.
 @export var obstacle_radii := {"crate": 0.75, "cone": 0.35, "rock": 1.1, "boulder": 2.0, "road_tree": 0.6,
-		"falling_log": 2.4, "falling_rock": 1.6, "rolling_rock": 2.2, "snowman": 0.7}
+		"falling_log": 2.4, "falling_rock": 1.6, "rolling_rock": 2.2, "snowman": 0.7, "falling_tree": 0.35}
 
+## Character (0 Zip .. 4 Rusty) per racer, in the order racers are added.
+## RaceSession reorders it when the local player picks a rider.
+var character_order: Array[int] = [0, 1, 2, 3, 4]
+## The race's SkillManager (AI drivers ask it about cooldowns and targets).
+var skills: SkillManager
 var track: Track
 var finish_tracker: FinishTracker
 var race_time := 0.0
@@ -416,7 +421,6 @@ func _new_racer(type: Racer.Type, id: int, display_name: String, slot: int) -> R
 
 func _register(racer: Racer) -> void:
 	var order := _racers.size()
-	racer.color = racer_colors[order % racer_colors.size()] if not racer_colors.is_empty() else Color.WHITE
 	racer.spawn_transform = track.get_start_transform(racer.spawn_slot)
 	racer.trike.teleport(racer.spawn_transform, false)
 	racer.progress = VehicleProgress.new(track, track.get_start_index())
@@ -425,7 +429,12 @@ func _register(racer: Racer) -> void:
 	racer.trike.respawn_requested.connect(_on_respawn_requested.bind(racer))
 	racer.rider.emergency_recovery_requested.connect(_on_emergency_recovery.bind(racer))
 	finish_tracker.register_racer(racer.id, racer.trike, racer.rider, racer.progress)
-	_apply_livery(racer, order)
+	racer.character = character_order[order % character_order.size()]
+	# A bot named after a rider takes the name of the rider it actually is.
+	if racer.is_ai() and SkillKind.CHARACTER_NAMES.has(racer.display_name):
+		racer.display_name = SkillKind.character_name(racer.character)
+	racer.color = racer_colors[racer.character % racer_colors.size()] if not racer_colors.is_empty() else Color.WHITE
+	_apply_livery(racer, racer.character)
 	_racers.append(racer)
 	_update_positions()
 	racer_added.emit(racer)
@@ -438,6 +447,10 @@ func _apply_livery(racer: Racer, order: int) -> void:
 		if not racer_accents.is_empty():
 			visuals.accent_color = racer_accents[order % racer_accents.size()]
 	var model := racer.trike.get_node_or_null(^"Visuals/Rider") as Rider
+	if model:
+		model.character = racer.character
+	if racer.rider:
+		racer.rider.character = racer.character
 	if model and not rider_looks.is_empty():
 		RiderStyle.apply(model, rider_looks[order % rider_looks.size()])
 	if racer_numbers.is_empty():
@@ -497,6 +510,11 @@ func _collect_obstacles() -> void:
 			_ramps.append({"node": child, "half_width": (child as Ramp).width * 0.5})
 			continue
 		var kind := (child as Node).scene_file_path.get_file().get_basename()
+		# Wide hazards (a fallen tree) publish several avoidance points.
+		if child.has_method(&"get_ai_obstacles"):
+			for marker: Node3D in child.call(&"get_ai_obstacles"):
+				_obstacles.append({"node": marker, "radius": float(obstacle_radii.get(kind, 1.0)), "kind": kind})
+			continue
 		if obstacle_radii.has(kind):
 			_obstacles.append({"node": child, "radius": float(obstacle_radii[kind]), "kind": kind})
 

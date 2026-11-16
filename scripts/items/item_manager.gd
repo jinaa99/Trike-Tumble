@@ -23,6 +23,9 @@ signal item_changed(racer: Racer, kind: ItemKind.Kind)
 signal event_applied(event: Array)
 ## Something worth a HUD message happened to (or was done by) a racer.
 signal feedback(racer: Racer, text: String)
+## An item hit someone: who did it (0 = nobody, e.g. a stray puddle), who
+## got hit and how hard (knock speed, 0 for slips). Reactions and stats.
+signal prank_landed(attacker_id: int, victim_id: int, strength: float)
 
 enum Event { BOX_TAKEN, BOX_RESPAWNED, TURBO_USED, BANANA_DROPPED, BANANA_HIT, BOMB_THROWN, BOMB_LANDED, PUNCH }
 enum Request { PICKUP, USE, TRAP_HIT }
@@ -53,6 +56,11 @@ var send_request := Callable()
 var broadcast := Callable()
 ## Racer whose events get flat sounds and HUD feedback (the local player).
 var local_racer_id := -1
+## Host hooks set by SkillManager. block_hit(victim id, cause) -> true if a
+## pillow shield eats the hit; eject_allowed(victim id) -> false while the
+## victim is guarded against being thrown off again.
+var block_hit := Callable()
+var eject_allowed := Callable()
 
 var boxes: Array[ItemBox] = []
 var bombs := {}
@@ -119,6 +127,15 @@ func get_held(racer_id: int) -> ItemKind.Kind:
 
 func is_immune(racer_id: int) -> bool:
 	return float(_immune.get(racer_id, 0.0)) > 0.0
+
+
+## Starts (or extends) a racer's hit immunity. Skills share this table.
+func set_immune(racer_id: int, seconds: float) -> void:
+	_immune[racer_id] = maxf(float(_immune.get(racer_id, 0.0)), seconds)
+
+
+func _blocked(victim_id: int) -> bool:
+	return block_hit.is_valid() and bool(block_hit.call(victim_id, 1))
 
 
 func get_active_box_count() -> int:
@@ -352,12 +369,14 @@ func _host_use(racer: Racer, kind: int, reported: Vector3, forward: Vector3, vel
 			_emit([Event.BOMB_THROWN, racer.id, _new_object_id(), origin, throw])
 		ItemKind.Kind.SPRING_PUNCH:
 			var target := ItemRules.pick_punch_target(config, racer, position, flat, racers.get_racers(), is_immune)
-			if target == null:
+			if target == null or _blocked(target.id):
 				_emit([Event.PUNCH, racer.id, 0, Vector3.ZERO, false])
 			else:
 				var speed := ItemRules.punch_speed(config, position.distance_to(target.trike.global_position))
 				var knock := ItemRules.punch_velocity(config, position, target.trike, speed)
-				_emit([Event.PUNCH, racer.id, target.id, knock, ItemRules.punch_ejects(config, speed)])
+				var eject := ItemRules.punch_ejects(config, speed) \
+						and (not eject_allowed.is_valid() or bool(eject_allowed.call(target.id)))
+				_emit([Event.PUNCH, racer.id, target.id, knock, eject])
 	return true
 
 
@@ -367,6 +386,9 @@ func _host_trap(racer: Racer, peel_id: int) -> bool:
 		return false
 	if racer.trike.global_position.distance_to(peel.global_position) > config.plausible_distance:
 		return false
+	if _blocked(racer.id):
+		_emit([Event.BANANA_HIT, peel_id, racer.id, 0])  # 0: the peel is used up, nobody slips
+		return true
 	_emit([Event.BANANA_HIT, peel_id, racer.id, 1 if _rng.randf() < 0.5 else -1])
 	return true
 
@@ -387,7 +409,8 @@ func _resolve_bomb(bomb: MudBomb) -> void:
 		if minf(_segment_distance(body, from, to), _segment_distance(head, from, to)) <= config.mud_hit_radius:
 			bomb.set_meta(&"landed", true)
 			var spot := _ground_point(racer.trike.global_position)
-			_emit([Event.BOMB_LANDED, bomb.bomb_id, spot if spot != Vector3.INF else racer.trike.global_position, racer.id, true])
+			var hit_id := 0 if _blocked(racer.id) else racer.id
+			_emit([Event.BOMB_LANDED, bomb.bomb_id, spot if spot != Vector3.INF else racer.trike.global_position, hit_id, true])
 			return
 	var hit := _ray(from, to)
 	if not hit.is_empty():
@@ -532,6 +555,7 @@ func _on_banana_dropped(racer: Racer, peel_id: int, position: Vector3) -> void:
 func _on_banana_hit(peel_id: int, victim: Racer, spin_sign: float) -> void:
 	var peel: BananaPeel = peels.get(peel_id)
 	var where := peel.global_position if peel else Vector3.ZERO
+	var dropper := peel.dropper_id if peel else 0
 	if peel:
 		peel.queue_free()
 		peels.erase(peel_id)
@@ -539,10 +563,13 @@ func _on_banana_hit(peel_id: int, victim: Racer, spin_sign: float) -> void:
 		return
 	_immune[victim.id] = config.hit_immunity
 	_clear_pending(victim.id, Request.TRAP_HIT)
+	ItemVisuals.burst(self, where, ItemKind.color_of(ItemKind.Kind.BANANA_PEEL), 8, 1.2)
+	if spin_sign == 0.0:
+		return  # a pillow shield ate it
+	prank_landed.emit(dropper, victim.id, 0.0)
 	if _owns(victim):
 		victim.trike.apply_item_hit(Vector3.ZERO, Vector3.UP * config.banana_spin * spin_sign, config.banana_speed_keep)
 		victim.trike.set_slippery(config.banana_slip, config.banana_grip_factor)
-	ItemVisuals.burst(self, where, ItemKind.color_of(ItemKind.Kind.BANANA_PEEL), 8, 1.2)
 	_play(victim, ItemSounds.Sound.SLIP, where)
 	if victim.id == local_racer_id:
 		feedback.emit(victim, "SLIPPED!")
@@ -587,6 +614,7 @@ func _on_bomb_landed(bomb_id: int, position: Vector3, victim: Racer, make_patch:
 		if _owns(victim):
 			victim.trike.set_slippery(config.mud_direct_slip, config.mud_grip_factor, config.mud_speed_factor)
 			victim.trike.apply_item_hit(Vector3.ZERO, Vector3.UP * config.mud_direct_spin)
+		prank_landed.emit(thrower, victim.id, 0.0)
 		if victim.id == local_racer_id:
 			feedback.emit(victim, "SPLAT!")
 	_play(victim, ItemSounds.Sound.SPLAT, position)
@@ -612,6 +640,7 @@ func _on_punch(attacker: Racer, target: Racer, knock: Vector3, eject: bool) -> v
 		if eject and target.rider and target.rider.is_riding():
 			target.rider.eject(knock.length(), target.trike.linear_velocity + knock)
 	_play(target, ItemSounds.Sound.PUNCH, target.trike.global_position)
+	prank_landed.emit(attacker.id, target.id, knock.length())
 	if attacker.id == local_racer_id:
 		feedback.emit(attacker, "POW!")
 	if target.id == local_racer_id:

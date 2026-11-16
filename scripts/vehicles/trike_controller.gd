@@ -24,6 +24,18 @@ signal drift_ended(boost_tier: int)
 ## strength: unexplained velocity change in m/s this tick.
 ## velocity_before: the velocity the trike would have had without the hit.
 signal impact(strength: float, velocity_before: Vector3)
+## A drift ended with a PERFECT release (inside the window after `tier`).
+signal drift_perfect(tier: int)
+## An air trick started (Trick kind) / completed its rotation.
+signal trick_started(kind: int)
+signal trick_completed(count: int)
+## The trike touched down after a graded jump: Landing grade, seconds of
+## air and tricks completed in that jump.
+signal landing_graded(grade: int, air_time: float, tricks: int)
+
+enum Trick { NONE, SPIN, FLIP }
+enum Landing { NONE, PERFECT, GOOD, POOR, BAD }
+const LANDING_NAMES: Array[String] = ["", "PERFECT LANDING!", "GOOD LANDING", "ROUGH LANDING", "BAD LANDING!"]
 
 enum Wheel { FRONT, REAR_LEFT, REAR_RIGHT }
 const WHEEL_COUNT := 3
@@ -76,12 +88,38 @@ var slip_time := 0.0
 ## Track.wind_at(). Applied with the trike's own forces, so it never counts
 ## as an impact.
 var wind := Vector3.ZERO
+## Slipstream strength 0..1 (SkillManager sets it every tick while this
+## trike is tucked in behind a rival; it fades by itself otherwise).
+var draft_factor := 0.0
+## Seconds since the last wheel left the ground (0 while grounded).
+var air_time := 0.0
+## Air trick in progress (Trick), how far through it is (0..1) and how many
+## were completed in the current jump / since the race started.
+var trick_kind := Trick.NONE
+var trick_progress := 0.0
+var tricks_this_jump := 0
+var trick_count := 0
+## Latest graded landing (Landing) and how many of each grade so far.
+var last_landing := Landing.NONE
+var landing_counts: Array[int] = [0, 0, 0, 0, 0]
+## True if the latest drift release was a PERFECT one; count so far.
+var last_drift_perfect := false
+var perfect_drift_count := 0
+## Grip and speed factors of the ground right now (diagnostics: see
+## get_surface_report()).
+var effective_grip := 1.0
+var effective_speed := 1.0
 
 var _wheel_mounts := PackedVector3Array()
 # Handling of the ground under the wheels (averaged over grounded wheels).
 var _surface_speed := 1.0
 var _surface_drag := 0.0
 var _surface_grip := 1.0
+var _surface_lateral := 1.0
+var _surface_brake := 1.0
+var _trick_axis := Vector3.UP
+var _trick_dir := 1.0
+var _last_spin_dir := -1.0
 var _wheel_radii := PackedFloat32Array()
 var _ray_query := PhysicsRayQueryParameters3D.new()
 var _hop_requested := false
@@ -147,6 +185,7 @@ func _physics_process(delta: float) -> void:
 
 	boost_time = maxf(boost_time - delta, 0.0)
 	slip_time = maxf(slip_time - delta, 0.0)
+	draft_factor = move_toward(draft_factor, 0.0, delta * 1.6)
 	_update_drift(delta)
 	_update_recovery(delta)
 
@@ -180,14 +219,21 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var traction := grounded_wheel_count / float(WHEEL_COUNT)
 
 	if grounded_wheel_count == 0:
+		air_time += dt
 		# Air control and self-righting need someone aboard; an empty
 		# overturned trike stays put until its rider gets back on.
 		if has_rider:
-			_apply_air_control(state, up, dt)
+			_update_trick(state, body_basis, dt)
+			if trick_kind == Trick.NONE:
+				_apply_air_control(state, up, dt)
+		else:
+			_cancel_trick()
 		forward_speed = state.linear_velocity.dot(-body_basis.z)
 		_apply_drag(state, dt)
 		_store_impact_baseline(state)
 		return
+	if air_time > 0.0:
+		_touch_down(state, body_basis, ground_normal)
 
 	# Heading and side directions projected onto the ground plane.
 	var flat_forward := (-body_basis.z - ground_normal * (-body_basis.z).dot(ground_normal)).normalized()
@@ -264,6 +310,10 @@ func teleport(target: Transform3D, notify := true) -> void:
 	_stuck_time = 0.0
 	slip_time = 0.0
 	_pending_hit = false
+	draft_factor = 0.0
+	air_time = 0.0
+	_cancel_trick()
+	tricks_this_jump = 0
 	teleport_count += 1
 	reset_physics_interpolation()
 	if notify:
@@ -294,6 +344,7 @@ func get_network_state() -> Dictionary:
 		"drift_charge": drift_charge, "boost": boost_time, "susp": wheel_suspension_length,
 		"contact": int(wheel_contact[0]) | (int(wheel_contact[1]) << 1) | (int(wheel_contact[2]) << 2),
 		"has_rider": has_rider, "teleports": teleport_count,
+		"fx": int(surface) | (int(trick_kind) << 3) | ((1 if draft_factor > 0.5 else 0) << 5),
 	}
 
 
@@ -313,6 +364,10 @@ func apply_network_state(state: Dictionary) -> void:
 	for i in WHEEL_COUNT:
 		wheel_contact[i] = contact & (1 << i) != 0
 	grounded_wheel_count = wheel_contact.count(true)
+	var fx: int = state.get("fx", 0)
+	surface = (fx & 7) as TrackSurface.Kind if (fx & 7) < TrackSurface.Kind.size() else TrackSurface.Kind.ROAD
+	trick_kind = ((fx >> 3) & 3) as Trick
+	draft_factor = 1.0 if fx & 32 else 0.0
 	var teleports: int = state.get("teleports", teleport_count)
 	if teleports != teleport_count:
 		teleport_count = teleports
@@ -379,6 +434,62 @@ func get_drift_tier() -> int:
 
 func is_grounded() -> bool:
 	return grounded_wheel_count >= 2
+
+
+## True while the drift charge is inside a PERFECT release window.
+func is_in_perfect_window() -> bool:
+	return is_drifting and perfect_tier(drift_charge) > 0
+
+
+## Tier (1 or 2) whose PERFECT window `charge` is in, else 0.
+func perfect_tier(charge: float) -> int:
+	var tiers := config.drift_boost_tier_times
+	if charge >= tiers.y and charge <= tiers.y + config.drift_perfect_window:
+		return 2
+	if charge >= tiers.x and charge <= tiers.x + config.drift_perfect_window:
+		return 1
+	return 0
+
+
+## Seconds until the trike would touch the ground on its current arc
+## (ballistic, flat ground assumed below it: an under-estimate on a downhill
+## landing). 0 when grounded. AI uses it to decide whether a trick fits.
+func estimate_air_time_left(max_drop := 40.0) -> float:
+	if grounded_wheel_count > 0 or not is_inside_tree():
+		return 0.0
+	var from := global_position
+	var query := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * max_drop, wheel_collision_mask, [get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	var height := max_drop if hit.is_empty() else from.distance_to(hit["position"]) - 0.6
+	var g := float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)) * gravity_scale
+	var vy := linear_velocity.y
+	return (vy + sqrt(maxf(vy * vy + 2.0 * g * maxf(height, 0.0), 0.0))) / maxf(g, 0.01)
+
+
+## Development diagnostic: what each wheel stands on and what that does to
+## the handling right now.
+func get_surface_report() -> Dictionary:
+	var flat := linear_velocity - global_basis.y * linear_velocity.dot(global_basis.y)
+	var forward := -global_basis.z
+	var drift_angle := 0.0
+	if flat.length() > 1.0:
+		drift_angle = rad_to_deg(forward.angle_to(flat.normalized()))
+	var names: Array[String] = []
+	for i in WHEEL_COUNT:
+		names.append(TrackSurface.name_of(wheel_surface[i]) if wheel_contact[i] else "air")
+	return {
+		"front": names[Wheel.FRONT], "rear_left": names[Wheel.REAR_LEFT], "rear_right": names[Wheel.REAR_RIGHT],
+		"grip": effective_grip, "speed_factor": effective_speed, "lateral_factor": _surface_lateral,
+		"brake_factor": _surface_brake, "lateral_velocity": linear_velocity.dot(global_basis.x),
+		"drift_angle": drift_angle, "speed": linear_velocity.length(),
+	}
+
+
+func format_surface_report() -> String:
+	var r := get_surface_report()
+	return "F:%s  RL:%s  RR:%s\ngrip %.2f  speed x%.2f  corner x%.2f  brake x%.2f\nside %.1f m/s  slide %.0f deg" % [
+		r["front"], r["rear_left"], r["rear_right"], r["grip"], r["speed_factor"], r["lateral_factor"],
+		r["brake_factor"], r["lateral_velocity"], r["drift_angle"]]
 
 
 # --- Physics helpers --------------------------------------------------------
@@ -461,8 +572,16 @@ func _update_surface() -> void:
 	_surface_speed = 1.0
 	_surface_drag = 0.0
 	_surface_grip = 1.0
+	_surface_lateral = 1.0
+	_surface_brake = 1.0
+	effective_grip = 1.0
+	effective_speed = 1.0
 	if grounded_wheel_count == 0:
 		return
+	var worst_grip := 1.0
+	var worst_lateral := 1.0
+	var lateral := 0.0
+	var braking := 0.0
 	var speed := 0.0
 	var drag := 0.0
 	var grip := 0.0
@@ -474,29 +593,41 @@ func _update_surface() -> void:
 			continue
 		var kind := wheel_surface[i]
 		counts[kind] += 1
+		var wheel_grip := 1.0
+		var wheel_lateral := 1.0
+		var wheel_brake := 1.0
 		match kind:
 			TrackSurface.Kind.GRASS:
+				wheel_grip = config.grass_grip_factor
 				speed += config.grass_speed_factor
 				drag += config.grass_drag
-				grip += config.grass_grip_factor
 			TrackSurface.Kind.MUD:
+				wheel_grip = config.mud_grip_factor
 				speed += config.mud_speed_factor
 				drag += config.mud_drag
-				grip += config.mud_grip_factor
 			TrackSurface.Kind.SNOW:
+				wheel_grip = config.snow_grip_factor
 				speed += config.snow_speed_factor
 				drag += config.snow_drag
-				grip += config.snow_grip_factor
 			TrackSurface.Kind.ICE:
+				wheel_grip = config.ice_grip_factor
+				wheel_lateral = config.ice_lateral_accel_factor
+				wheel_brake = config.ice_brake_factor
 				speed += config.ice_speed_factor
 				drag += config.ice_drag
-				grip += config.ice_grip_factor
 			_:
 				speed += 1.0
-				grip += 1.0
+		grip += wheel_grip
+		lateral += wheel_lateral
+		braking += wheel_brake
+		worst_grip = minf(worst_grip, wheel_grip)
+		worst_lateral = minf(worst_lateral, wheel_lateral)
 	_surface_speed = speed / grounded_wheel_count
 	_surface_drag = drag / grounded_wheel_count
-	_surface_grip = grip / grounded_wheel_count
+	# Mixed ground leans toward the slipperiest wheel (see surface_grip_min_bias).
+	_surface_grip = lerpf(grip / grounded_wheel_count, worst_grip, config.surface_grip_min_bias)
+	_surface_lateral = lerpf(lateral / grounded_wheel_count, worst_lateral, config.surface_grip_min_bias)
+	_surface_brake = braking / grounded_wheel_count
 	if slip_time > 0.0:
 		_surface_grip *= _slip_grip
 		_surface_speed *= _slip_speed
@@ -507,6 +638,8 @@ func _update_surface() -> void:
 		if counts[kind] > counts[most]:
 			most = kind
 	surface = most as TrackSurface.Kind
+	effective_grip = _surface_grip
+	effective_speed = _surface_speed
 
 
 func _apply_drive(velocity: Vector3, flat_forward: Vector3, dt: float) -> Vector3:
@@ -521,10 +654,12 @@ func _apply_drive(velocity: Vector3, flat_forward: Vector3, dt: float) -> Vector
 
 	# Propulsion (engine, reverse, boost).
 	var drive := 0.0
-	var top_speed := config.max_speed * _surface_speed
+	var top_speed := (config.max_speed + config.draft_top_speed_bonus * draft_factor) * _surface_speed
 	if throttle > 0.0 and forward_speed < top_speed:
 		var ratio := clampf(forward_speed / top_speed, 0.0, 1.0)
 		drive += config.acceleration * throttle * (1.0 - ratio * ratio)
+		# Slipstream: a tow from the rival ahead.
+		drive += config.draft_acceleration * draft_factor * throttle
 	if brake > 0.0 and forward_speed <= 0.5 and forward_speed > -config.max_reverse_speed:
 		drive -= config.reverse_acceleration * brake
 	var boost_top := config.boost_max_speed * _surface_speed
@@ -534,11 +669,11 @@ func _apply_drive(velocity: Vector3, flat_forward: Vector3, dt: float) -> Vector
 	# Resistance never reverses the direction of travel on its own.
 	var resist := 0.0
 	if brake > 0.0 and forward_speed > 0.5:
-		resist += config.brake_deceleration * brake
+		resist += config.brake_deceleration * brake * _surface_brake
 	if coasting:
 		resist += config.rolling_resistance
 	if handbrake:
-		resist += config.handbrake_deceleration
+		resist += config.handbrake_deceleration * _surface_brake
 	if not has_rider or input_locked:
 		resist += config.riderless_brake_deceleration
 	# Grass and mud: slow down to the surface's top speed.
@@ -554,11 +689,11 @@ func _apply_drive(velocity: Vector3, flat_forward: Vector3, dt: float) -> Vector
 
 func _apply_grip(velocity: Vector3, flat_right: Vector3, traction: float, dt: float) -> Vector3:
 	var grip := config.grip * _surface_grip
-	var max_accel := config.max_lateral_accel
+	var max_accel := config.max_lateral_accel * _surface_lateral
 	var retention := config.grip_speed_retention
 	if is_drifting:
 		grip = config.drift_grip * _surface_grip
-		max_accel = config.drift_max_lateral_accel
+		max_accel = config.drift_max_lateral_accel * _surface_lateral
 		retention = config.drift_speed_retention
 	elif input.drift and absf(forward_speed) > 1.0:
 		grip = config.handbrake_grip * _surface_grip
@@ -603,7 +738,19 @@ func _apply_upright(state: PhysicsDirectBodyState3D, up: Vector3, target_up: Vec
 
 
 func _apply_air_control(state: PhysicsDirectBodyState3D, up: Vector3, dt: float) -> void:
-	_apply_upright(state, up, Vector3.UP, config.air_upright_strength, config.air_upright_damping, dt)
+	# Throttle / brake lean the nose down / up a little to match the landing.
+	var target_up := Vector3.UP
+	# Nose up works all the way; nose down only once the trike is falling, so
+	# holding the throttle over a jump never dips the front into the far lip.
+	var lean := clampf(input.brake - input.throttle, -1.0, 1.0) * deg_to_rad(config.air_pitch_lean_deg)
+	if lean < 0.0 and state.linear_velocity.y > -config.air_nose_down_fall_speed:
+		lean = 0.0
+	if absf(lean) > 0.001 and air_time >= config.trick_min_air_time:
+		var right := state.transform.basis.x
+		right.y = 0.0
+		if right.length_squared() > 0.01:
+			target_up = Vector3.UP.rotated(right.normalized(), lean)
+	_apply_upright(state, up, target_up, config.air_upright_strength, config.air_upright_damping, dt)
 	var target_yaw := -input.steer * config.air_turn_rate
 	var yaw_rate := state.angular_velocity.dot(up)
 	state.angular_velocity += up * (target_yaw - yaw_rate) * (1.0 - exp(-3.0 * dt))
@@ -612,6 +759,96 @@ func _apply_air_control(state: PhysicsDirectBodyState3D, up: Vector3, dt: float)
 func _apply_drag(state: PhysicsDirectBodyState3D, dt: float) -> void:
 	var v := state.linear_velocity
 	state.linear_velocity = v - v * minf(v.length() * config.air_drag * dt, 1.0)
+
+
+# --- Air tricks and landings ---------------------------------------------------
+
+## Starts a trick when [trick] is held with enough air, then turns the body
+## one full rotation about the trick axis (kinematic: always completes if the
+## air lasts). Called while airborne with a rider.
+func _update_trick(state: PhysicsDirectBodyState3D, body_basis: Basis, dt: float) -> void:
+	if trick_kind == Trick.NONE:
+		if not input.trick or air_time < config.trick_min_air_time or input_locked:
+			return
+		if input.brake > 0.3:
+			trick_kind = Trick.FLIP
+			_trick_axis = body_basis.x
+			_trick_dir = 1.0  # nose up: a backflip
+		else:
+			trick_kind = Trick.SPIN
+			_trick_axis = body_basis.y
+			if absf(input.steer) > 0.25:
+				_last_spin_dir = -signf(input.steer)
+			_trick_dir = _last_spin_dir
+		trick_progress = 0.0
+		trick_started.emit(trick_kind)
+	var rate := TAU / maxf(config.trick_duration, 0.05)
+	state.angular_velocity = _trick_axis * rate * _trick_dir
+	trick_progress += dt / maxf(config.trick_duration, 0.05)
+	if trick_progress >= 1.0:
+		state.angular_velocity = Vector3.ZERO
+		_cancel_trick()
+		tricks_this_jump += 1
+		trick_count += 1
+		trick_completed.emit(tricks_this_jump)
+
+
+func _cancel_trick() -> void:
+	trick_kind = Trick.NONE
+	trick_progress = 0.0
+
+
+## First wheel back on the ground: grades the landing (see TrikeConfig
+## "Landing") and applies its reward or penalty. Changes made here are part
+## of the trike's own forces, so they never count as an impact.
+func _touch_down(state: PhysicsDirectBodyState3D, body_basis: Basis, ground_normal: Vector3) -> void:
+	var airborne_for := air_time
+	var tricks := tricks_this_jump
+	air_time = 0.0
+	tricks_this_jump = 0
+	if trick_kind != Trick.NONE:
+		# Nearly round: counts. Otherwise the crooked body decides the grade.
+		if trick_progress >= config.trick_complete_ratio:
+			tricks += 1
+			trick_count += 1
+			trick_completed.emit(tricks)
+		state.angular_velocity *= 0.3
+		_cancel_trick()
+	if airborne_for < config.landing_min_air_time or not has_rider or is_drifting:
+		return
+	var tilt := rad_to_deg(body_basis.y.angle_to(ground_normal))
+	var velocity := state.linear_velocity
+	var flat := velocity - ground_normal * velocity.dot(ground_normal)
+	var heading := -body_basis.z - ground_normal * (-body_basis.z).dot(ground_normal)
+	var slip := 0.0
+	if flat.length() > 3.0 and heading.length() > 0.01:
+		slip = rad_to_deg(heading.normalized().angle_to(flat.normalized()))
+	var grade := Landing.GOOD
+	if tilt > config.landing_bad_tilt_deg or slip > config.landing_bad_slip_deg:
+		grade = Landing.BAD
+	elif tilt > config.landing_clean_tilt_deg or slip > config.landing_clean_slip_deg:
+		grade = Landing.POOR
+	elif tricks > 0:
+		grade = Landing.PERFECT
+	elif airborne_for >= config.landing_big_air_time and tilt <= config.landing_perfect_tilt_deg \
+			and slip <= config.landing_perfect_slip_deg:
+		grade = Landing.PERFECT
+	match grade:
+		Landing.PERFECT:
+			boost_time = maxf(boost_time, minf(config.landing_perfect_boost
+					+ config.landing_trick_boost * maxi(tricks - 1, 0), config.landing_max_boost))
+		Landing.POOR:
+			state.linear_velocity = flat * config.landing_poor_speed_keep + ground_normal * config.landing_poor_bounce
+			set_slippery(config.landing_poor_slip_time, config.landing_poor_grip)
+		Landing.BAD:
+			var side := signf(flat.dot(body_basis.x) + 0.001)
+			state.linear_velocity = flat * config.landing_bad_speed_keep + ground_normal * config.landing_bad_bounce
+			state.angular_velocity += ground_normal * config.landing_bad_spin * -side
+			set_slippery(config.landing_bad_slip_time, config.landing_bad_grip)
+			boost_time = 0.0
+	last_landing = grade
+	landing_counts[grade] += 1
+	landing_graded.emit(grade, airborne_for, tricks)
 
 
 # --- Gameplay state ---------------------------------------------------------
@@ -641,14 +878,21 @@ func _update_drift(delta: float) -> void:
 
 func _end_drift(award_boost: bool) -> void:
 	var tier := get_drift_tier() if award_boost else 0
+	var perfect := award_boost and tier > 0 and perfect_tier(drift_charge) == tier
 	if tier == 2:
 		boost_time = config.drift_boost_durations.y
 	elif tier == 1:
 		boost_time = config.drift_boost_durations.x
+	last_drift_perfect = perfect
+	if perfect:
+		boost_time += config.drift_perfect_bonus
+		perfect_drift_count += 1
 	is_drifting = false
 	drift_direction = 0
 	drift_charge = 0.0
 	drift_ended.emit(tier)
+	if perfect:
+		drift_perfect.emit(tier)
 
 
 func _update_recovery(delta: float) -> void:

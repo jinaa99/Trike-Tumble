@@ -21,11 +21,12 @@ const RESOLUTIONS: Array[Vector2i] = [
 ## Actions the Controls screen can rebind (primary keyboard key).
 const REBINDABLE: Array[StringName] = [
 	&"accelerate", &"brake", &"steer_left", &"steer_right", &"drift",
-	&"use_item", &"interact", &"reset", &"pause",
+	&"use_item", &"use_skill", &"trick", &"emote", &"interact", &"reset", &"pause",
 ]
 const ACTION_LABELS := {
 	&"accelerate": "Accelerate", &"brake": "Brake / reverse", &"steer_left": "Steer left",
 	&"steer_right": "Steer right", &"drift": "Drift / handbrake", &"use_item": "Use item",
+	&"use_skill": "Signature skill", &"trick": "Air trick", &"emote": "Taunt",
 	&"interact": "Get back on", &"reset": "Reset trike", &"pause": "Pause",
 }
 const DEFAULT_PATH := "user://settings.cfg"
@@ -40,6 +41,10 @@ var resolution_index := 0
 var fullscreen := false
 var quality := Quality.MEDIUM
 var player_name := "Player"
+## Rider the player prefers (0 Zip .. 4 Rusty; SkillKind.CHARACTER_NAMES).
+var character := 0
+## Shows what each wheel stands on and the resulting grip (development aid).
+var surface_debug := false
 ## action -> physical keycode of its primary key (only actions the player changed)
 var key_overrides := {}
 
@@ -70,6 +75,8 @@ func load_settings() -> void:
 	fullscreen = file.get_value("video", "fullscreen", fullscreen)
 	quality = clampi(file.get_value("video", "quality", quality), 0, Quality.HIGH) as Quality
 	player_name = sanitize_name(file.get_value("player", "name", player_name))
+	character = clampi(file.get_value("player", "character", character), 0, 4)
+	surface_debug = file.get_value("debug", "surface", surface_debug)
 	key_overrides.clear()
 	for action in REBINDABLE:
 		var code: int = file.get_value("controls", String(action), KEY_NONE)
@@ -87,6 +94,8 @@ func save_settings() -> Error:
 	file.set_value("video", "fullscreen", fullscreen)
 	file.set_value("video", "quality", quality)
 	file.set_value("player", "name", player_name)
+	file.set_value("player", "character", character)
+	file.set_value("debug", "surface", surface_debug)
 	for action: StringName in key_overrides:
 		file.set_value("controls", String(action), key_overrides[action])
 	return file.save(settings_path)
@@ -102,6 +111,8 @@ func reset_to_defaults(apply := true) -> void:
 	fullscreen = false
 	quality = Quality.MEDIUM
 	player_name = "Player"
+	character = 0
+	surface_debug = false
 	key_overrides.clear()
 	if apply:
 		apply_all()
@@ -146,6 +157,16 @@ func set_fullscreen(value: bool) -> void:
 func set_quality(value: Quality) -> void:
 	quality = value
 	apply_graphics(get_tree().root)
+	_commit()
+
+
+func set_character(value: int) -> void:
+	character = clampi(value, 0, 4)
+	_commit()
+
+
+func set_surface_debug(value: bool) -> void:
+	surface_debug = value
 	_commit()
 
 

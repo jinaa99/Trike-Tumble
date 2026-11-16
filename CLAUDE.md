@@ -62,7 +62,8 @@ $GODOT --path . res://scenes/main/race_five.tscn           # you + 4 AI (or: -- 
 $GODOT --path . res://scenes/main/forest_rush.tscn          # Forest Rush, you + 4 AI
 $GODOT --path . res://scenes/main/rocky_canyon.tscn         # Rocky Canyon, you + 4 AI
 $GODOT --path . res://scenes/main/snow_slide.tscn           # Snow Slide, you + 4 AI
-$GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn -- --only=map   # one test group (core|racers|flow|ui|net|items|polish|overhaul|map)
+$GODOT --headless --path . --fixed-fps 60 --scene res://tests/test_runner.tscn -- --only=map   # one test group (core|racers|flow|ui|net|items|polish|overhaul|fun|map)
+$GODOT --headless --path . --fixed-fps 60 --scene res://tests/tools/ai_probe.tscn -- forest hard   # one AI over a whole map, prints every wipeout/reset
 $GODOT --path . --fixed-fps 60 --always-on-top --resolution 1280x720 --scene res://tests/tools/quick_shot.tscn -- <out_dir> forest chase:name:300:3   # look-dev screenshots (see the script header)
 $GODOT --headless --path . --fixed-fps 60 --scene res://tests/map_test_runner.tscn             # timed Forest Rush races (~80 s)
 ```
@@ -74,12 +75,13 @@ Details, the visual capture tool and the manual checklist: `docs/TESTING.md`.
 ```
 assets/   textures/ (CC0 PBR sets) materials/ (terrain + road shaders) audio/ (CC0 recordings, music) fonts/ (OFL)
 scenes/   menu/ main/ vehicles/ characters/ camera/ ui/ tracks/ (test_track, forest_rush) props/
-scripts/  core/ menu/ net/ maps/ main/ vehicles/ characters/ camera/ ui/ track/ race/ props/ visuals/ rider/ ai/ items/ audio/
+scripts/  core/ menu/ net/ maps/ main/ vehicles/ characters/ camera/ ui/ track/ race/ props/ visuals/ rider/ ai/ items/ skills/ audio/
 tools/    asset_pipeline/ (texture + audio build scripts; .gdignore, not part of the game)
 resources/vehicles/default_trike_config.tres   # all handling values
 resources/rider/default_rider_config.tres      # ejection / fall / on-foot / mount values
 resources/ai/ai_easy|medium|hard.tres           # AI difficulty presets (AIDriverConfig)
 resources/items/default_item_config.tres        # every item value (ItemConfig)
+resources/skills/default_skill_config.tres      # every skill / slipstream / near-miss value (SkillConfig)
 resources/ui/trike_theme.tres                  # shared UI theme (fonts, buttons, panels)
 resources/ui/font_display.tres, font_body.tres # Lilita One / Nunito (bundled OFL fonts)
 resources/maps/themes/*.tres                    # per-map palette, sky, light, exposure (forest too since V2)
@@ -307,6 +309,35 @@ docs/     design, roadmap, architecture, testing, screenshots/
   copies, `Look_*` nodes). Never edit the rig or IK targets for a look.
   `Rider.celebrate()` frees the arms from the grips temporarily; IK tests
   assume no celebration is running.
+- **Fun-First V2** (read `docs/FUN_FIRST_GAMEPLAY_V2.md` and
+  `docs/DEVELOPMENT_PROGRESS.md` first):
+  - Skills live in `SkillManager` (node `Skills`, created in code by
+    `RaceSession`), mirroring `ItemManager`: requests → host → numbered
+    events. Never apply a skill effect outside an event; physics only on
+    the victim's owner. New skill RPCs or event fields: bump
+    `Net.PROTOCOL_VERSION` (now 3).
+  - Items and skills share one hit-immunity table (`ItemManager.set_immune`)
+    and the host's eject guard. Don't add a second one.
+  - A racer's skill, look and voice come from `Racer.character` (from the
+    lobby seat's `character` via the race setup → `RacerManager.character_order`;
+    Settings' choice when launched directly), never from the display name.
+    Lobby riders are unique; only bots swap (`Lobby.set_character`).
+  - Keys F `use_skill`, Shift `trick`, C `emote` (`TrikeInput.skill_pressed`,
+    `trick`, `emote_pressed`); SkillManager consumes the one-shots.
+  - Timed hazards also take `Track.hazard_phase(distance, period)` (the
+    host's per-race seed). Tests that work out hazard cycles set
+    `hazard_seed = 0` (`RaceSession.fixed_hazard_seed = 0`).
+  - Never scale a physics body: `FallingTree` scales only its visual child.
+  - Wide hazards give AI several avoidance points (`get_ai_obstacles()`).
+  - Tricks and landing grades run inside `_integrate_forces` (never an
+    impact). A trick in progress is not "overturned" for the rider.
+  - Surface grip leans to the slipperiest wheel (`surface_grip_min_bias`);
+    ice also cuts cornering force and brakes. Tune in `TrikeConfig`.
+  - Trike audio has no engine: `TrikeAudio.engine` is an alias of the hub
+    whirr. Don't bring back an RPM model. Visually too: `DetailEngine` keeps
+    its node name but holds a bottle and the freewheel hub.
+  - After any map or hazard edit run `tests/tools/ai_probe.tscn` and
+    `--only=map`: new hazards trap AI in ways only full runs show.
 - **Exports:** `export_presets.cfg` has "macOS" (universal, ad-hoc signed,
   not notarized → `release/TrikeTumble-macOS/TrikeTumble.zip`) and "Windows"
   (x86_64, embedded pck → `release/TrikeTumble-Windows/TrikeTumble.exe`).

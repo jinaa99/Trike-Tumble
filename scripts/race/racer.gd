@@ -47,6 +47,9 @@ var pending_finish := false
 ## ItemManager events (the host decides).
 var held_item := ItemKind.Kind.NONE
 var item_hold_time := 0.0
+## Which of the five riders this is (index into SkillKind.CHARACTER_NAMES):
+## decides the look, the voice and the signature skill.
+var character := 0
 
 
 func is_ai() -> bool:
@@ -55,6 +58,10 @@ func is_ai() -> bool:
 
 func get_ai_driver() -> AIDriver:
 	return input_source as AIDriver
+
+
+func get_skill() -> SkillKind.Kind:
+	return SkillKind.for_character(character)
 
 
 func get_type_name() -> String:

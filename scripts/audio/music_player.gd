@@ -18,6 +18,9 @@ const TRACK_DB := {&"menu": -9.0, &"race": -13.0}
 ## Name of the track playing (or fading in); &"" = silence.
 var current: StringName = &""
 var ducked := false
+## Per-map mood of the race music (TrackTheme.music_pitch / music_db).
+var variation_pitch := 1.0
+var variation_db := 0.0
 
 var _players: Array[AudioStreamPlayer] = []
 var _active := 0
@@ -47,7 +50,16 @@ func play(track: StringName) -> void:
 	var player := _players[_active]
 	player.stream = _stream(track)
 	player.volume_db = -80.0
+	player.pitch_scale = variation_pitch if track == &"race" else 1.0
 	player.play()
+
+
+## The map's music mood; applies to the playing deck at once.
+func set_variation(pitch: float, db := 0.0) -> void:
+	variation_pitch = clampf(pitch, 0.8, 1.2)
+	variation_db = db
+	for player in _players:
+		player.pitch_scale = variation_pitch if current == &"race" else 1.0
 
 
 func stop() -> void:
@@ -62,7 +74,8 @@ func duck(on: bool) -> void:
 func target_db() -> float:
 	if current == &"":
 		return -80.0
-	return float(TRACK_DB.get(current, -10.0)) + (duck_db if ducked else 0.0)
+	var mood := variation_db if current == &"race" else 0.0
+	return float(TRACK_DB.get(current, -10.0)) + mood + (duck_db if ducked else 0.0)
 
 
 func _process(delta: float) -> void:

@@ -13,6 +13,7 @@ extends Node
 ##   both:   --max-time=S  (times "at" are seconds after GO)
 ##           --items  (item boxes along the test track; use held items after 1 s)
 ##           --use-items  (use held items after 1 s; the real maps have their own boxes)
+##           --skills  (press the signature skill whenever it is ready; taunt now and then)
 ##           --dodge  (steer around obstacles: needed to finish a whole real map)
 ##           --race-again  (host: press Race Again on the results screen; everyone
 ##                          records the second countdown and GO, then stops)
@@ -239,6 +240,15 @@ func _load_race(path := "") -> void:
 		report["max_impact"] = maxf(float(report["max_impact"]), strength))
 	race.items.event_applied.connect(func(event: Array) -> void:
 		report["item_log"].append("%s %s" % [ItemManager.EVENT_NAMES[int(event[1])], str(event.slice(2, 4))]))
+	# Skill events as applied here (seq, type, racer ids; positions left out:
+	# trap spots are the same numbers everywhere, but floats print noisily).
+	report["skill_events"] = []
+	race.skills.event_applied.connect(func(event: Array) -> void:
+		report["skill_events"].append("%d %s %s" % [int(event[0]), SkillManager.EVENT_NAMES[int(event[1])],
+				str(event.slice(2, 4)) if int(event[1]) != SkillManager.Event.AWARDS else str((event[2] as Array).size())]))
+	report["characters"] = []
+	for racer in race.racers.get_racers():
+		report["characters"].append([racer.id, racer.character])
 
 
 ## The same boxes in the same order on every peer (box ids must match).
@@ -283,6 +293,13 @@ func _record_results() -> void:
 	report["item_duplicate_events"] = race.items.duplicate_events
 	report["item_invalid_events"] = race.items.invalid_events
 	report["duplicate_hellos"] = Net.duplicate_hellos
+	report["hazard_seed"] = race.track.hazard_seed
+	report["hazard_probe"] = _hazard_probe()
+	report["rejected_skill_requests"] = Net.rejected_skill_requests
+	report["skill_duplicate_events"] = race.skills.duplicate_events
+	report["skill_invalid_events"] = race.skills.invalid_events
+	report["skill_denied_requests"] = race.skills.denied_requests
+	report["awards"] = race.skills.stats.awards.size()
 
 
 func _race_tick() -> void:
@@ -297,6 +314,10 @@ func _race_tick() -> void:
 			pilot.drive()
 			if (args.has("items") or args.has("use-items")) and ItemKind.is_valid(me.held_item) and me.item_hold_time > 1.0:
 				race.trike.input.use_item_pressed = true
+			if args.has("skills") and race.skills.is_ready(me.id):
+				race.trike.input.skill_pressed = true
+			if args.has("skills") and fmod(after_go, 9.0) < 0.02:
+				race.trike.input.emote_pressed = true
 			# Like a player: stuck for 2 s (pinned in a pile-up) → press R.
 			_stuck_time = _stuck_time + get_physics_process_delta_time() if race.trike.linear_velocity.length() < 1.0 else 0.0
 			if _stuck_time > 2.0:
@@ -352,6 +373,10 @@ func _scripted_actions(after_go: float) -> void:
 		Net._c_item_request.rpc_id(1, 1, 999, ItemManager.Request.USE,
 				[int(ItemKind.Kind.TURBO_BOTTLE), Vector3.ZERO, Vector3.FORWARD, Vector3.ZERO])
 		_event("sent an item request for the host's racer")
+	if after_go >= _num("skill-spoof-at", 1e9) and not _did.has("skill_spoof"):
+		_did["skill_spoof"] = true
+		Net._c_skill_request.rpc_id(1, 1, 999, SkillManager.Request.USE, [Vector3.ZERO, Vector3.FORWARD, Vector3.ZERO])
+		_event("sent a skill request for the host's racer")
 	if after_go >= _num("item-dup-at", 1e9) and not _did.has("item_dup"):
 		_did["item_dup"] = true
 		var mine := race.get_local_racer().id
@@ -461,3 +486,19 @@ func _finish_soon(delay: float) -> void:
 	GameSession.leave_lobby()
 	await get_tree().create_timer(0.2).timeout
 	get_tree().quit()
+
+
+## Where every timed hazard is at a fixed race time, given this peer's seed:
+## equal on every computer if they share the seed (nothing else is synced).
+func _hazard_probe() -> String:
+	var track := race.track
+	var keep := track.hazard_time
+	track.hazard_time = 123.4
+	var parts: Array[String] = []
+	for child in track.get_node("Props").get_children():
+		if child is FallingTree:
+			parts.append("%.2f" % (child as FallingTree).cycle_time(123.4))
+		elif child is RollingRock or child is FallingLog:
+			parts.append("%.2f" % track.hazard_phase(float(child.get(&"track_distance")), float(child.get(&"period"))))
+	track.hazard_time = keep
+	return ",".join(parts)
