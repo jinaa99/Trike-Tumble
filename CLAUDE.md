@@ -274,6 +274,9 @@ docs/     design, roadmap, architecture, testing, screenshots/
   Trike/rider audio and `TrikeEffects` read synced state only, so proxies
   get them for free; keep it that way. Music goes through the
   `MusicPlayer` autoload (`play(&"menu"|&"race")`, `duck()`).
+  Sound is **off by default** (owner, 2026-11-20): `GameSettings.sound_enabled`
+  mutes the Master bus only (Settings → Audio → Sound); files and volumes
+  are untouched. Flip `DEFAULT_SOUND_ENABLED` to ship with sound again.
 - **Visual Overhaul V2** (read `docs/ART_DIRECTION_BIBLE.md` and
   `docs/VISUAL_OVERHAUL_PROGRESS.md` first):
   - Textured materials come from `MaterialLibrary` (cached, shared). Road

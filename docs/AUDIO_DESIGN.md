@@ -176,3 +176,7 @@ Sources peak at −1 to −6 dBFS; the Master bus has a hard limiter at
 - [ ] Every item has its own sound and none is too loud
 - [ ] Music sits under the effects on both tracks; loops have no gap
 - [ ] Nothing clips with the Master slider at 100 %
+
+## Sound switch (2026-11-20)
+
+All sound is off by default at the owner's request. `GameSettings.sound_enabled` (saved as `[audio] enabled`) mutes the Master bus; volumes and audio files are untouched. Players turn it back on in Settings → Audio → Sound; `GameSettings.DEFAULT_SOUND_ENABLED = true` restores the old default.

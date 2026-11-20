@@ -8,6 +8,7 @@ var sections := {}
 var section_buttons := {}
 var current_section := ""
 var volume_sliders := {}
+var sound_check: CheckButton
 var resolution_option: OptionButton
 var fullscreen_check: CheckButton
 var quality_option: OptionButton
@@ -62,6 +63,7 @@ func on_enter() -> void:
 
 
 func refresh() -> void:
+	sound_check.set_pressed_no_signal(GameSettings.sound_enabled)
 	for bus: String in volume_sliders:
 		var slider: HSlider = volume_sliders[bus]["slider"]
 		slider.set_value_no_signal(_volume(bus) * 100.0)
@@ -97,6 +99,9 @@ func _row(page: Control, text: String, control: Control) -> HBoxContainer:
 
 
 func _build_audio(page: Control) -> void:
+	sound_check = CheckButton.new()
+	sound_check.toggled.connect(func(on: bool) -> void: GameSettings.set_sound_enabled(on))
+	_row(page, "Sound", sound_check)
 	for entry: Array in [["Master", "Master volume"], ["Music", "Music volume"], ["SFX", "Sound effects"], ["UI", "Menu sounds"]]:
 		var bus: String = entry[0]
 		var slider := HSlider.new()

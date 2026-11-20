@@ -394,6 +394,12 @@ func _test_settings_controls_and_persistence() -> void:
 	_check(is_equal_approx(GameSettings.master_volume, 0.5) and absf(master_db - linear_to_db(0.5)) < 0.01
 			and absf(music_db - linear_to_db(0.3)) < 0.01 and AudioServer.is_bus_mute(AudioServer.get_bus_index("SFX")),
 			"volume sliders drive the Master, Music and SFX buses", "(master %.1f dB)" % master_db)
+	var master_bus := AudioServer.get_bus_index("Master")
+	_check(not GameSettings.sound_enabled and AudioServer.is_bus_mute(master_bus) and not settings.sound_check.button_pressed,
+			"sound starts off: Master is muted, volumes kept")
+	settings.sound_check.button_pressed = true
+	_check(GameSettings.sound_enabled and not AudioServer.is_bus_mute(master_bus)
+			and is_equal_approx(GameSettings.master_volume, 0.5), "the Sound switch unmutes Master at the saved volume")
 	settings.resolution_option.select(2)
 	settings.resolution_option.item_selected.emit(2)
 	_check(GameSettings.get_resolution() == Vector2i(1920, 1080), "resolution option sets 1920×1080")
@@ -422,7 +428,7 @@ func _test_settings_controls_and_persistence() -> void:
 	fresh.load_settings()
 	_check(is_equal_approx(fresh.master_volume, 0.5) and is_equal_approx(fresh.music_volume, 0.3)
 			and is_equal_approx(fresh.sfx_volume, 0.0) and fresh.resolution_index == 2 and not fresh.fullscreen
-			and fresh.quality == GameSettings.Quality.HIGH and fresh.player_name == "Captain Zoom",
+			and fresh.quality == GameSettings.Quality.HIGH and fresh.player_name == "Captain Zoom" and fresh.sound_enabled,
 			"all settings are saved and load again (as after a relaunch)")
 	fresh.free()
 	settings.back_button.pressed.emit()

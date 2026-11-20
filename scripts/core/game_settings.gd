@@ -2,7 +2,9 @@ extends Node
 ## Autoload "GameSettings": player settings, saved to user://settings.cfg and
 ## applied at launch and on every change.
 ##
-## Audio: master/music/sfx/ui volume (0..1) on the Master, Music, SFX and UI buses.
+## Audio: master/music/sfx/ui volume (0..1) on the Master, Music, SFX and UI buses,
+## plus a global Sound on/off switch that mutes Master without touching the
+## volumes or the audio files (off by default: owner request, 2026-11-20).
 ## Video: window resolution, fullscreen, graphics quality (Low/Medium/High:
 ## MSAA, 3D render scale, sun shadows). Controls: the primary keyboard key of
 ## each rebindable action. Player: name used in lobbies and results.
@@ -31,8 +33,11 @@ const ACTION_LABELS := {
 }
 const DEFAULT_PATH := "user://settings.cfg"
 const MAX_NAME_LENGTH := 16
+## Whether sound is on for a fresh profile. Set to true to ship with sound again.
+const DEFAULT_SOUND_ENABLED := false
 
 var settings_path := DEFAULT_PATH
+var sound_enabled := DEFAULT_SOUND_ENABLED
 var master_volume := 1.0
 var music_volume := 0.8
 var sfx_volume := 0.9
@@ -67,6 +72,7 @@ func load_settings() -> void:
 	var file := ConfigFile.new()
 	if file.load(settings_path) != OK:
 		return
+	sound_enabled = file.get_value("audio", "enabled", sound_enabled)
 	master_volume = clampf(file.get_value("audio", "master", master_volume), 0.0, 1.0)
 	music_volume = clampf(file.get_value("audio", "music", music_volume), 0.0, 1.0)
 	sfx_volume = clampf(file.get_value("audio", "sfx", sfx_volume), 0.0, 1.0)
@@ -86,6 +92,7 @@ func load_settings() -> void:
 
 func save_settings() -> Error:
 	var file := ConfigFile.new()
+	file.set_value("audio", "enabled", sound_enabled)
 	file.set_value("audio", "master", master_volume)
 	file.set_value("audio", "music", music_volume)
 	file.set_value("audio", "sfx", sfx_volume)
@@ -103,6 +110,7 @@ func save_settings() -> Error:
 
 ## Defaults in memory (does not save). `apply` also applies them.
 func reset_to_defaults(apply := true) -> void:
+	sound_enabled = DEFAULT_SOUND_ENABLED
 	master_volume = 1.0
 	music_volume = 0.8
 	sfx_volume = 0.9
@@ -138,6 +146,12 @@ func set_volume(bus: String, value: float) -> void:
 			sfx_volume = value
 		"UI":
 			ui_volume = value
+	_apply_audio()
+	_commit()
+
+
+func set_sound_enabled(value: bool) -> void:
+	sound_enabled = value
 	_apply_audio()
 	_commit()
 
@@ -240,6 +254,9 @@ func _apply_audio() -> void:
 	_set_bus("Music", music_volume)
 	_set_bus("SFX", sfx_volume)
 	_set_bus("UI", ui_volume)
+	var master := AudioServer.get_bus_index("Master")
+	if master >= 0 and not sound_enabled:
+		AudioServer.set_bus_mute(master, true)
 
 
 static func _set_bus(bus_name: String, value: float) -> void:
